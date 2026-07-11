@@ -19,7 +19,7 @@ app.post('/webhook', (req, res) => {
         // Added back --rm so the container automatically destroys itself when done
         const dockerRunCommand = `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v ${hostAppsPath}:/${repoName} \
+            -v ${hostAppsPath}:${hostAppsPath} \
             -v ~/.ssh:/root/.ssh:ro \
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
