@@ -6,8 +6,10 @@ cd /target-app
 echo "Pulling latest changes from Git..."
 git pull
 
-echo "Stopping existing project containers to clear name locks..."
-docker compose -p sonos-autoplay down
+export COMPOSE_PROJECT_NAME="sonos-autoplay"
+
+echo "Stopping existing project containers..."
+docker compose down
 
 echo "Rebuilding and starting the application..."
-docker compose -p sonos-autoplay up -d --build
+docker compose up -d --build
