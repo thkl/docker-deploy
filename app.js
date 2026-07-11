@@ -1,18 +1,21 @@
 const express = require('express');
 const { exec } = require('child_process');
 const app = express();
-const PORT = 3999;
+const PORT = process.env.PORT;
 
 app.use(express.json());
+
+app.get('/health',(req,res)=>{
+    res.status(200).send('I am alive');
+});
 
 app.post('/webhook', (req, res) => {
     const event = req.headers['x-gitlab-event'];
 
     if (event === 'Push Hook') {
-        const repoName = req.body.repository.name; // e.g., "sonos-autoplay"
+        const repoName = req.body.repository.name; 
         const hostAppsPath = req.body.repository.path ?? `/root/docker-apps/${repoName}`;
 
-// Give the debug container a fixed, predictable name
         const debugContainerName = `debug-worker-${repoName}`;
         console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
@@ -24,7 +27,7 @@ app.post('/webhook', (req, res) => {
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
 
-                cd /${hostAppsPath}
+                cd ${hostAppsPath}
                 echo "--> Fetching latest changes..."
                 git pull
                 
