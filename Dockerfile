@@ -3,8 +3,8 @@ FROM node:24.16.0-slim AS builder
 WORKDIR /app
 
 # Added docker-cli-buildx to the list
-RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client \
-  && corepack enable \
+RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client
+RUN corepack enable \
   && corepack prepare pnpm@10.32.0 --activate
 
 COPY package.json tsconfig.json ./
