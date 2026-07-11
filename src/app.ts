@@ -36,7 +36,7 @@ class App {
 
         this.app.post('/webhook', (req: Request, res: Response) => {
             const event = req.headers['x-gitlab-event'];
-            const token = req.headers['webhook-signature'];
+            const token = req.headers['X-Gitlab-Token'];
 
             if (event === 'Push Hook') {
                 const repoName = req.body.repository.name;
