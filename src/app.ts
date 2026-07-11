@@ -22,52 +22,25 @@ class App {
 
         try {
 
-            console.log("--- WEBHOOK DEBUG START ---");
-            console.log("Raw Environment Token exists:", !!repoToken);
-            if (repoToken) {
-                console.log("Token starts with whsec_:", repoToken.startsWith("whsec_"));
-            }
-
-
             const authReq = req as AuthenticatedRequest;
             // 1. Grab the Standard Webhook Spec headers sent by GitLab
             const webhookId = req.headers['webhook-id'] as string;
             const webhookTimestamp = req.headers['webhook-timestamp'] as string;
             const webhookSignatureHeader = req.headers['webhook-signature'] as string;
-
-            // 2. Decode the GitLab signing token key
-            // The key is everything after the "whsec_" prefix, base64-decoded
             const secretKeyRaw = repoToken.replace(/^whsec_/, '');
             const secretBuffer = Buffer.from(secretKeyRaw, 'base64');
-
-            console.log("Decoded Secret Buffer Length:", secretBuffer.length);
-
-
-            // 3. Construct the exact signature message string: "id.timestamp.body"
             const rawBodyString = authReq.rawBody ? authReq.rawBody.toString('utf8') : '';
-
-            console.log("Raw Body String Length:", rawBodyString.length);
-            console.log("Raw Body Sample (First 60 chars):", rawBodyString.substring(0, 60));
-
             const messageToSign = `${webhookId}.${webhookTimestamp}.${rawBodyString}`;
-            console.log("Full Constructed Message to Sign Sample:", messageToSign.substring(0, 150));
-
-            // 4. Compute the expected HMAC-SHA256 digest
             const computedHmac = crypto
                 .createHmac('sha256', secretBuffer)
                 .update(messageToSign)
                 .digest('base64');
 
             const expectedSignature = `v1,${computedHmac}`;
-            console.log("Expected Signature String:", expectedSignature);
-            console.log("Received Header Signature String:", webhookSignatureHeader);
-
-            // 5. Safely extract signatures and check for a match using timingSafeEqual
             const signaturesReceived = webhookSignatureHeader.split(' ');
             let isSignatureValid = false;
 
             for (const sig of signaturesReceived) {
-                console.log(`Comparing received '${sig}' against expected '${expectedSignature}'`);
                 if (sig.length === expectedSignature.length &&
                     crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSignature))) {
                     isSignatureValid = true;
@@ -75,16 +48,12 @@ class App {
                 }
             }
 
-            console.log("Final Signature Matching Result:", isSignatureValid);
-            console.log("--- WEBHOOK DEBUG END ---");
-
             if (!isSignatureValid) {
                 console.warn('Unauthorized: Invalid cryptographic signature.');
                 res.status(403).send('Forbidden: Invalid webhook signature.');
                 return false;
             }
 
-            // 6. Prevent replay attacks (Reject requests older than 5 minutes)
             const currentTimestamp = Math.floor(Date.now() / 1000);
             const requestTimestamp = parseInt(webhookTimestamp, 10);
             if (Math.abs(currentTimestamp - requestTimestamp) > 300) {
@@ -118,7 +87,6 @@ class App {
 
     init() {
 
-
         this.app.use(express.json({
             verify: (req: Request, res: Response, buf: Buffer) => {
                 if (buf && buf.length) {
@@ -127,7 +95,6 @@ class App {
             }
         }));
 
-        // 2. Capture raw body if GitLab sends application/x-www-form-urlencoded
         this.app.use(express.urlencoded({
             extended: true,
             verify: (req: Request, res: Response, buf: Buffer) => {
@@ -159,7 +126,6 @@ class App {
 
                     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
-                    // Added back --rm so the container automatically destroys itself when done
                     const dockerRunCommand = `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${hostAppsPath}:${hostAppsPath} \
@@ -189,7 +155,6 @@ EOF`;
                     exec(dockerRunCommand, (error, stdout, stderr) => {
                         if (error) {
                             console.error(`Deployment Aborted: ${error.message}`);
-                            // ADD THIS LINE BACK TO SEE THE EXACT ERROR:
                             if (stderr) console.error(`Worker Inner Error (stderr):\n${stderr}`);
                             if (stdout) console.log(`Worker Partial Output (stdout):\n${stdout}`);
                             return;
@@ -204,7 +169,6 @@ EOF`;
 
         this.app.listen(this.port, () => console.log('Build-First Webhook Factory active.'));
     }
-
 }
 
 new App().init();
