@@ -1,15 +1,16 @@
 #!/bin/sh
 
-# Move to the mounted target app directory
+# 1. Move to the mounted target app directory
 cd /target-app
 
+# 2. Pull the latest code from GitLab
 echo "Pulling latest changes from Git..."
 git pull
 
-export COMPOSE_PROJECT_NAME="sonos-autoplay"
+# 3. Forcefully remove the old container by its exact name to free up the port/name lock
+echo "Forcefully removing old container to prevent conflicts..."
+docker rm -f sonos-autoplay || true
 
-echo "Stopping existing project containers..."
-docker compose down
-
+# 4. Run the fresh build and bring it up
 echo "Rebuilding and starting the application..."
 docker compose up -d --build
