@@ -118,7 +118,25 @@ class App {
 
     init() {
 
-        this.app.use(express.json());
+
+        this.app.use(express.json({
+            verify: (req: Request, res: Response, buf: Buffer) => {
+                if (buf && buf.length) {
+                    (req as AuthenticatedRequest).rawBody = buf;
+                }
+            }
+        }));
+
+        // 2. Capture raw body if GitLab sends application/x-www-form-urlencoded
+        this.app.use(express.urlencoded({
+            extended: true,
+            verify: (req: Request, res: Response, buf: Buffer) => {
+                if (buf && buf.length) {
+                    (req as AuthenticatedRequest).rawBody = buf;
+                }
+            }
+        }));
+
 
         this.app.get('/health', (req: Request, res: Response) => {
             res.status(200).send('I am alive');
