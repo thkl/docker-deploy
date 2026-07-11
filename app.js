@@ -12,44 +12,43 @@ app.post('/webhook', (req, res) => {
         const repoName = req.body.repository.name; // e.g., "sonos-autoplay"
         const hostAppsPath = req.body.repository.path ?? `/root/docker-apps/${repoName}`;
 
-       console.log(`Spinning up Build-First Worker for ${repoName}...`);
+// Give the debug container a fixed, predictable name
+        const debugContainerName = `debug-worker-${repoName}`;
+        console.log(`Spinning up DEBUG Worker: ${debugContainerName}`);
 
-        // Use a clean multiline template literal for the shell script inside the worker
-        const workerScript = `
-            cd /${repoName}
-            echo "Fetching latest changes..."
-            git pull
+        // 1. Forcefully remove any leftover debug container from a previous run
+        exec(`docker rm -f ${debugContainerName}`, () => {
             
-            echo "Testing build for new changes..."
-            docker compose build
-            BUILD_STATUS=$?
-            
-            if [ $BUILD_STATUS -eq 0 ]; then
-                echo "Build succeeded! Swapping containers now..."
-                docker rm -f ${repoName} || true
-                docker compose up -d --no-build
-                echo "Deployment successful."
-            else
-                echo "CRITICAL: Build failed! Keeping the old container running."
-                exit 1
-            fi
-        `;
+            // 2. Spawn the worker WITHOUT --rm so it stays behind if it dies
+            const dockerRunCommand = `docker run -i \
+                --name ${debugContainerName} \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v ${hostAppsPath}:/${repoName} \
+                -v ~/.ssh:/root/.ssh:ro \
+                alpine:latest sh << 'EOF'
+                    apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client
+                    cd /${repoName}
+                    echo "--> Fetching latest changes..."
+                    git pull
+                    echo "--> Testing build..."
+                    docker compose build
+                    if [ $? -eq 0 ]; then
+                        echo "--> Build succeeded!"
+                        docker rm -f ${repoName} || true
+                        docker compose up -d --no-build
+                    else
+                        echo "--> Build failed!"
+                        exit 1
+                    fi
+EOF`;
 
-        // Pass the script into sh -c via a single, clean execution block
-        const dockerRunCommand = `docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v ${hostAppsPath}:/${repoName} \
-            -v ~/.ssh:/root/.ssh:ro \
-            alpine:latest \
-            sh -c "${workerScript.replace(/\n/g, ' ')}"`;
-
-        exec(dockerRunCommand, (error, stdout, stderr) => {
-            if (error) {
-                console.error(`Deployment Aborted: ${error.message}`);
-                if (stderr) console.error(`stderr: ${stderr}`);
-                return;
-            }
-            console.log(`Worker output:\n${stdout}`);
+            exec(dockerRunCommand, (error, stdout, stderr) => {
+                console.log(`Execution finished. System Error Obj:`, error);
+                console.log(`stdout:\n${stdout}`);
+                console.log(`stderr:\n${stderr}`);
+                
+                console.log(`\n👉 DEBUG INSTRUCTION: Run 'docker logs ${debugContainerName}' on your Proxmox host right now to see what failed inside!`);
+            });
         });
     }
 
