@@ -17,6 +17,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Optional: Mount SSH keys if your Git repo is private
       - ~/.ssh:/root/.ssh:ro 
+      - ./data:/app/data
     restart: always
     healthcheck:
       test:

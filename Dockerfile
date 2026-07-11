@@ -6,10 +6,14 @@ RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git opens
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN pnpm install
+RUN pnpm run build
 
-COPY app.js ./
+COPY package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+
+VOLUME ["/app/data"]
 
 EXPOSE 3999
-
-CMD ["node", "app.js"]
+CMD ["node", "dist/app.js"]
