@@ -12,7 +12,7 @@ services:
   # The automation sidecar
   webhook-updater:
     build:
-      context: ./updater-folder # path to your Node.js files
+      context: /root/updater # path to your Node.js files
     ports:
       - "9000:3000" # Expose port 9000 to Proxmox/the public
     volumes:
