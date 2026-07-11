@@ -6,29 +6,54 @@ const PORT = 3999;
 app.use(express.json());
 
 app.post('/webhook', (req, res) => {
-    // Optional: Validate GitLab Webhook Token
-    // if (req.headers['x-gitlab-token'] !== 'YOUR_SECRET_TOKEN') {
-    //     return res.status(401).send('Unauthorized');
-    // }
-
     const event = req.headers['x-gitlab-event'];
-    console.log(`Received event: ${event}`);
-
+    
     if (event === 'Push Hook') {
-        console.log('Push detected! Running deploy script...');
+        const repoName = req.body.repository.name; // e.g., "sonos-autoplay"
+        const hostAppsPath = `/root/docker-apps/${repoName}`;
         
-        // Execute the update script
-        exec('/app/deploy.sh', (error, stdout, stderr) => {
+        console.log(`Spinning up Build-First Worker for ${repoName}...`);
+
+        const workerCommands = [
+            `cd /${repoName}`,
+            `git pull`,
+            
+            // 1. Only BUILD the images. Do not create or start any containers yet.
+            `echo "Testing build for new changes..."`,
+            `if docker compose build; then
+                echo "Build succeeded! Swapping containers now..."
+                
+                # 2. Stop and remove the old running container
+                docker rm -f ${repoName} || true
+                
+                # 3. Create and start the container using the freshly built image
+                # --no-build ensures it uses what we just compiled
+                docker compose up -d --no-build
+                
+                echo "Deployment successful."
+             else
+                echo "CRITICAL: Build failed! Keeping the old container running."
+                exit 1
+             fi`
+        ].join(' && ');
+
+        const dockerRunCommand = `docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${hostAppsPath}:/${repoName} \
+            -v ~/.ssh:/root/.ssh:ro \
+            alpine:latest \
+            sh -c "apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client && ${workerCommands}"`;
+
+        exec(dockerRunCommand, (error, stdout, stderr) => {
             if (error) {
-                console.error(`Error: ${error.message}`);
+                console.error(`Deployment Aborted: ${error.message}`);
                 return;
             }
-            console.log(`stdout: ${stdout}`);
-            if (stderr) console.error(`stderr: ${stderr}`);
+            console.log(`Worker output:\n${stdout}`);
         });
     }
-
-    res.status(200).send('Trigger received');
+    
+    res.status(200).send('Build worker dispatched');
 });
 
-app.listen(PORT, () => console.log(`Webhook listener running on port ${PORT}`));
+app.listen(PORT, () => console.log('Build-First Webhook Factory active.'));

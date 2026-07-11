@@ -8,9 +8,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-COPY app.js deploy.sh ./
-RUN chmod +x deploy.sh
+COPY app.js ./
 
-EXPOSE 3000
+EXPOSE 3999
 
 CMD ["node", "app.js"]
