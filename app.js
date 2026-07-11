@@ -10,7 +10,7 @@ app.post('/webhook', (req, res) => {
     
     if (event === 'Push Hook') {
         const repoName = req.body.repository.name; // e.g., "sonos-autoplay"
-        const hostAppsPath = `/root/docker-apps/${repoName}`;
+        const hostAppsPath = req.body.repository.path ?? `/root/docker-apps/${repoName}`;
         
         console.log(`Spinning up Build-First Worker for ${repoName}...`);
 
