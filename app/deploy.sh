@@ -1,6 +1,6 @@
 #!/bin/sh
 # Navigate to where your main application code is mounted inside this container
-cd /root/mwiz/mwiz
+cd /sonos-autoplay
 
 echo "Pulling latest changes..."
 git pull
