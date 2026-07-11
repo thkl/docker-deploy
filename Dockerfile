@@ -1,7 +1,9 @@
 FROM node:20-alpine
 
 # Added docker-cli-buildx to the list
-RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client
+RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client \
+  && corepack enable \
+  && corepack prepare pnpm@10.32.0 --activate
 
 WORKDIR /app
 
