@@ -21,6 +21,14 @@ class App {
     verifySignature(repoToken: string, req: Request, res: Response) {
 
         try {
+
+            console.log("--- WEBHOOK DEBUG START ---");
+            console.log("Raw Environment Token exists:", !!repoToken);
+            if (repoToken) {
+                console.log("Token starts with whsec_:", repoToken.startsWith("whsec_"));
+            }
+
+
             const authReq = req as AuthenticatedRequest;
             // 1. Grab the Standard Webhook Spec headers sent by GitLab
             const webhookId = req.headers['webhook-id'] as string;
@@ -32,9 +40,17 @@ class App {
             const secretKeyRaw = repoToken.replace(/^whsec_/, '');
             const secretBuffer = Buffer.from(secretKeyRaw, 'base64');
 
+            console.log("Decoded Secret Buffer Length:", secretBuffer.length);
+
+
             // 3. Construct the exact signature message string: "id.timestamp.body"
             const rawBodyString = authReq.rawBody ? authReq.rawBody.toString('utf8') : '';
+
+            console.log("Raw Body String Length:", rawBodyString.length);
+            console.log("Raw Body Sample (First 60 chars):", rawBodyString.substring(0, 60));
+
             const messageToSign = `${webhookId}.${webhookTimestamp}.${rawBodyString}`;
+            console.log("Full Constructed Message to Sign Sample:", messageToSign.substring(0, 150));
 
             // 4. Compute the expected HMAC-SHA256 digest
             const computedHmac = crypto
@@ -43,18 +59,24 @@ class App {
                 .digest('base64');
 
             const expectedSignature = `v1,${computedHmac}`;
+            console.log("Expected Signature String:", expectedSignature);
+            console.log("Received Header Signature String:", webhookSignatureHeader);
 
             // 5. Safely extract signatures and check for a match using timingSafeEqual
             const signaturesReceived = webhookSignatureHeader.split(' ');
             let isSignatureValid = false;
 
             for (const sig of signaturesReceived) {
+                console.log(`Comparing received '${sig}' against expected '${expectedSignature}'`);
                 if (sig.length === expectedSignature.length &&
                     crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSignature))) {
                     isSignatureValid = true;
                     break;
                 }
             }
+
+            console.log("Final Signature Matching Result:", isSignatureValid);
+            console.log("--- WEBHOOK DEBUG END ---");
 
             if (!isSignatureValid) {
                 console.warn('Unauthorized: Invalid cryptographic signature.');
