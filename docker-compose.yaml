@@ -1,13 +1,6 @@
 version: '3.8'
 
 services:
-  # Your actual application
-  docker_updater:
-    image: docker_updater
-    build: .
-    ports:
-      - "3999:3999"
-    # ... your existing config ...
 
   # The automation sidecar
   webhook-updater:
