@@ -1,9 +1,11 @@
 #!/bin/sh
-# Navigate to where your main application code is mounted inside this container
-cd /sonos-autoplay
 
-echo "Pulling latest changes..."
+# Move to the mounted target app directory
+cd /target-app
+
+echo "Pulling latest changes from Git..."
 git pull
 
-echo "Rebuilding container..."
-docker compose up -d --build
+echo "Rebuilding and recreating the application container..."
+# --force-recreate ensures the old container name is released and replaced cleanly
+docker compose up -d --build --force-recreate

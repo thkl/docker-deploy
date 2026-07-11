@@ -12,7 +12,7 @@ services:
       # CRITICAL: Gives the container power to control Docker on the host
       - /var/run/docker.sock:/var/run/docker.sock
       # Mount your app's directory so the updater can run 'git pull' on it
-      - /root/mwiz/mwiz:/sonos-autoplay
+      - /root/mwiz/mwiz:/target-app
       # Optional: Mount SSH keys if your Git repo is private
       - ~/.ssh:/root/.ssh:ro 
     restart: always
