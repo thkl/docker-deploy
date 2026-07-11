@@ -7,7 +7,7 @@ services:
     build:
       context: /root/updater # path to your Node.js files
     ports:
-      - "9000:3000" # Expose port 9000 to Proxmox/the public
+      - "3999:3999" # Expose port 9000 to Proxmox/the public
     volumes:
       # CRITICAL: Gives the container power to control Docker on the host
       - /var/run/docker.sock:/var/run/docker.sock
