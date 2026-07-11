@@ -20,7 +20,7 @@ app.post('/webhook', (req, res) => {
         exec(`docker rm -f ${debugContainerName}`, () => {
             
             // 2. Spawn the worker WITHOUT --rm so it stays behind if it dies
-            const dockerRunCommand = `docker run -i \
+            const dockerRunCommand = `docker run -i -rm \
                 --name ${debugContainerName} \
                 -v /var/run/docker.sock:/var/run/docker.sock \
                 -v ${hostAppsPath}:/${repoName} \
