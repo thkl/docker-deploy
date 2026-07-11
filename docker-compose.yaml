@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # Your actual application
+  docker_updater:
+    image: docker_updater
+    build: .
+    ports:
+      - "3999:3999"
+    # ... your existing config ...
+
+  # The automation sidecar
+  webhook-updater:
+    build:
+      context: ./updater-folder # path to your Node.js files
+    ports:
+      - "9000:3000" # Expose port 9000 to Proxmox/the public
+    volumes:
+      # CRITICAL: Gives the container power to control Docker on the host
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount your app's directory so the updater can run 'git pull' on it
+      - /path/to/your/repo:/target-app
+      # Optional: Mount SSH keys if your Git repo is private
+      - ~/.ssh:/root/.ssh:ro 
+    restart: always

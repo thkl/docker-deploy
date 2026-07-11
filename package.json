@@ -1,0 +1,13 @@
+{
+  "name": "docker_updater",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.6.0",
+  "scripts": {
+
+  },
+  "dependencies": {
+    "express":"5.2.1"
+  }
+}
