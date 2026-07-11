@@ -189,6 +189,9 @@ class App {
                     exec(dockerRunCommand, (error, stdout, stderr) => {
                         if (error) {
                             console.error(`Deployment Aborted: ${error.message}`);
+                            // ADD THIS LINE BACK TO SEE THE EXACT ERROR:
+                            if (stderr) console.error(`Worker Inner Error (stderr):\n${stderr}`);
+                            if (stdout) console.log(`Worker Partial Output (stdout):\n${stdout}`);
                             return;
                         }
                         console.log(`Worker output:\n${stdout}`);
