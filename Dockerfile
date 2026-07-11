@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:24.16.0-slim AS builder
 
 # Added docker-cli-buildx to the list
 RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client \
