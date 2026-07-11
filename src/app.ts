@@ -184,7 +184,7 @@ class App {
                     echo "--> CRITICAL: Build failed! Keeping the old container running."
                     exit 1
                 fi
-            EOF`;
+EOF`;
 
                     exec(dockerRunCommand, (error, stdout, stderr) => {
                         if (error) {
