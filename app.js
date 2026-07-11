@@ -14,7 +14,7 @@ app.post('/webhook', (req, res) => {
 
 // Give the debug container a fixed, predictable name
         const debugContainerName = `debug-worker-${repoName}`;
-       console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
+        console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
         // Added back --rm so the container automatically destroys itself when done
         const dockerRunCommand = `docker run -i --rm \
@@ -24,7 +24,7 @@ app.post('/webhook', (req, res) => {
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
 
-                cd /${repoName}
+                cd /${hostAppsPath}
                 echo "--> Fetching latest changes..."
                 git pull
                 
