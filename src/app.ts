@@ -48,6 +48,7 @@ class App {
                 const hostAppsPath = appSettings.path ?? `/root/docker-apps/${repoName}`;
                 const repoToken = appSettings.token;
                 if (repoToken && token !== repoToken) {
+                    console.log(repoToken,token)
                     throw new Error("Security Token does not match");
                 }
 
