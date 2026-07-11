@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # 1. Move to the mounted target app directory
-cd /target-app
+cd /onos-autoplay
 
 # 2. Pull the latest code from GitLab
 echo "Pulling latest changes from Git..."
