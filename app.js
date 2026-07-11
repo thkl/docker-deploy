@@ -14,41 +14,41 @@ app.post('/webhook', (req, res) => {
 
 // Give the debug container a fixed, predictable name
         const debugContainerName = `debug-worker-${repoName}`;
-        console.log(`Spinning up DEBUG Worker: ${debugContainerName}`);
+       console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
-        // 1. Forcefully remove any leftover debug container from a previous run
-        exec(`docker rm -f ${debugContainerName}`, () => {
-            
-            // 2. Spawn the worker WITHOUT --rm so it stays behind if it dies
-            const dockerRunCommand = `docker run -i -rm \
-                --name ${debugContainerName} \
-                -v /var/run/docker.sock:/var/run/docker.sock \
-                -v ${hostAppsPath}:/${repoName} \
-                -v ~/.ssh:/root/.ssh:ro \
-                alpine:latest sh << 'EOF'
-                    apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client
-                    cd /${repoName}
-                    echo "--> Fetching latest changes..."
-                    git pull
-                    echo "--> Testing build..."
-                    docker compose build
-                    if [ $? -eq 0 ]; then
-                        echo "--> Build succeeded!"
-                        docker rm -f ${repoName} || true
-                        docker compose up -d --no-build
-                    else
-                        echo "--> Build failed!"
-                        exit 1
-                    fi
-EOF`;
+        // Added back --rm so the container automatically destroys itself when done
+        const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${hostAppsPath}:/${repoName} \
+            -v ~/.ssh:/root/.ssh:ro \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
 
-            exec(dockerRunCommand, (error, stdout, stderr) => {
-                console.log(`Execution finished. System Error Obj:`, error);
-                console.log(`stdout:\n${stdout}`);
-                console.log(`stderr:\n${stderr}`);
+                cd /${repoName}
+                echo "--> Fetching latest changes..."
+                git pull
                 
-                console.log(`\n👉 DEBUG INSTRUCTION: Run 'docker logs ${debugContainerName}' on your Proxmox host right now to see what failed inside!`);
-            });
+                echo "--> Testing build for new changes..."
+                docker compose build
+                if [ $? -eq 0 ]; then
+                    echo "--> Build succeeded! Safely dropping old container via compose..."
+                    docker compose down
+                    
+                    echo "--> Starting newly built container..."
+                    docker compose up -d --no-build
+                    echo "--> Deployment successful."
+                else
+                    echo "--> CRITICAL: Build failed! Keeping the old container running."
+                    exit 1
+                fi
+            EOF`;
+
+        exec(dockerRunCommand, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Deployment Aborted: ${error.message}`);
+                return;
+            }
+            console.log(`Worker output:\n${stdout}`);
         });
     }
 
