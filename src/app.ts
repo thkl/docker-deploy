@@ -118,6 +118,19 @@ class App {
         return `${token.slice(0, 6)}...${token.slice(-4)}`;
     }
 
+    normalizeProjectName(name?: string) {
+        const repoName = name?.trim();
+        if (!repoName) {
+            throw new Error("Repository name is required.");
+        }
+
+        if (!/^[a-zA-Z0-9._-]+$/.test(repoName)) {
+            throw new Error("Repository name can only contain letters, numbers, dots, underscores, and hyphens.");
+        }
+
+        return repoName;
+    }
+
     renderAdminPage() {
         return `<!doctype html>
 <html lang="en">
@@ -259,6 +272,10 @@ class App {
             font-size: 0.88rem;
         }
 
+        .project-actions {
+            width: 92px;
+        }
+
         .empty {
             padding: 42px 22px;
             color: var(--muted);
@@ -315,6 +332,44 @@ class App {
 
         button:hover {
             background: var(--accent-dark);
+        }
+
+        .icon-button {
+            width: auto;
+            min-height: 34px;
+            padding: 7px 11px;
+            background: #e7eee9;
+            color: var(--accent-dark);
+            font-size: 0.86rem;
+        }
+
+        .icon-button:hover {
+            background: #d9e6df;
+        }
+
+        .form-actions {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .secondary-button {
+            display: none;
+            width: auto;
+            min-width: 92px;
+            padding: 0 14px;
+            border: 1px solid var(--line);
+            background: white;
+            color: var(--accent-dark);
+        }
+
+        .secondary-button.visible {
+            display: inline-block;
+        }
+
+        .secondary-button:hover {
+            background: #f0f5f2;
         }
 
         button:disabled {
@@ -428,12 +483,16 @@ class App {
                         Webhook secret token
                         <input name="token" required autocomplete="off" placeholder="whsec_...">
                     </label>
+                    <p class="hint" id="token-hint">Required for new projects.</p>
                     <label>
                         Host path
                         <input name="path" autocomplete="off" placeholder="/root/docker-apps/my-service">
                     </label>
                     <p class="hint">Leave path empty to use /root/docker-apps/&lt;repository name&gt;.</p>
-                    <button type="submit">Save project</button>
+                    <div class="form-actions">
+                        <button type="submit" id="submit-button">Save project</button>
+                        <button type="button" class="secondary-button" id="cancel-edit">Cancel</button>
+                    </div>
                     <div class="message" id="message" role="status"></div>
                 </form>
             </section>
@@ -446,6 +505,12 @@ class App {
         const status = document.getElementById("status");
         const form = document.getElementById("project-form");
         const message = document.getElementById("message");
+        const submitButton = document.getElementById("submit-button");
+        const cancelEditButton = document.getElementById("cancel-edit");
+        const tokenHint = document.getElementById("token-hint");
+        const formTitle = document.getElementById("add-heading");
+        let editingName = "";
+        let currentProjects = [];
 
         function escapeHtml(value) {
             return String(value).replace(/[&<>"']/g, (char) => ({
@@ -458,6 +523,7 @@ class App {
         }
 
         function renderProjects(projects) {
+            currentProjects = projects;
             count.textContent = projects.length === 1 ? "1 project" : projects.length + " projects";
             status.textContent = "Ready";
 
@@ -468,13 +534,41 @@ class App {
             }
 
             list.className = "";
-            list.innerHTML = '<table><thead><tr><th>Repository</th><th>Path</th><th>Token</th></tr></thead><tbody>' +
+            list.innerHTML = '<table><thead><tr><th>Repository</th><th>Path</th><th>Token</th><th class="project-actions">Action</th></tr></thead><tbody>' +
                 projects.map((project) => '<tr>' +
                     '<td data-label="Repository"><div class="repo">' + escapeHtml(project.name) + '</div></td>' +
                     '<td data-label="Path"><code>' + escapeHtml(project.path || "/root/docker-apps/" + project.name) + '</code></td>' +
                     '<td data-label="Token"><code>' + escapeHtml(project.token) + '</code></td>' +
+                    '<td data-label="Action"><button class="icon-button" type="button" data-edit="' + escapeHtml(project.name) + '">Edit</button></td>' +
                 '</tr>').join("") +
                 '</tbody></table>';
+        }
+
+        function setAddMode() {
+            editingName = "";
+            form.reset();
+            formTitle.textContent = "Add Project";
+            submitButton.textContent = "Save project";
+            cancelEditButton.classList.remove("visible");
+            form.elements.token.required = true;
+            tokenHint.textContent = "Required for new projects.";
+            message.className = "message";
+            message.textContent = "";
+        }
+
+        function setEditMode(project) {
+            editingName = project.name;
+            formTitle.textContent = "Edit Project";
+            submitButton.textContent = "Update project";
+            cancelEditButton.classList.add("visible");
+            form.elements.name.value = project.name;
+            form.elements.token.value = "";
+            form.elements.token.required = false;
+            form.elements.path.value = project.path || "";
+            tokenHint.textContent = "Leave blank to keep the current webhook secret.";
+            message.className = "message";
+            message.textContent = "Editing " + project.name + ".";
+            form.elements.name.focus();
         }
 
         async function loadProjects() {
@@ -486,6 +580,20 @@ class App {
             const projects = await response.json();
             renderProjects(projects);
         }
+
+        list.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-edit]");
+            if (!button) {
+                return;
+            }
+
+            const project = currentProjects.find((item) => item.name === button.dataset.edit);
+            if (project) {
+                setEditMode(project);
+            }
+        });
+
+        cancelEditButton.addEventListener("click", setAddMode);
 
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
@@ -499,21 +607,22 @@ class App {
 
             button.disabled = true;
             message.className = "message";
-            message.textContent = "Saving project...";
+            message.textContent = editingName ? "Updating project..." : "Saving project...";
+            const wasEditing = Boolean(editingName);
 
             try {
-                const response = await fetch("/api/projects", {
-                    method: "POST",
+                const response = await fetch(editingName ? "/api/projects/" + encodeURIComponent(editingName) : "/api/projects", {
+                    method: editingName ? "PUT" : "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
                 });
                 const result = await response.json();
                 if (!response.ok) {
-                    throw new Error(result.error || "Could not save project.");
+                    throw new Error(result.error || (editingName ? "Could not update project." : "Could not save project."));
                 }
 
-                form.reset();
-                message.textContent = "Project saved.";
+                setAddMode();
+                message.textContent = wasEditing ? "Project updated." : "Project saved.";
                 await loadProjects();
             } catch (error) {
                 message.className = "message error";
@@ -580,19 +689,9 @@ class App {
         this.app.post('/api/projects', (req: Request, res: Response, next: NextFunction) => {
             try {
                 const { name, token, path } = req.body as { name?: string; token?: string; path?: string };
-                const repoName = name?.trim();
+                const repoName = this.normalizeProjectName(name);
                 const repoToken = token?.trim();
                 const repoPath = path?.trim();
-
-                if (!repoName) {
-                    res.status(400).json({ error: "Repository name is required." });
-                    return;
-                }
-
-                if (!/^[a-zA-Z0-9._-]+$/.test(repoName)) {
-                    res.status(400).json({ error: "Repository name can only contain letters, numbers, dots, underscores, and hyphens." });
-                    return;
-                }
 
                 if (!repoToken) {
                     res.status(400).json({ error: "Webhook secret token is required." });
@@ -608,7 +707,44 @@ class App {
 
                 res.status(201).json({ name: repoName });
             } catch (error) {
-                next(error);
+                res.status(400).json({ error: error instanceof Error ? error.message : "Could not save project." });
+            }
+        });
+
+        this.app.put('/api/projects/:name', (req: Request, res: Response) => {
+            try {
+                const rawCurrentName = req.params.name;
+                const currentName = this.normalizeProjectName(Array.isArray(rawCurrentName) ? rawCurrentName[0] : rawCurrentName);
+                const { name, token, path } = req.body as { name?: string; token?: string; path?: string };
+                const nextName = this.normalizeProjectName(name);
+                const nextToken = token?.trim();
+                const nextPath = path?.trim();
+                const config = this.readConfig();
+                const existing = config[currentName];
+
+                if (!existing) {
+                    res.status(404).json({ error: "Project does not exist." });
+                    return;
+                }
+
+                if (nextName !== currentName && config[nextName]) {
+                    res.status(409).json({ error: "A project with that repository name already exists." });
+                    return;
+                }
+
+                if (nextName !== currentName) {
+                    delete config[currentName];
+                }
+
+                config[nextName] = {
+                    token: nextToken || existing.token,
+                    ...(nextPath ? { path: nextPath } : {})
+                };
+                this.writeConfig(config);
+
+                res.json({ name: nextName });
+            } catch (error) {
+                res.status(400).json({ error: error instanceof Error ? error.message : "Could not update project." });
             }
         });
 
