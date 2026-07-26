@@ -11,9 +11,21 @@ interface AuthenticatedRequest extends Request {
 interface ProjectSettings {
     token: string;
     path?: string;
+    traefik?: TraefikSettings;
 }
 
 type ProjectConfig = Record<string, ProjectSettings>;
+
+interface TraefikSettings {
+    enabled: boolean;
+    hostname?: string;
+    service?: string;
+    port?: number;
+    entryPoints?: string;
+    certResolver?: string;
+    network?: string;
+    websocket?: boolean;
+}
 
 class App {
 
@@ -129,6 +141,131 @@ class App {
         }
 
         return repoName;
+    }
+
+    normalizeOptionalName(name?: string) {
+        const value = name?.trim();
+        if (!value) {
+            return "";
+        }
+
+        if (!/^[a-zA-Z0-9._-]+$/.test(value)) {
+            throw new Error("Names can only contain letters, numbers, dots, underscores, and hyphens.");
+        }
+
+        return value;
+    }
+
+    normalizeTraefikSettings(body: {
+        traefikEnabled?: boolean;
+        traefikHostname?: string;
+        traefikService?: string;
+        traefikPort?: string | number;
+        traefikEntryPoints?: string;
+        traefikCertResolver?: string;
+        traefikNetwork?: string;
+        traefikWebsocket?: boolean;
+    }): TraefikSettings | undefined {
+        if (!body.traefikEnabled) {
+            return undefined;
+        }
+
+        const hostname = body.traefikHostname?.trim();
+        if (!hostname) {
+            throw new Error("Traefik hostname is required when Traefik is enabled.");
+        }
+
+        if (!/^[a-zA-Z0-9.-]+$/.test(hostname)) {
+            throw new Error("Traefik hostname can only contain letters, numbers, dots, and hyphens.");
+        }
+
+        const port = Number(body.traefikPort);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            throw new Error("Traefik service port must be a number between 1 and 65535.");
+        }
+
+        const entryPoints = body.traefikEntryPoints?.trim() || "websecure";
+        const certResolver = body.traefikCertResolver?.trim() || "letsencrypt";
+        const network = body.traefikNetwork?.trim() || "proxy";
+        const service = this.normalizeOptionalName(body.traefikService);
+
+        if (!/^[a-zA-Z0-9._,-]+$/.test(entryPoints)) {
+            throw new Error("Traefik entry points can only contain letters, numbers, dots, underscores, hyphens, and commas.");
+        }
+
+        if (!/^[a-zA-Z0-9._-]+$/.test(certResolver)) {
+            throw new Error("Traefik cert resolver can only contain letters, numbers, dots, underscores, and hyphens.");
+        }
+
+        if (!/^[a-zA-Z0-9._-]+$/.test(network)) {
+            throw new Error("Traefik network can only contain letters, numbers, dots, underscores, and hyphens.");
+        }
+
+        return {
+            enabled: true,
+            hostname,
+            ...(service ? { service } : {}),
+            port,
+            entryPoints,
+            certResolver,
+            network,
+            websocket: Boolean(body.traefikWebsocket)
+        };
+    }
+
+    shellQuote(value: string | number | boolean) {
+        return `'${String(value).replace(/'/g, `'\\''`)}'`;
+    }
+
+    traefikRouterName(repoName: string) {
+        return repoName.replace(/[^a-zA-Z0-9_-]/g, "-");
+    }
+
+    yamlQuote(value: string | number | boolean) {
+        return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    }
+
+    renderTraefikOverrideScript(repoName: string, settings: ProjectSettings) {
+        const traefik = settings.traefik;
+        if (!traefik?.enabled) {
+            return "";
+        }
+
+        const serviceName = traefik.service || repoName;
+        const routerName = this.traefikRouterName(repoName);
+        const network = traefik.network || "proxy";
+        const rule = `Host(\`${traefik.hostname}\`)`;
+        const websocketLabels = traefik.websocket
+            ? `
+      "traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection": "Upgrade"
+      "traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Upgrade": "websocket"
+      "traefik.http.routers.${routerName}.middlewares": "${routerName}-websocket@docker"`
+            : "";
+
+        const overrideContent = `services:
+  ${this.yamlQuote(serviceName)}:
+    labels:
+      "traefik.enable": "true"
+      "traefik.docker.network": ${this.yamlQuote(network)}
+      "traefik.http.routers.${routerName}.rule": ${this.yamlQuote(rule)}
+      "traefik.http.routers.${routerName}.entrypoints": ${this.yamlQuote(traefik.entryPoints || "websecure")}
+      "traefik.http.routers.${routerName}.tls": "true"
+      "traefik.http.routers.${routerName}.tls.certresolver": ${this.yamlQuote(traefik.certResolver || "letsencrypt")}
+      "traefik.http.services.${routerName}.loadbalancer.server.port": ${this.yamlQuote(traefik.port || 80)}
+${websocketLabels}
+    networks:
+      - ${this.yamlQuote(network)}
+
+networks:
+  ${this.yamlQuote(network)}:
+    external: true
+`;
+
+        return `
+                echo "--> Writing Traefik compose override..."
+                cat > docker-compose.traefik.yml << 'TRAEFIK_EOF'
+${overrideContent}TRAEFIK_EOF
+                COMPOSE_FILES="-f $COMPOSE_FILE -f docker-compose.traefik.yml"`;
     }
 
     renderAdminPage() {
@@ -295,6 +432,18 @@ class App {
             font-weight: 650;
         }
 
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checkbox-label input {
+            width: 18px;
+            min-height: 18px;
+            accent-color: var(--accent);
+        }
+
         input {
             width: 100%;
             min-height: 42px;
@@ -309,6 +458,35 @@ class App {
         input:focus {
             outline: 3px solid rgba(23, 107, 82, 0.18);
             border-color: var(--accent);
+        }
+
+        .checkbox-label input {
+            width: 18px;
+            min-height: 18px;
+        }
+
+        fieldset {
+            margin: 20px 0 16px;
+            padding: 16px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+        }
+
+        legend {
+            padding: 0 6px;
+            color: var(--ink);
+            font-size: 0.92rem;
+            font-weight: 750;
+        }
+
+        .fieldset-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0 12px;
+        }
+
+        .full-field {
+            grid-column: 1 / -1;
         }
 
         .hint {
@@ -448,6 +626,10 @@ class App {
                 text-transform: uppercase;
                 content: attr(data-label);
             }
+
+            .fieldset-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -489,6 +671,43 @@ class App {
                         <input name="path" autocomplete="off" placeholder="/root/docker-apps/my-service">
                     </label>
                     <p class="hint">Leave path empty to use /root/docker-apps/&lt;repository name&gt;.</p>
+                    <fieldset>
+                        <legend>Traefik reverse proxy</legend>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="traefikEnabled">
+                            Enable Traefik labels
+                        </label>
+                        <label class="full-field">
+                            Hostname
+                            <input name="traefikHostname" autocomplete="off" placeholder="app.example.com">
+                        </label>
+                        <div class="fieldset-grid">
+                            <label>
+                                Compose service
+                                <input name="traefikService" autocomplete="off" placeholder="web">
+                            </label>
+                            <label>
+                                Internal port
+                                <input name="traefikPort" type="number" min="1" max="65535" autocomplete="off" placeholder="3000">
+                            </label>
+                            <label>
+                                Entry points
+                                <input name="traefikEntryPoints" autocomplete="off" placeholder="websecure">
+                            </label>
+                            <label>
+                                Cert resolver
+                                <input name="traefikCertResolver" autocomplete="off" placeholder="letsencrypt">
+                            </label>
+                            <label class="full-field">
+                                Docker network
+                                <input name="traefikNetwork" autocomplete="off" placeholder="proxy">
+                            </label>
+                        </div>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="traefikWebsocket">
+                            Add websocket upgrade headers
+                        </label>
+                    </fieldset>
                     <div class="form-actions">
                         <button type="submit" id="submit-button">Save project</button>
                         <button type="button" class="secondary-button" id="cancel-edit">Cancel</button>
@@ -534,10 +753,11 @@ class App {
             }
 
             list.className = "";
-            list.innerHTML = '<table><thead><tr><th>Repository</th><th>Path</th><th>Token</th><th class="project-actions">Action</th></tr></thead><tbody>' +
+            list.innerHTML = '<table><thead><tr><th>Repository</th><th>Path</th><th>Proxy</th><th>Token</th><th class="project-actions">Action</th></tr></thead><tbody>' +
                 projects.map((project) => '<tr>' +
                     '<td data-label="Repository"><div class="repo">' + escapeHtml(project.name) + '</div></td>' +
                     '<td data-label="Path"><code>' + escapeHtml(project.path || "/root/docker-apps/" + project.name) + '</code></td>' +
+                    '<td data-label="Proxy">' + (project.traefik && project.traefik.enabled ? '<code>' + escapeHtml(project.traefik.hostname) + '</code>' : '<span class="count">Off</span>') + '</td>' +
                     '<td data-label="Token"><code>' + escapeHtml(project.token) + '</code></td>' +
                     '<td data-label="Action"><button class="icon-button" type="button" data-edit="' + escapeHtml(project.name) + '">Edit</button></td>' +
                 '</tr>').join("") +
@@ -565,6 +785,14 @@ class App {
             form.elements.token.value = "";
             form.elements.token.required = false;
             form.elements.path.value = project.path || "";
+            form.elements.traefikEnabled.checked = Boolean(project.traefik && project.traefik.enabled);
+            form.elements.traefikHostname.value = (project.traefik && project.traefik.hostname) || "";
+            form.elements.traefikService.value = (project.traefik && project.traefik.service) || "";
+            form.elements.traefikPort.value = (project.traefik && project.traefik.port) || "";
+            form.elements.traefikEntryPoints.value = (project.traefik && project.traefik.entryPoints) || "";
+            form.elements.traefikCertResolver.value = (project.traefik && project.traefik.certResolver) || "";
+            form.elements.traefikNetwork.value = (project.traefik && project.traefik.network) || "";
+            form.elements.traefikWebsocket.checked = Boolean(project.traefik && project.traefik.websocket);
             tokenHint.textContent = "Leave blank to keep the current webhook secret.";
             message.className = "message";
             message.textContent = "Editing " + project.name + ".";
@@ -602,7 +830,15 @@ class App {
             const payload = {
                 name: String(formData.get("name") || "").trim(),
                 token: String(formData.get("token") || "").trim(),
-                path: String(formData.get("path") || "").trim()
+                path: String(formData.get("path") || "").trim(),
+                traefikEnabled: formData.has("traefikEnabled"),
+                traefikHostname: String(formData.get("traefikHostname") || "").trim(),
+                traefikService: String(formData.get("traefikService") || "").trim(),
+                traefikPort: String(formData.get("traefikPort") || "").trim(),
+                traefikEntryPoints: String(formData.get("traefikEntryPoints") || "").trim(),
+                traefikCertResolver: String(formData.get("traefikCertResolver") || "").trim(),
+                traefikNetwork: String(formData.get("traefikNetwork") || "").trim(),
+                traefikWebsocket: formData.has("traefikWebsocket")
             };
 
             button.disabled = true;
@@ -677,7 +913,8 @@ class App {
                     .map(([name, settings]) => ({
                         name,
                         path: settings.path ?? "",
-                        token: this.maskToken(settings.token ?? "")
+                        token: this.maskToken(settings.token ?? ""),
+                        traefik: settings.traefik ?? { enabled: false }
                     }));
 
                 res.json(projects);
@@ -692,6 +929,7 @@ class App {
                 const repoName = this.normalizeProjectName(name);
                 const repoToken = token?.trim();
                 const repoPath = path?.trim();
+                const traefik = this.normalizeTraefikSettings(req.body);
 
                 if (!repoToken) {
                     res.status(400).json({ error: "Webhook secret token is required." });
@@ -701,7 +939,8 @@ class App {
                 const config = this.readConfig();
                 config[repoName] = {
                     token: repoToken,
-                    ...(repoPath ? { path: repoPath } : {})
+                    ...(repoPath ? { path: repoPath } : {}),
+                    ...(traefik ? { traefik } : {})
                 };
                 this.writeConfig(config);
 
@@ -719,6 +958,7 @@ class App {
                 const nextName = this.normalizeProjectName(name);
                 const nextToken = token?.trim();
                 const nextPath = path?.trim();
+                const traefik = this.normalizeTraefikSettings(req.body);
                 const config = this.readConfig();
                 const existing = config[currentName];
 
@@ -738,7 +978,8 @@ class App {
 
                 config[nextName] = {
                     token: nextToken || existing.token,
-                    ...(nextPath ? { path: nextPath } : {})
+                    ...(nextPath ? { path: nextPath } : {}),
+                    ...(traefik ? { traefik } : {})
                 };
                 this.writeConfig(config);
 
@@ -760,6 +1001,9 @@ class App {
 
                 const repoToken = appSettings.token;
                 const hostAppsPath = appSettings.path ?? `/root/docker-apps/${repoName}`;
+                const traefikOverrideScript = this.renderTraefikOverrideScript(repoName, appSettings);
+                const quotedHostAppsPath = this.shellQuote(hostAppsPath);
+                const quotedHostAppsVolume = this.shellQuote(`${hostAppsPath}:${hostAppsPath}`);
 
                 if (this.verifySignature(repoToken, req, res)) {
 
@@ -767,23 +1011,40 @@ class App {
 
                     const dockerRunCommand = `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v ${hostAppsPath}:${hostAppsPath} \
+            -v ${quotedHostAppsVolume} \
             -v ~/.ssh:/root/.ssh:ro \
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
 
-                cd ${hostAppsPath}
+                cd ${quotedHostAppsPath}
                 echo "--> Fetching latest changes..."
                 git pull
+
+                COMPOSE_FILE="docker-compose.yaml"
+                if [ ! -f "$COMPOSE_FILE" ] && [ -f docker-compose.yml ]; then
+                    COMPOSE_FILE="docker-compose.yml"
+                fi
+                if [ ! -f "$COMPOSE_FILE" ] && [ -f compose.yaml ]; then
+                    COMPOSE_FILE="compose.yaml"
+                fi
+                if [ ! -f "$COMPOSE_FILE" ] && [ -f compose.yml ]; then
+                    COMPOSE_FILE="compose.yml"
+                fi
+                if [ ! -f "$COMPOSE_FILE" ]; then
+                    echo "--> CRITICAL: No Docker Compose file found."
+                    exit 1
+                fi
+                COMPOSE_FILES="-f $COMPOSE_FILE"
+${traefikOverrideScript}
                 
                 echo "--> Testing build for new changes..."
-                docker compose build
+                docker compose $COMPOSE_FILES build
                 if [ $? -eq 0 ]; then
                     echo "--> Build succeeded! Safely dropping old container via compose..."
-                    docker compose down
+                    docker compose $COMPOSE_FILES down
                     
                     echo "--> Starting newly built container..."
-                    docker compose up -d --no-build
+                    docker compose $COMPOSE_FILES up -d --no-build
                     echo "--> Deployment successful."
                 else
                     echo "--> CRITICAL: Build failed! Keeping the old container running."
