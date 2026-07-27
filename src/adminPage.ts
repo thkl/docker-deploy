@@ -86,7 +86,6 @@ export function renderAdminPage() {
             padding: 10px 14px;
             border: 1px solid var(--line);
             border-radius: 8px;
-            background: rgba(255, 255, 255, 0.72);
             color: var(--muted);
             text-align: center;
             font-size: 0.92rem;
@@ -353,7 +352,6 @@ export function renderAdminPage() {
 
         dialog {
             width: min(920px, calc(100% - 28px));
-            max-height: min(860px, calc(100vh - 32px));
             padding: 0;
             border: 1px solid var(--line);
             border-radius: 10px;
