@@ -178,6 +178,20 @@ class App {
             dispatchBuildWorker(projectName, appSettings);
             res.status(200).json({ status: "Build worker dispatched" });
         });
+
+        this.app.post("/api/projects/:name/deploy", (req: Request, res: Response) => {
+            const rawProjectName = req.params.name;
+            const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const appSettings = this.configStore.fetchProfile(projectName);
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            dispatchBuildWorker(projectName, appSettings);
+            res.status(200).json({ status: "Build worker dispatched" });
+        });
     }
 
     private registerErrorHandler() {

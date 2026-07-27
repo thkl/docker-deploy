@@ -140,7 +140,13 @@ export function renderAdminPage() {
         }
 
         .project-actions {
-            width: 92px;
+            width: 170px;
+        }
+
+        .action-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
         }
 
         .empty {
@@ -511,7 +517,10 @@ export function renderAdminPage() {
                     '<td data-label="Proxy">' + (project.traefik && project.traefik.enabled ? '<code>' + escapeHtml(project.traefik.hostname) + '</code>' : '<span class="count">Off</span>') + '</td>' +
                     '<td data-label="Compose">' + (project.hasComposeOverride ? '<span class="count">Stored</span>' : '<span class="count">Project file</span>') + '</td>' +
                     '<td data-label="Token"><code>' + escapeHtml(project.token) + '</code></td>' +
-                    '<td data-label="Action"><button class="icon-button" type="button" data-edit="' + escapeHtml(project.name) + '">Edit</button></td>' +
+                    '<td data-label="Action"><div class="action-group">' +
+                        '<button class="icon-button" type="button" data-deploy="' + escapeHtml(project.name) + '">Deploy</button>' +
+                        '<button class="icon-button" type="button" data-edit="' + escapeHtml(project.name) + '">Edit</button>' +
+                    '</div></td>' +
                 '</tr>').join("") +
                 '</tbody></table>';
         }
@@ -566,16 +575,47 @@ export function renderAdminPage() {
         }
 
         list.addEventListener("click", (event) => {
-            const button = event.target.closest("[data-edit]");
-            if (!button) {
+            const editButton = event.target.closest("[data-edit]");
+            const deployButton = event.target.closest("[data-deploy]");
+            if (!editButton && !deployButton) {
                 return;
             }
 
-            const project = currentProjects.find((item) => item.name === button.dataset.edit);
-            if (project) {
+            if (editButton) {
+                const project = currentProjects.find((item) => item.name === editButton.dataset.edit);
+                if (!project) {
+                    return;
+                }
                 setEditMode(project);
+                return;
             }
+
+            deployProject(deployButton);
         });
+
+        async function deployProject(button) {
+            const projectName = button.dataset.deploy;
+            button.disabled = true;
+            message.className = "message";
+            message.textContent = "Deploying " + projectName + "...";
+
+            try {
+                const response = await fetch("/api/projects/" + encodeURIComponent(projectName) + "/deploy", {
+                    method: "POST"
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || "Could not start deployment.");
+                }
+
+                message.textContent = "Deployment started for " + projectName + ".";
+            } catch (error) {
+                message.className = "message error";
+                message.textContent = error instanceof Error ? error.message : "Could not start deployment.";
+            } finally {
+                button.disabled = false;
+            }
+        }
 
         cancelEditButton.addEventListener("click", setAddMode);
 
