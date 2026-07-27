@@ -471,6 +471,10 @@ export function renderAdminPage() {
                             <input type="checkbox" name="traefikWebsocket">
                             Add websocket upgrade headers
                         </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="traefikRemovePublishedPorts" checked>
+                            Remove published ports from compose
+                        </label>
                     </fieldset>
                     <div class="form-actions">
                         <button type="submit" id="submit-button">Save project</button>
@@ -567,6 +571,7 @@ export function renderAdminPage() {
             form.elements.traefikWildcardCertificate.checked = Boolean(project.traefik && project.traefik.wildcardCertificate);
             form.elements.traefikWildcardDomain.value = (project.traefik && project.traefik.wildcardDomain) || "";
             form.elements.traefikWebsocket.checked = Boolean(project.traefik && project.traefik.websocket);
+            form.elements.traefikRemovePublishedPorts.checked = !project.traefik || project.traefik.removePublishedPorts !== false;
             tokenHint.textContent = "Leave blank to keep the current webhook secret.";
             deployTokenHint.textContent = "Leave blank to keep the current CI deploy token.";
             message.className = "message";
@@ -648,7 +653,8 @@ export function renderAdminPage() {
                 traefikNetwork: String(formData.get("traefikNetwork") || "").trim(),
                 traefikWildcardCertificate: formData.has("traefikWildcardCertificate"),
                 traefikWildcardDomain: String(formData.get("traefikWildcardDomain") || "").trim(),
-                traefikWebsocket: formData.has("traefikWebsocket")
+                traefikWebsocket: formData.has("traefikWebsocket"),
+                traefikRemovePublishedPorts: form.elements.traefikRemovePublishedPorts.checked
             };
 
             button.disabled = true;

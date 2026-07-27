@@ -15,6 +15,7 @@ export interface TraefikSettings {
     websocket?: boolean;
     wildcardCertificate?: boolean;
     wildcardDomain?: string;
+    removePublishedPorts?: boolean;
 }
 
 export interface ProjectSettings {
@@ -43,4 +44,5 @@ export interface ProjectPayload {
     traefikWebsocket?: boolean;
     traefikWildcardCertificate?: boolean;
     traefikWildcardDomain?: string;
+    traefikRemovePublishedPorts?: boolean;
 }

@@ -81,6 +81,7 @@ export function normalizeTraefikSettings(body: ProjectPayload): TraefikSettings 
         network,
         websocket: Boolean(body.traefikWebsocket),
         wildcardCertificate: Boolean(body.traefikWildcardCertificate),
-        ...(wildcardDomain ? { wildcardDomain } : {})
+        ...(wildcardDomain ? { wildcardDomain } : {}),
+        removePublishedPorts: body.traefikRemovePublishedPorts !== false
     };
 }

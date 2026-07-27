@@ -23,12 +23,15 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
       "traefik.http.routers.${routerName}.tls.domains[0].main": ${yamlQuote(traefik.wildcardDomain)}
       "traefik.http.routers.${routerName}.tls.domains[0].sans": ${yamlQuote(`*.${traefik.wildcardDomain}`)}`
         : "";
+ 
     const websocketLabels = traefik.websocket
         ? `
       "traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection": "Upgrade"
       "traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Upgrade": "websocket"
       "traefik.http.routers.${routerName}.middlewares": "${routerName}-websocket@docker"`
         : "";
+  
+    const resetPorts = traefik.removePublishedPorts !== false ? "\n    ports: !reset []" : "";
 
     const overrideContent = `services:
   ${yamlQuote(serviceName)}:
@@ -41,9 +44,10 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
       "traefik.http.routers.${routerName}.tls.certresolver": ${yamlQuote(traefik.certResolver || "letsencrypt")}
 ${wildcardLabels}
       "traefik.http.services.${routerName}.loadbalancer.server.port": ${yamlQuote(traefik.port || 80)}
-${websocketLabels}
+    
     networks:
       - ${yamlQuote(network)}
+${resetPorts}
 
 networks:
   ${yamlQuote(network)}:
