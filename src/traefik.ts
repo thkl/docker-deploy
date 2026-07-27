@@ -18,6 +18,11 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
     const routerName = traefikRouterName(repoName);
     const network = traefik.network || "proxy";
     const rule = `Host(\`${traefik.hostname}\`)`;
+    const wildcardLabels = traefik.wildcardCertificate && traefik.wildcardDomain
+        ? `
+      "traefik.http.routers.${routerName}.tls.domains[0].main": ${yamlQuote(traefik.wildcardDomain)}
+      "traefik.http.routers.${routerName}.tls.domains[0].sans": ${yamlQuote(`*.${traefik.wildcardDomain}`)}`
+        : "";
     const websocketLabels = traefik.websocket
         ? `
       "traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection": "Upgrade"
@@ -34,6 +39,7 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
       "traefik.http.routers.${routerName}.entrypoints": ${yamlQuote(traefik.entryPoints || "websecure")}
       "traefik.http.routers.${routerName}.tls": "true"
       "traefik.http.routers.${routerName}.tls.certresolver": ${yamlQuote(traefik.certResolver || "letsencrypt")}
+${wildcardLabels}
       "traefik.http.services.${routerName}.loadbalancer.server.port": ${yamlQuote(traefik.port || 80)}
 ${websocketLabels}
     networks:

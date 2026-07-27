@@ -13,6 +13,8 @@ export interface TraefikSettings {
     certResolver?: string;
     network?: string;
     websocket?: boolean;
+    wildcardCertificate?: boolean;
+    wildcardDomain?: string;
 }
 
 export interface ProjectSettings {
@@ -39,4 +41,6 @@ export interface ProjectPayload {
     traefikCertResolver?: string;
     traefikNetwork?: string;
     traefikWebsocket?: boolean;
+    traefikWildcardCertificate?: boolean;
+    traefikWildcardDomain?: string;
 }

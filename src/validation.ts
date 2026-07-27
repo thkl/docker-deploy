@@ -49,6 +49,7 @@ export function normalizeTraefikSettings(body: ProjectPayload): TraefikSettings 
     const certResolver = body.traefikCertResolver?.trim() || "letsencrypt";
     const network = body.traefikNetwork?.trim() || "proxy";
     const service = normalizeOptionalName(body.traefikService);
+    const wildcardDomain = body.traefikWildcardDomain?.trim();
 
     if (!/^[a-zA-Z0-9._,-]+$/.test(entryPoints)) {
         throw new Error("Traefik entry points can only contain letters, numbers, dots, underscores, hyphens, and commas.");
@@ -62,6 +63,14 @@ export function normalizeTraefikSettings(body: ProjectPayload): TraefikSettings 
         throw new Error("Traefik network can only contain letters, numbers, dots, underscores, and hyphens.");
     }
 
+    if (body.traefikWildcardCertificate && !wildcardDomain) {
+        throw new Error("Wildcard certificate domain is required when wildcard certificates are enabled.");
+    }
+
+    if (wildcardDomain && !/^[a-zA-Z0-9.-]+$/.test(wildcardDomain)) {
+        throw new Error("Wildcard certificate domain can only contain letters, numbers, dots, and hyphens.");
+    }
+
     return {
         enabled: true,
         hostname,
@@ -70,6 +79,8 @@ export function normalizeTraefikSettings(body: ProjectPayload): TraefikSettings 
         entryPoints,
         certResolver,
         network,
-        websocket: Boolean(body.traefikWebsocket)
+        websocket: Boolean(body.traefikWebsocket),
+        wildcardCertificate: Boolean(body.traefikWildcardCertificate),
+        ...(wildcardDomain ? { wildcardDomain } : {})
     };
 }

@@ -460,6 +460,14 @@ export function renderAdminPage() {
                             </label>
                         </div>
                         <label class="checkbox-label">
+                            <input type="checkbox" name="traefikWildcardCertificate">
+                            Use wildcard certificate
+                        </label>
+                        <label class="full-field">
+                            Wildcard certificate domain
+                            <input name="traefikWildcardDomain" autocomplete="off" placeholder="bla.network">
+                        </label>
+                        <label class="checkbox-label">
                             <input type="checkbox" name="traefikWebsocket">
                             Add websocket upgrade headers
                         </label>
@@ -556,6 +564,8 @@ export function renderAdminPage() {
             form.elements.traefikEntryPoints.value = (project.traefik && project.traefik.entryPoints) || "";
             form.elements.traefikCertResolver.value = (project.traefik && project.traefik.certResolver) || "";
             form.elements.traefikNetwork.value = (project.traefik && project.traefik.network) || "";
+            form.elements.traefikWildcardCertificate.checked = Boolean(project.traefik && project.traefik.wildcardCertificate);
+            form.elements.traefikWildcardDomain.value = (project.traefik && project.traefik.wildcardDomain) || "";
             form.elements.traefikWebsocket.checked = Boolean(project.traefik && project.traefik.websocket);
             tokenHint.textContent = "Leave blank to keep the current webhook secret.";
             deployTokenHint.textContent = "Leave blank to keep the current CI deploy token.";
@@ -636,6 +646,8 @@ export function renderAdminPage() {
                 traefikEntryPoints: String(formData.get("traefikEntryPoints") || "").trim(),
                 traefikCertResolver: String(formData.get("traefikCertResolver") || "").trim(),
                 traefikNetwork: String(formData.get("traefikNetwork") || "").trim(),
+                traefikWildcardCertificate: formData.has("traefikWildcardCertificate"),
+                traefikWildcardDomain: String(formData.get("traefikWildcardDomain") || "").trim(),
                 traefikWebsocket: formData.has("traefikWebsocket")
             };
 
