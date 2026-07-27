@@ -37,14 +37,14 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
   ${yamlQuote(serviceName)}:
     labels:
       "traefik.enable": "true"
-      "traefik.docker.network": ${yamlQuote(network)}
+      "traefik.providers.docker.network": ${yamlQuote(network)}
       "traefik.http.routers.${routerName}.rule": ${yamlQuote(rule)}
       "traefik.http.routers.${routerName}.entrypoints": ${yamlQuote(traefik.entryPoints || "websecure")}
       "traefik.http.routers.${routerName}.tls": "true"
       "traefik.http.routers.${routerName}.tls.certresolver": ${yamlQuote(traefik.certResolver || "letsencrypt")}
 ${wildcardLabels}
       "traefik.http.services.${routerName}.loadbalancer.server.port": ${yamlQuote(traefik.port || 80)}
-    
+${websocketLabels}
     networks:
       - ${yamlQuote(network)}
 ${resetPorts}
