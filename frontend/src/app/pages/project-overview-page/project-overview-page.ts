@@ -1,7 +1,7 @@
 import { Component, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord } from '../../models/project';
+import { DeploymentRecord, ProjectSummary } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
@@ -16,6 +16,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly store = inject(ProjectStore);
   private readonly api = inject(ProjectApi);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly latestDeployment = signal<DeploymentRecord | null>(null);
   protected readonly loadingDeployment = signal(false);
@@ -24,6 +25,13 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly deployError = signal('');
   protected readonly streamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
   protected readonly autoScroll = signal(true);
+  protected readonly deleteProjectTarget = signal<ProjectSummary | null>(null);
+  protected readonly deleting = signal(false);
+  protected readonly deleteError = signal('');
+  protected readonly deleteConfirmation = signal('');
+  protected readonly deleteStopContainers = signal(true);
+  protected readonly deleteCheckout = signal(true);
+  protected readonly deleteDeploymentHistory = signal(true);
 
   private readonly deploymentStream = inject(DeploymentStreamService);
   private streamSubscription: Subscription | undefined;
@@ -65,6 +73,73 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
   protected refresh(name: string) {
     this.loadLatestDeployment(name);
+  }
+
+  protected openDelete(project: ProjectSummary) {
+    this.deleteProjectTarget.set(project);
+    this.deleteError.set('');
+    this.deleteConfirmation.set('');
+    this.deleteStopContainers.set(true);
+    this.deleteCheckout.set(true);
+    this.deleteDeploymentHistory.set(true);
+  }
+
+  protected closeDelete() {
+    if (this.deleting()) {
+      return;
+    }
+
+    this.deleteProjectTarget.set(null);
+    this.deleteError.set('');
+  }
+
+  protected updateDeleteConfirmation(event: Event) {
+    this.deleteConfirmation.set((event.target as HTMLInputElement).value);
+  }
+
+  protected updateDeleteOption(option: 'stop' | 'checkout' | 'history', event: Event) {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (option === 'stop') {
+      this.deleteStopContainers.set(checked);
+    } else if (option === 'checkout') {
+      this.deleteCheckout.set(checked);
+    } else {
+      this.deleteDeploymentHistory.set(checked);
+    }
+  }
+
+  protected canDelete() {
+    const project = this.deleteProjectTarget();
+    return Boolean(project && this.deleteConfirmation() === project.name && !this.deleting());
+  }
+
+  protected deleteProject() {
+    const project = this.deleteProjectTarget();
+    if (!project || !this.canDelete()) {
+      return;
+    }
+
+    this.deleting.set(true);
+    this.deleteError.set('');
+
+    this.api.deleteProject(project.name, {
+      confirmationName: this.deleteConfirmation(),
+      stopContainers: this.deleteStopContainers(),
+      deleteCheckout: this.deleteCheckout(),
+      deleteDeploymentHistory: this.deleteDeploymentHistory(),
+    }).subscribe({
+      next: () => {
+        this.deleteProjectTarget.set(null);
+        this.deleting.set(false);
+        this.disconnectDeploymentStream();
+        this.store.loadProjects();
+        this.router.navigate(['/projects']);
+      },
+      error: (error) => {
+        this.deleteError.set(error?.error?.error || `Could not delete ${project.name}.`);
+        this.deleting.set(false);
+      },
+    });
   }
 
   protected toggleAutoScroll(event: Event) {

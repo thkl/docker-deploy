@@ -89,18 +89,6 @@ code {
   color: var(--accent);
 }
 
-.danger-action {
-  background: transparent;
-  border-color: color-mix(in srgb, var(--danger), transparent 34%);
-  color: var(--danger);
-}
-
-.danger-action:hover {
-  background: transparent;
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
 .empty {
   color: var(--muted);
   padding: 2rem;
@@ -131,134 +119,8 @@ code {
   color: var(--danger);
 }
 
-.modal-backdrop {
-  align-items: center;
-  background: color-mix(in srgb, #020617, transparent 42%);
-  display: grid;
-  inset: 0;
-  padding: 1.25rem;
-  place-items: center;
-  position: fixed;
-  z-index: 20;
-}
-
-.delete-modal {
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--panel), var(--accent) 4%), var(--panel) 58%),
-    var(--panel);
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  display: grid;
-  gap: 1rem;
-  max-height: min(720px, calc(100vh - 2.5rem));
-  max-width: 620px;
-  overflow: auto;
-  padding: 1rem;
-  width: min(100%, 620px);
-}
-
-.modal-head {
-  align-items: flex-start;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  gap: 1rem;
-  justify-content: space-between;
-  margin: -1rem -1rem 0;
-  padding: 1rem;
-}
-
-h3 {
-  font-size: 1rem;
-  margin: 0;
-}
-
-.secondary {
-  background: transparent;
-  border-color: color-mix(in srgb, var(--accent), transparent 28%);
-  color: var(--accent-strong);
-}
-
-.secondary:hover {
-  background: transparent;
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.delete-options {
-  display: grid;
-  gap: 0.7rem;
-}
-
-.check-row {
-  align-items: flex-start;
-  background: color-mix(in srgb, var(--panel-soft), var(--accent) 4%);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  display: flex;
-  gap: 0.7rem;
-  padding: 0.72rem 0.8rem;
-}
-
-.check-row input {
-  accent-color: var(--accent);
-  flex: 0 0 auto;
-  height: 18px;
-  margin-top: 0.12rem;
-  width: 18px;
-}
-
-.check-row span {
-  color: var(--ink);
-  font-weight: 650;
-  min-width: 0;
-}
-
-.confirm-field {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.confirm-field span {
-  color: var(--muted);
-  font-size: 0.84rem;
-}
-
-.confirm-field input {
-  background: var(--panel-soft);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--ink);
-  font: inherit;
-  min-height: 40px;
-  padding: 0.6rem 0.72rem;
-  width: 100%;
-}
-
-.confirm-field input:focus {
-  border-color: var(--accent);
-  outline: 3px solid color-mix(in srgb, var(--accent), transparent 78%);
-}
-
-.delete-error {
-  color: var(--danger);
-  margin: 0;
-}
-
-.modal-actions {
-  align-items: center;
-  border-top: 1px solid var(--line);
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-  margin: 0 -1rem -1rem;
-  padding: 1rem;
-}
-
 @media (max-width: 720px) {
-  .page-head,
-  .modal-head,
-  .modal-actions {
+  .page-head {
     align-items: stretch;
     flex-direction: column;
   }
