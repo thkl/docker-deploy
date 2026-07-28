@@ -9,12 +9,11 @@ RUN corepack enable && corepack prepare pnpm@11.6.0 --activate
 
 # 2. Copy backend dependency files and install
 COPY package.json pnpm-lock.yaml* tsconfig.json ./
-RUN pnpm install --allow-build
+RUN pnpm prune && pnpm install --frozen-lockfile
 
 # 3. Copy frontend dependency files and install
 COPY frontend/package.json frontend/pnpm-lock.yaml* frontend/angular.json frontend/tsconfig*.json ./frontend/
-RUN cd frontend && pnpm install --allow-build
-
+RUN cd frontend && pnpm prune && pnpm install --frozen-lockfile
 # 4. Copy source code and build
 COPY src ./src
 COPY frontend/src ./frontend/src
