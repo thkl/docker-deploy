@@ -16,7 +16,9 @@ function shellQuote(value: string | number | boolean) {
 export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
-    const composeOverrideScript = renderComposeOverrideScript(appSettings);
+    const composeOverride = appSettings.composeOverride?.trim();
+    const composeOverrideScript = renderComposeOverrideScript(composeOverride);
+    const composeSelectionScript = renderComposeSelectionScript(composeOverride);
     const cleanupScript = renderCleanupScript(globalSettings);
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const quotedHostAppsVolume = shellQuote(`${hostAppsPath}:${hostAppsPath}`);
@@ -52,22 +54,8 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 echo "--> Fetching latest changes..."
                 git pull --ff-only
 
-                COMPOSE_FILE="docker-compose.yaml"
-                if [ ! -f "$COMPOSE_FILE" ] && [ -f docker-compose.yml ]; then
-                    COMPOSE_FILE="docker-compose.yml"
-                fi
-                if [ ! -f "$COMPOSE_FILE" ] && [ -f compose.yaml ]; then
-                    COMPOSE_FILE="compose.yaml"
-                fi
-                if [ ! -f "$COMPOSE_FILE" ] && [ -f compose.yml ]; then
-                    COMPOSE_FILE="compose.yml"
-                fi
-                if [ ! -f "$COMPOSE_FILE" ]; then
-                    echo "--> CRITICAL: No Docker Compose file found."
-                    exit 1
-                fi
-                COMPOSE_FILES="-f $COMPOSE_FILE"
 ${composeOverrideScript}
+${composeSelectionScript}
 ${traefikOverrideScript}
                 
                 echo "--> Testing build for new changes..."
@@ -85,8 +73,6 @@ ${cleanupScript}
                     exit 1
                 fi
 EOF`;
-    console.log("Running Docker with");
-    console.log(dockerRunCommand);
     
     const worker = exec(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
         if (error) {
@@ -109,18 +95,42 @@ EOF`;
     });
 }
 
-function renderComposeOverrideScript(appSettings: ProjectSettings) {
-    const composeOverride = appSettings.composeOverride?.trim();
+function renderComposeOverrideScript(composeOverride: string | undefined) {
     if (!composeOverride) {
         return "";
     }
 
     return `
-                echo "--> Writing stored Docker Compose override..."
+                echo "--> Writing stored Docker Compose file..."
                 cat > docker-compose.updater.yml << 'UPDATER_COMPOSE_EOF'
 ${composeOverride}
-UPDATER_COMPOSE_EOF
-                COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.updater.yml"`;
+UPDATER_COMPOSE_EOF`;
+}
+
+function renderComposeSelectionScript(composeOverride: string | undefined) {
+    if (composeOverride) {
+        return `
+                echo "--> Using stored Docker Compose file as deployment source."
+                COMPOSE_FILES="-f docker-compose.updater.yml"`;
+    }
+
+    return `
+                COMPOSE_FILE="docker-compose.yaml"
+                if [ ! -f "$COMPOSE_FILE" ] && [ -f docker-compose.yml ]; then
+                    COMPOSE_FILE="docker-compose.yml"
+                fi
+                if [ ! -f "$COMPOSE_FILE" ] && [ -f compose.yaml ]; then
+                    COMPOSE_FILE="compose.yaml"
+                fi
+                if [ ! -f "$COMPOSE_FILE" ] && [ -f compose.yml ]; then
+                    COMPOSE_FILE="compose.yml"
+                fi
+                if [ ! -f "$COMPOSE_FILE" ]; then
+                    echo "--> CRITICAL: No Docker Compose file found."
+                    exit 1
+                fi
+                echo "--> Using repository Docker Compose file: $COMPOSE_FILE"
+                COMPOSE_FILES="-f $COMPOSE_FILE"`;
 }
 
 function renderCleanupScript(globalSettings: GlobalSettings) {
