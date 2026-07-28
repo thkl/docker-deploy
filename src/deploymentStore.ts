@@ -34,6 +34,12 @@ export class DeploymentStore {
         return this.list(projectName).at(-1) ?? null;
     }
 
+    deleteProject(projectName: string) {
+        const data = this.readData();
+        delete data[projectName];
+        this.writeData(data);
+    }
+
     start(projectName: string, trigger: DeploymentTrigger) {
         const data = this.readData();
         const record: DeploymentRecord = {

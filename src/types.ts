@@ -66,3 +66,10 @@ export interface ProjectPayload {
     traefikWildcardDomain?: string;
     traefikRemovePublishedPorts?: boolean;
 }
+
+export interface DeleteProjectPayload {
+    confirmationName?: string;
+    stopContainers?: boolean;
+    deleteCheckout?: boolean;
+    deleteDeploymentHistory?: boolean;
+}

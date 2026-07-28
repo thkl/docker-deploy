@@ -59,6 +59,18 @@ export interface ProjectPayload {
   traefikRemovePublishedPorts: boolean;
 }
 
+export interface DeleteProjectPayload {
+  confirmationName: string;
+  stopContainers: boolean;
+  deleteCheckout: boolean;
+  deleteDeploymentHistory: boolean;
+}
+
+export interface DeleteProjectResult {
+  deleted: boolean;
+  actions: string[];
+}
+
 export interface GlobalSettings {
   dataRoot: string;
   defaultTraefikNetwork: string;

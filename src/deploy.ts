@@ -1,7 +1,10 @@
 import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
+
+const execAsync = promisify(exec);
 
 export interface DeploymentHooks {
     onOutput?: (stream: "stdout" | "stderr", chunk: string) => void;
@@ -93,6 +96,35 @@ EOF`;
     worker.stderr?.on("data", (chunk: Buffer | string) => {
         hooks.onOutput?.("stderr", String(chunk));
     });
+}
+
+export async function stopProjectContainers(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+    const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
+    const composeOverride = appSettings.composeOverride?.trim();
+    const composeOverrideScript = renderComposeOverrideScript(composeOverride);
+    const composeSelectionScript = renderComposeSelectionScript(composeOverride);
+    const quotedHostAppsPath = shellQuote(hostAppsPath);
+    const quotedHostAppsVolume = shellQuote(`${hostAppsPath}:${hostAppsPath}`);
+
+    const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${quotedHostAppsVolume} \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli docker-cli-compose > /dev/null 2>&1
+                mkdir -p ${quotedHostAppsPath}
+                cd ${quotedHostAppsPath}
+
+${composeOverrideScript}
+${composeSelectionScript}
+${traefikOverrideScript}
+
+                echo "--> Stopping project containers..."
+                docker compose $COMPOSE_FILES down
+EOF`;
+
+    const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
+    return `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
 }
 
 function renderComposeOverrideScript(composeOverride: string | undefined) {

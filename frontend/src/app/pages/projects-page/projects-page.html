@@ -84,6 +84,9 @@
                 <a [routerLink]="['/projects', project.name, 'settings']" (click)="store.selectProject(project.name)">
                   Settings
                 </a>
+                <button type="button" class="danger-action" (click)="openDelete(project)">
+                  Delete
+                </button>
               </div>
             </td>
           </tr>
@@ -92,3 +95,75 @@
     </table>
   }
 </section>
+
+@if (deleteProjectTarget(); as project) {
+  <div class="modal-backdrop" (click)="closeDelete()">
+    <section
+      class="delete-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-title"
+      (click)="$event.stopPropagation()"
+    >
+      <header class="modal-head">
+        <div>
+          <h3 id="delete-title">Delete {{ project.name }}</h3>
+          <p>This removes the project from the updater. Cleanup actions are optional.</p>
+        </div>
+        <button type="button" class="secondary" (click)="closeDelete()" [disabled]="deleting()">Cancel</button>
+      </header>
+
+      <div class="delete-options">
+        <label class="check-row">
+          <input
+            type="checkbox"
+            [checked]="deleteStopContainers()"
+            (change)="updateDeleteOption('stop', $event)"
+            [disabled]="deleting()"
+          />
+          <span>Stop containers with Docker Compose</span>
+        </label>
+        <label class="check-row">
+          <input
+            type="checkbox"
+            [checked]="deleteCheckout()"
+            (change)="updateDeleteOption('checkout', $event)"
+            [disabled]="deleting()"
+          />
+          <span>Delete checkout folder <code>{{ project.path }}</code></span>
+        </label>
+        <label class="check-row">
+          <input
+            type="checkbox"
+            [checked]="deleteDeploymentHistory()"
+            (change)="updateDeleteOption('history', $event)"
+            [disabled]="deleting()"
+          />
+          <span>Delete deployment history</span>
+        </label>
+      </div>
+
+      <label class="confirm-field">
+        <span>Type {{ project.name }} to confirm</span>
+        <input
+          type="text"
+          [value]="deleteConfirmation()"
+          (input)="updateDeleteConfirmation($event)"
+          [disabled]="deleting()"
+          autocomplete="off"
+        />
+      </label>
+
+      @if (deleteError()) {
+        <p class="delete-error">{{ deleteError() }}</p>
+      }
+
+      <footer class="modal-actions">
+        <button type="button" class="secondary" (click)="closeDelete()" [disabled]="deleting()">Cancel</button>
+        <button type="button" class="danger-action" (click)="deleteProject()" [disabled]="!canDelete()">
+          {{ deleting() ? 'Deleting...' : 'Delete project' }}
+        </button>
+      </footer>
+    </section>
+  </div>
+}

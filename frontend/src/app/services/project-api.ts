@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary } from '../models/project';
+import { DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -17,6 +17,10 @@ export class ProjectApi {
 
   updateProject(currentName: string, payload: ProjectPayload): Observable<{ name: string }> {
     return this.http.put<{ name: string }>(`/api/projects/${encodeURIComponent(currentName)}`, payload);
+  }
+
+  deleteProject(name: string, payload: DeleteProjectPayload): Observable<DeleteProjectResult> {
+    return this.http.delete<DeleteProjectResult>(`/api/projects/${encodeURIComponent(name)}`, { body: payload });
   }
 
   deployProject(name: string): Observable<{ status: string; deploymentId: string }> {

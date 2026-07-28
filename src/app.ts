@@ -1,16 +1,17 @@
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { createServer, Server } from "node:http";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import express, { NextFunction, Request, Response } from "express";
 import { WebSocket, WebSocketServer } from "ws";
 import { AdminAuth } from "./auth.js";
 import { importProjectCompose } from "./composeImport.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
-import { dispatchBuildWorker } from "./deploy.js";
+import { dispatchBuildWorker, stopProjectContainers } from "./deploy.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { verifySignature } from "./signature.js";
-import { AuthenticatedRequest, GlobalSettingsPayload, ProjectPayload, ProjectSettings } from "./types.js";
+import { AuthenticatedRequest, DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload, ProjectSettings } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 
 class App {
@@ -173,6 +174,53 @@ class App {
                 res.json({ name: nextName });
             } catch (error) {
                 res.status(400).json({ error: error instanceof Error ? error.message : "Could not update project." });
+            }
+        });
+
+        this.app.delete("/api/projects/:name", async (req: Request, res: Response) => {
+            try {
+                const rawProjectName = req.params.name;
+                const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+                const payload = req.body as DeleteProjectPayload;
+                const config = this.configStore.readConfig();
+                const appSettings = config[projectName];
+
+                if (!appSettings) {
+                    res.status(404).json({ error: "Project does not exist." });
+                    return;
+                }
+
+                if (payload.confirmationName !== projectName) {
+                    res.status(400).json({ error: "Confirmation name does not match the project name." });
+                    return;
+                }
+
+                const globalSettings = this.globalSettingsStore.readSettings();
+                const actions: string[] = [];
+
+                if (payload.stopContainers) {
+                    await stopProjectContainers(projectName, appSettings, globalSettings);
+                    actions.push("containers stopped");
+                }
+
+                if (payload.deleteCheckout) {
+                    const checkoutPath = assertSafeDeletePath(appSettings.path ?? defaultProjectPath(globalSettings, projectName), globalSettings.dataRoot);
+                    await rm(checkoutPath, { recursive: true, force: true });
+                    actions.push("checkout deleted");
+                }
+
+                if (payload.deleteDeploymentHistory) {
+                    this.deploymentStore.deleteProject(projectName);
+                    actions.push("deployment history deleted");
+                }
+
+                delete config[projectName];
+                this.configStore.writeConfig(config);
+                actions.push("project config deleted");
+
+                res.json({ deleted: true, actions });
+            } catch (error) {
+                res.status(400).json({ error: error instanceof Error ? error.message : "Could not delete project." });
             }
         });
 
@@ -423,3 +471,27 @@ class App {
 }
 
 new App().init();
+
+function assertSafeDeletePath(path: string, dataRoot: string) {
+    if (!isAbsolute(path)) {
+        throw new Error("Checkout path must be absolute before it can be deleted.");
+    }
+
+    const resolvedPath = resolve(path);
+    const resolvedDataRoot = resolve(dataRoot);
+    const relativeToDataRoot = relative(resolvedDataRoot, resolvedPath);
+    const pathParts = resolvedPath.split("/").filter(Boolean);
+
+    if (
+        resolvedPath === "/" ||
+        resolvedPath === resolvedDataRoot ||
+        pathParts.length < 3 ||
+        !relativeToDataRoot ||
+        relativeToDataRoot.startsWith("..") ||
+        isAbsolute(relativeToDataRoot)
+    ) {
+        throw new Error(`Refusing to delete unsafe checkout path: ${resolvedPath}`);
+    }
+
+    return resolvedPath;
+}
