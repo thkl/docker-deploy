@@ -1,0 +1,89 @@
+.page-head {
+  align-items: flex-end;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+h2 {
+  font-size: clamp(1.7rem, 3vw, 2.4rem);
+  margin: 0;
+}
+
+p {
+  color: var(--muted);
+  margin: 0.35rem 0 0;
+}
+
+.message {
+  color: var(--muted);
+  margin: 0 0 1rem;
+}
+
+.table-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  padding: 1rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+td small {
+  color: var(--muted);
+  display: block;
+  margin-top: 0.2rem;
+}
+
+code {
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.actions a {
+  align-items: center;
+  background: var(--button-subtle);
+  border-radius: 7px;
+  color: var(--accent-strong);
+  display: inline-flex;
+  font-weight: 750;
+  min-height: 38px;
+  padding: 0 0.9rem;
+}
+
+.actions a:hover {
+  background: var(--button-subtle-hover);
+}
+
+.empty {
+  color: var(--muted);
+  padding: 2rem;
+  text-align: center;
+}
+
+.muted {
+  color: var(--muted);
+}

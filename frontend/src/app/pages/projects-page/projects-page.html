@@ -1,0 +1,63 @@
+<section class="page-head">
+  <div>
+    <h2>Projects</h2>
+    <p>Deployable Docker Compose projects managed by the updater.</p>
+  </div>
+  <a routerLink="/projects/new" role="button">Add project</a>
+</section>
+
+@if (message()) {
+  <p class="message">{{ message() }}</p>
+}
+
+<section class="table-panel">
+  @if (store.loading()) {
+    <div class="empty">Loading projects...</div>
+  } @else if (store.projects().length === 0) {
+    <div class="empty">No projects configured yet.</div>
+  } @else {
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Path</th>
+          <th>Proxy</th>
+          <th>Compose</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (project of store.projects(); track project.name) {
+          <tr>
+            <td>
+              <strong>{{ project.name }}</strong>
+              <small>{{ project.deployToken ? 'CI trigger ready' : 'Manual/webhook only' }}</small>
+            </td>
+            <td><code>{{ project.path || '/root/docker-apps/' + project.name }}</code></td>
+            <td>
+              @if (project.traefik.enabled && project.traefik.hostname) {
+                <code>{{ project.traefik.hostname }}</code>
+              } @else {
+                <span class="muted">Off</span>
+              }
+            </td>
+            <td>{{ project.hasComposeOverride ? 'Stored override' : 'Project file' }}</td>
+            <td>
+              <div class="actions">
+                <button type="button" (click)="deploy(project.name)" [disabled]="deploying() === project.name">
+                  {{ deploying() === project.name ? 'Deploying' : 'Deploy' }}
+                </button>
+                <a [routerLink]="['/projects', project.name, 'overview']" (click)="store.selectProject(project.name)">
+                  Open
+                </a>
+                <a [routerLink]="['/projects', project.name, 'settings']" (click)="store.selectProject(project.name)">
+                  Settings
+                </a>
+              </div>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</section>

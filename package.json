@@ -4,7 +4,9 @@
   "private": true,
   "packageManager": "pnpm@11.6.0",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "build:frontend": "pnpm --dir frontend build",
+    "build:all": "pnpm run build && pnpm run build:frontend"
   },
   "dependencies": {
     "express": "5.2.1"

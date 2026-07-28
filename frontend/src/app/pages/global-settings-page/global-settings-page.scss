@@ -1,0 +1,15 @@
+.settings-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+h2 {
+  margin: 0 0 0.35rem;
+}
+
+p {
+  color: var(--muted);
+  margin: 0;
+}

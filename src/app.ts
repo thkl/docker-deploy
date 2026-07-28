@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import express, { NextFunction, Request, Response } from "express";
-import { renderAdminPage } from "./adminPage.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { dispatchBuildWorker } from "./deploy.js";
 import { verifySignature } from "./signature.js";
@@ -33,10 +34,6 @@ class App {
     private registerRoutes() {
         this.app.get("/health", (req: Request, res: Response) => {
             res.status(200).send("I am alive");
-        });
-
-        this.app.get("/", (req: Request, res: Response) => {
-            res.type("html").send(renderAdminPage());
         });
 
         this.app.get("/api/projects", (req: Request, res: Response, next: NextFunction) => {
@@ -191,6 +188,25 @@ class App {
 
             dispatchBuildWorker(projectName, appSettings);
             res.status(200).json({ status: "Build worker dispatched" });
+        });
+
+        this.registerFrontendRoutes();
+    }
+
+    private registerFrontendRoutes() {
+        const frontendPath = join(process.cwd(), "frontend", "dist", "frontend", "browser");
+        const indexPath = join(frontendPath, "index.html");
+
+        if (!existsSync(indexPath)) {
+            this.app.get("/", (req: Request, res: Response) => {
+                res.status(503).type("text").send("Angular frontend build missing. Run `pnpm run build:frontend`.");
+            });
+            return;
+        }
+
+        this.app.use(express.static(frontendPath));
+        this.app.get(/.*/, (req: Request, res: Response) => {
+            res.sendFile(indexPath);
         });
     }
 

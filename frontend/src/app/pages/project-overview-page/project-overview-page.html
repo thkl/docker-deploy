@@ -1,0 +1,36 @@
+@if (store.selectedProject(); as project) {
+  <section class="project-grid">
+    <article class="summary">
+      <span>Deploy target</span>
+      <strong>{{ project.path || '/root/docker-apps/' + project.name }}</strong>
+    </article>
+    <article class="summary">
+      <span>Proxy</span>
+      <strong>
+        @if (project.traefik.enabled && project.traefik.hostname) {
+          {{ project.traefik.hostname }}
+        } @else {
+          Off
+        }
+      </strong>
+    </article>
+    <article class="summary">
+      <span>Compose</span>
+      <strong>{{ project.hasComposeOverride ? 'Stored override' : 'Repository compose' }}</strong>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div>
+      <h2>Project operations</h2>
+      <p>Open settings to manage repository secrets, Traefik labels, compose overrides, and CI trigger data.</p>
+    </div>
+    <a [routerLink]="['/projects', project.name, 'settings']">Project settings</a>
+  </section>
+} @else {
+  <section class="panel">
+    <h2>No project selected</h2>
+    <p>Select a project from the sidebar.</p>
+  </section>
+}
+

@@ -1,0 +1,77 @@
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" routerLink="/projects">
+      <span class="brand-mark">U</span>
+      <span>
+        <strong>Updater</strong>
+        <small>Compose deploys</small>
+      </span>
+    </a>
+
+    <section class="nav-section">
+      <div class="nav-heading">
+        <span>Projects</span>
+        <a routerLink="/projects">Manage</a>
+      </div>
+
+      @if (store.loading()) {
+        <div class="nav-state">Loading projects...</div>
+      } @else if (store.projects().length === 0) {
+        <div class="nav-state">No projects configured.</div>
+      } @else {
+        <nav class="project-list" aria-label="Projects">
+          @for (project of store.projects(); track project.name) {
+            <a
+              [routerLink]="['/projects', project.name, 'overview']"
+              routerLinkActive="active"
+              (click)="store.selectProject(project.name)"
+            >
+              <span class="project-name">{{ project.name }}</span>
+              @if (project.traefik.enabled && project.traefik.hostname) {
+                <small>{{ project.traefik.hostname }}</small>
+              } @else {
+                <small>No proxy host</small>
+              }
+            </a>
+          }
+        </nav>
+      }
+    </section>
+
+    <section class="nav-section">
+      <div class="nav-heading">Global</div>
+      <nav class="global-nav" aria-label="Global settings">
+        <a routerLink="/settings" routerLinkActive="active">Settings</a>
+      </nav>
+    </section>
+  </aside>
+
+  <div class="workspace">
+    <header class="topbar">
+      <div>
+        <span class="context-label">Current project</span>
+        <h1>
+          @if (store.selectedProject(); as project) {
+            {{ project.name }}
+          } @else {
+            Projects
+          }
+        </h1>
+      </div>
+
+      @if (store.selectedProject(); as project) {
+        <div class="topbar-meta">
+          <span>{{ project.path || '/root/docker-apps/' + project.name }}</span>
+          @if (project.traefik.enabled && project.traefik.hostname) {
+            <span>{{ project.traefik.hostname }}</span>
+          }
+        </div>
+      }
+    </header>
+
+    <main class="content">
+      <router-outlet />
+    </main>
+  </div>
+</div>
+
