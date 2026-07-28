@@ -40,6 +40,7 @@ export class ProjectSettingsPage implements OnInit {
 
   protected readonly form = this.fb.group({
     name: ['', [Validators.required, Validators.pattern(/^[a-zA-Z0-9._-]+$/)]],
+    repositoryUrl: [''],
     token: [''],
     deployToken: [''],
     path: [''],
@@ -161,6 +162,7 @@ export class ProjectSettingsPage implements OnInit {
     this.wildcardCertificate.set(false);
     this.form.reset({
       name: '',
+      repositoryUrl: '',
       token: '',
       deployToken: '',
       path: '',
@@ -186,6 +188,7 @@ export class ProjectSettingsPage implements OnInit {
     this.wildcardCertificate.set(Boolean(traefik.wildcardCertificate));
     this.form.reset({
       name: project.name,
+      repositoryUrl: project.repositoryUrl ?? '',
       token: '',
       deployToken: '',
       path: project.path ?? '',
@@ -209,6 +212,7 @@ export class ProjectSettingsPage implements OnInit {
 
     return {
       name: value.name.trim(),
+      repositoryUrl: value.repositoryUrl.trim(),
       token: value.token.trim(),
       deployToken: value.deployToken.trim(),
       path: value.path.trim(),

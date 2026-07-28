@@ -13,6 +13,32 @@ export function normalizeProjectName(name?: string) {
     return repoName;
 }
 
+export function normalizeRepositoryUrl(repositoryUrl?: string) {
+    const value = repositoryUrl?.trim();
+    if (!value) {
+        return "";
+    }
+
+    if (/^git@[\w.-]+:[\w./-]+(?:\.git)?$/.test(value)) {
+        return value;
+    }
+
+    try {
+        const url = new URL(value);
+        if (url.protocol !== "https:" && url.protocol !== "ssh:") {
+            throw new Error("Repository URL must use https://, ssh://, or git@host:path syntax.");
+        }
+
+        return value;
+    } catch (error) {
+        if (error instanceof Error && error.message.startsWith("Repository URL")) {
+            throw error;
+        }
+
+        throw new Error("Repository URL must be a valid Git URL.");
+    }
+}
+
 function normalizeOptionalName(name?: string) {
     const value = name?.trim();
     if (!value) {

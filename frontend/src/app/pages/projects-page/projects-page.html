@@ -20,6 +20,7 @@
       <thead>
         <tr>
           <th>Project</th>
+          <th>Repository</th>
           <th>Path</th>
           <th>Proxy</th>
           <th>Compose</th>
@@ -33,6 +34,13 @@
             <td>
               <strong>{{ project.name }}</strong>
               <small>{{ project.deployToken ? 'CI trigger ready' : 'Manual/webhook only' }}</small>
+            </td>
+            <td>
+              @if (project.repositoryUrl) {
+                <code>{{ project.repositoryUrl }}</code>
+              } @else {
+                <span class="muted">Not set</span>
+              }
             </td>
             <td><code>{{ project.path || '/root/docker-apps/' + project.name }}</code></td>
             <td>

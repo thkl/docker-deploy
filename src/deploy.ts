@@ -21,6 +21,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const quotedHostAppsVolume = shellQuote(`${hostAppsPath}:${hostAppsPath}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
+    const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
 
     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
@@ -31,9 +32,25 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
 
+                if [ ! -d ${quotedHostAppsPath}/.git ]; then
+                    if [ -z "${quotedRepositoryUrl}" ]; then
+                        echo "--> CRITICAL: Project folder is missing or is not a Git checkout, and no repository URL is configured."
+                        exit 1
+                    fi
+
+                    if [ -d ${quotedHostAppsPath} ] && [ -n "$(find ${quotedHostAppsPath} -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
+                        echo "--> CRITICAL: Project folder exists but is not an empty directory or a Git checkout."
+                        exit 1
+                    fi
+
+                    echo "--> Cloning repository into project folder..."
+                    mkdir -p "$(dirname ${quotedHostAppsPath})"
+                    git clone ${quotedRepositoryUrl} ${quotedHostAppsPath}
+                fi
+
                 cd ${quotedHostAppsPath}
                 echo "--> Fetching latest changes..."
-                git pull
+                git pull --ff-only
 
                 COMPOSE_FILE="docker-compose.yaml"
                 if [ ! -f "$COMPOSE_FILE" ] && [ -f docker-compose.yml ]; then

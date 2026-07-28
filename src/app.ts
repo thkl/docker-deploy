@@ -10,7 +10,7 @@ import { dispatchBuildWorker } from "./deploy.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { verifySignature } from "./signature.js";
 import { AuthenticatedRequest, GlobalSettingsPayload, ProjectPayload, ProjectSettings } from "./types.js";
-import { normalizeProjectName, normalizeTraefikSettings } from "./validation.js";
+import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 
 class App {
     app = express();
@@ -84,6 +84,7 @@ class App {
                     .sort(([left], [right]) => left.localeCompare(right))
                     .map(([name, settings]) => ({
                         name,
+                        repositoryUrl: settings.repositoryUrl ?? "",
                         path: settings.path ?? defaultProjectPath(globalSettings, name),
                         token: maskToken(settings.token ?? ""),
                         deployToken: settings.deployToken ? maskToken(settings.deployToken) : "",
@@ -104,6 +105,7 @@ class App {
                 const payload = req.body as ProjectPayload;
                 const repoName = normalizeProjectName(payload.name);
                 const repoToken = payload.token?.trim();
+                const repositoryUrl = normalizeRepositoryUrl(payload.repositoryUrl);
                 const deployToken = payload.deployToken?.trim();
                 const repoPath = payload.path?.trim();
                 const composeOverride = payload.composeOverride?.trim();
@@ -118,6 +120,7 @@ class App {
                 const config = this.configStore.readConfig();
                 config[repoName] = {
                     token: repoToken,
+                    ...(repositoryUrl ? { repositoryUrl } : {}),
                     ...(deployToken ? { deployToken } : {}),
                     ...(repoPath ? { path: repoPath } : {}),
                     ...(composeOverride ? { composeOverride } : {}),
@@ -138,6 +141,7 @@ class App {
                 const payload = req.body as ProjectPayload;
                 const nextName = normalizeProjectName(payload.name);
                 const nextToken = payload.token?.trim();
+                const nextRepositoryUrl = normalizeRepositoryUrl(payload.repositoryUrl);
                 const nextDeployToken = payload.deployToken?.trim();
                 const nextPath = payload.path?.trim();
                 const composeOverride = payload.composeOverride?.trim();
@@ -162,6 +166,7 @@ class App {
 
                 config[nextName] = {
                     token: nextToken || existing.token,
+                    ...(nextRepositoryUrl ? { repositoryUrl: nextRepositoryUrl } : {}),
                     ...(nextDeployToken || existing.deployToken ? { deployToken: nextDeployToken || existing.deployToken } : {}),
                     ...(nextPath ? { path: nextPath } : {}),
                     ...(composeOverride ? { composeOverride } : {}),

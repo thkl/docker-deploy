@@ -5,6 +5,10 @@
       <strong>{{ project.path || '/root/docker-apps/' + project.name }}</strong>
     </article>
     <article class="summary">
+      <span>Repository</span>
+      <strong>{{ project.repositoryUrl || 'Not set' }}</strong>
+    </article>
+    <article class="summary">
       <span>Proxy</span>
       <strong>
         @if (project.traefik.enabled && project.traefik.hostname) {

@@ -29,6 +29,7 @@ export interface DeploymentRecord {
 
 export interface ProjectSummary {
   name: string;
+  repositoryUrl: string;
   path: string;
   token: string;
   deployToken: string;
@@ -40,6 +41,7 @@ export interface ProjectSummary {
 
 export interface ProjectPayload {
   name: string;
+  repositoryUrl: string;
   token: string;
   deployToken: string;
   path: string;

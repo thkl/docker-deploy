@@ -20,6 +20,7 @@ export interface TraefikSettings {
 
 export interface ProjectSettings {
     token: string;
+    repositoryUrl?: string;
     deployToken?: string;
     path?: string;
     composeOverride?: string;
@@ -49,6 +50,7 @@ export interface GlobalSettingsPayload {
 export interface ProjectPayload {
     name?: string;
     token?: string;
+    repositoryUrl?: string;
     deployToken?: string;
     path?: string;
     composeOverride?: string;
