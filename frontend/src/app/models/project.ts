@@ -12,6 +12,21 @@ export interface TraefikSettings {
   removePublishedPorts?: boolean;
 }
 
+export type DeploymentStatus = 'running' | 'succeeded' | 'failed';
+export type DeploymentTrigger = 'webhook' | 'ci' | 'manual';
+
+export interface DeploymentRecord {
+  id: string;
+  projectName: string;
+  trigger: DeploymentTrigger;
+  status: DeploymentStatus;
+  startedAt: string;
+  finishedAt?: string;
+  exitCode?: number | string;
+  error?: string;
+  log: string;
+}
+
 export interface ProjectSummary {
   name: string;
   path: string;
@@ -20,6 +35,7 @@ export interface ProjectSummary {
   composeOverride: string;
   hasComposeOverride: boolean;
   traefik: TraefikSettings;
+  lastDeployment?: DeploymentRecord | null;
 }
 
 export interface ProjectPayload {
@@ -40,4 +56,3 @@ export interface ProjectPayload {
   traefikWebsocket: boolean;
   traefikRemovePublishedPorts: boolean;
 }
-

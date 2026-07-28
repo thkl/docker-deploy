@@ -23,6 +23,7 @@
           <th>Path</th>
           <th>Proxy</th>
           <th>Compose</th>
+          <th>Last deploy</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -42,6 +43,18 @@
               }
             </td>
             <td>{{ project.hasComposeOverride ? 'Stored override' : 'Project file' }}</td>
+            <td>
+              <span
+                class="status-chip"
+                [class.running]="project.lastDeployment?.status === 'running'"
+                [class.failed]="project.lastDeployment?.status === 'failed'"
+              >
+                {{ statusLabel(project.lastDeployment) }}
+              </span>
+              @if (project.lastDeployment?.startedAt) {
+                <small>{{ formatDate(project.lastDeployment?.startedAt) }}</small>
+              }
+            </td>
             <td>
               <div class="actions">
                 <button type="button" (click)="deploy(project.name)" [disabled]="deploying() === project.name">

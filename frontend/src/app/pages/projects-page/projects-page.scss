@@ -60,6 +60,7 @@ code {
 .actions {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
@@ -86,4 +87,24 @@ code {
 
 .muted {
   color: var(--muted);
+}
+
+.status-chip {
+  background: color-mix(in srgb, var(--accent), transparent 84%);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0.25rem 0.65rem;
+}
+
+.status-chip.running {
+  background: color-mix(in srgb, #b7791f, transparent 84%);
+  color: #8a570f;
+}
+
+.status-chip.failed {
+  background: color-mix(in srgb, var(--danger), transparent 84%);
+  color: var(--danger);
 }

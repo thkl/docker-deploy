@@ -18,14 +18,77 @@
       <span>Compose</span>
       <strong>{{ project.hasComposeOverride ? 'Stored override' : 'Repository compose' }}</strong>
     </article>
+    <article class="summary">
+      <span>Last deployment</span>
+      <strong>{{ statusLabel(latestDeployment()) }}</strong>
+    </article>
   </section>
 
   <section class="panel">
     <div>
       <h2>Project operations</h2>
-      <p>Open settings to manage repository secrets, Traefik labels, compose overrides, and CI trigger data.</p>
+      <p>Deploy manually, inspect the latest worker output, or adjust project configuration.</p>
     </div>
-    <a [routerLink]="['/projects', project.name, 'settings']">Project settings</a>
+    <div class="panel-actions">
+      <button type="button" (click)="deploy(project.name)" [disabled]="deploying()">
+        {{ deploying() ? 'Starting...' : 'Deploy now' }}
+      </button>
+      <a [routerLink]="['/projects', project.name, 'settings']">Project settings</a>
+    </div>
+  </section>
+
+  @if (deployMessage()) {
+    <p class="notice">{{ deployMessage() }}</p>
+  }
+
+  @if (deployError()) {
+    <p class="notice error">{{ deployError() }}</p>
+  }
+
+  <section class="deploy-panel">
+    <div class="deploy-head">
+      <div>
+        <h2>Latest deployment</h2>
+        @if (latestDeployment(); as deployment) {
+          <p>
+            Started {{ formatDate(deployment.startedAt) }} by {{ deployment.trigger }}.
+            @if (deployment.finishedAt) {
+              Finished {{ formatDate(deployment.finishedAt) }}.
+            }
+          </p>
+        } @else {
+          <p>No deployment has been recorded for this project yet.</p>
+        }
+      </div>
+
+      <div class="deploy-head-actions">
+        @if (loadingDeployment()) {
+          <span class="loading-state">Refreshing</span>
+        }
+        <button type="button" class="secondary" (click)="refresh(project.name)" [disabled]="loadingDeployment()">
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    @if (latestDeployment(); as deployment) {
+      <div class="deploy-meta">
+        <span class="status-chip" [class.running]="deployment.status === 'running'" [class.failed]="deployment.status === 'failed'">
+          {{ statusLabel(deployment) }}
+        </span>
+        <span>ID {{ deployment.id }}</span>
+        @if (deployment.exitCode !== undefined) {
+          <span>Exit {{ deployment.exitCode }}</span>
+        }
+        @if (deployment.error) {
+          <span class="error-text">{{ deployment.error }}</span>
+        }
+      </div>
+
+      <pre class="deploy-log">{{ deployment.log || 'Waiting for worker output...' }}</pre>
+    } @else {
+      <div class="empty-log">Trigger a deployment to capture worker output here.</div>
+    }
   </section>
 } @else {
   <section class="panel">
@@ -33,4 +96,3 @@
     <p>Select a project from the sidebar.</p>
   </section>
 }
-

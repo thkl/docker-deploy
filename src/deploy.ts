@@ -2,11 +2,17 @@ import { exec } from "node:child_process";
 import { ProjectSettings } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 
+export interface DeploymentHooks {
+    onOutput?: (stream: "stdout" | "stderr", chunk: string) => void;
+    onSuccess?: () => void;
+    onFailure?: (error: Error & { code?: number | string }) => void;
+}
+
 function shellQuote(value: string | number | boolean) {
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
-export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings) {
+export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, hooks: DeploymentHooks = {}) {
     const hostAppsPath = appSettings.path ?? `/root/docker-apps/${repoName}`;
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings);
     const composeOverrideScript = renderComposeOverrideScript(appSettings);
@@ -59,14 +65,24 @@ ${traefikOverrideScript}
                 fi
 EOF`;
 
-    exec(dockerRunCommand, (error, stdout, stderr) => {
+    const worker = exec(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
         if (error) {
             console.error(`Deployment Aborted: ${error.message}`);
             if (stderr) console.error(`Worker Inner Error (stderr):\n${stderr}`);
             if (stdout) console.log(`Worker Partial Output (stdout):\n${stdout}`);
+            hooks.onFailure?.(error);
             return;
         }
         console.log(`Worker output:\n${stdout}`);
+        hooks.onSuccess?.();
+    });
+
+    worker.stdout?.on("data", (chunk: Buffer | string) => {
+        hooks.onOutput?.("stdout", String(chunk));
+    });
+
+    worker.stderr?.on("data", (chunk: Buffer | string) => {
+        hooks.onOutput?.("stderr", String(chunk));
     });
 }
 

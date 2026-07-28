@@ -1,5 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { DeploymentRecord } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -22,6 +23,7 @@ export class ProjectsPage {
     this.api.deployProject(name).subscribe({
       next: () => {
         this.message.set(`Deployment started for ${name}.`);
+        this.store.loadProjects();
         this.deploying.set('');
       },
       error: () => {
@@ -30,5 +32,27 @@ export class ProjectsPage {
       },
     });
   }
-}
 
+  protected statusLabel(deployment?: DeploymentRecord | null) {
+    if (!deployment) {
+      return 'No deploy';
+    }
+
+    return deployment.status === 'running'
+      ? 'Running'
+      : deployment.status === 'succeeded'
+        ? 'Succeeded'
+        : 'Failed';
+  }
+
+  protected formatDate(value?: string) {
+    if (!value) {
+      return '';
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(value));
+  }
+}

@@ -2,15 +2,17 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import express, { NextFunction, Request, Response } from "express";
 import { ConfigStore, maskToken } from "./configStore.js";
+import { DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
 import { dispatchBuildWorker } from "./deploy.js";
 import { verifySignature } from "./signature.js";
-import { AuthenticatedRequest, ProjectPayload } from "./types.js";
+import { AuthenticatedRequest, ProjectPayload, ProjectSettings } from "./types.js";
 import { normalizeProjectName, normalizeTraefikSettings } from "./validation.js";
 
 class App {
     app = express();
     port = parseInt(process.env.PORT || "3999");
     configStore = new ConfigStore();
+    deploymentStore = new DeploymentStore();
 
     init() {
         this.configureBodyParsing();
@@ -47,7 +49,8 @@ class App {
                         deployToken: settings.deployToken ? maskToken(settings.deployToken) : "",
                         composeOverride: settings.composeOverride ?? "",
                         hasComposeOverride: Boolean(settings.composeOverride),
-                        traefik: settings.traefik ?? { enabled: false }
+                        traefik: settings.traefik ?? { enabled: false },
+                        lastDeployment: this.deploymentStore.latest(name)
                     }));
 
                 res.json(projects);
@@ -145,7 +148,7 @@ class App {
             }
 
             if (verifySignature(appSettings.token, req, res)) {
-                dispatchBuildWorker(repoName, appSettings);
+                this.startDeployment(repoName, appSettings, "webhook");
                 res.status(200).send("Build worker dispatched");
             }
         });
@@ -172,8 +175,8 @@ class App {
                 return;
             }
 
-            dispatchBuildWorker(projectName, appSettings);
-            res.status(200).json({ status: "Build worker dispatched" });
+            const deployment = this.startDeployment(projectName, appSettings, "ci");
+            res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id });
         });
 
         this.app.post("/api/projects/:name/deploy", (req: Request, res: Response) => {
@@ -186,11 +189,51 @@ class App {
                 return;
             }
 
-            dispatchBuildWorker(projectName, appSettings);
-            res.status(200).json({ status: "Build worker dispatched" });
+            const deployment = this.startDeployment(projectName, appSettings, "manual");
+            res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id });
+        });
+
+        this.app.get("/api/projects/:name/deployments", (req: Request, res: Response) => {
+            const rawProjectName = req.params.name;
+            const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+
+            if (!this.configStore.fetchProfile(projectName)) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            res.json(this.deploymentStore.list(projectName));
+        });
+
+        this.app.get("/api/projects/:name/deployments/latest", (req: Request, res: Response) => {
+            const rawProjectName = req.params.name;
+            const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+
+            if (!this.configStore.fetchProfile(projectName)) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            res.json(this.deploymentStore.latest(projectName));
         });
 
         this.registerFrontendRoutes();
+    }
+
+    private startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
+        const deployment = this.deploymentStore.start(projectName, trigger);
+
+        dispatchBuildWorker(projectName, appSettings, {
+            onOutput: (stream, chunk) => this.deploymentStore.append(projectName, deployment.id, stream, chunk),
+            onSuccess: () => this.deploymentStore.finish(projectName, deployment.id, "succeeded"),
+            onFailure: (error) =>
+                this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                    error: error.message,
+                    exitCode: error.code
+                })
+        });
+
+        return deployment;
     }
 
     private registerFrontendRoutes() {
