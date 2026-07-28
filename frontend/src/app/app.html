@@ -1,3 +1,8 @@
+@if (!auth.status()) {
+  <main class="auth-loading">Loading updater...</main>
+} @else if (!auth.authenticated()) {
+  <router-outlet />
+} @else {
 <div class="shell">
   <aside class="sidebar">
     <a class="brand" routerLink="/projects">
@@ -42,6 +47,9 @@
       <div class="nav-heading">Global</div>
       <nav class="global-nav" aria-label="Global settings">
         <a routerLink="/settings" routerLinkActive="active">Settings</a>
+        @if (auth.authRequired()) {
+          <button type="button" (click)="logout()">Logout</button>
+        }
       </nav>
     </section>
   </aside>
@@ -74,4 +82,4 @@
     </main>
   </div>
 </div>
-
+}

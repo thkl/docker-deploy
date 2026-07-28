@@ -1,5 +1,87 @@
-<section class="settings-panel">
-  <h2>Global settings</h2>
-  <p>Global deployment defaults will live here: data root, Traefik defaults, cleanup policy, and API hardening.</p>
+<section class="page-head">
+  <div>
+    <h2>Global settings</h2>
+    <p>Defaults used when a project does not override deployment paths or Traefik routing values.</p>
+  </div>
 </section>
 
+@if (error()) {
+  <p class="notice error">{{ error() }}</p>
+}
+
+@if (message()) {
+  <p class="notice">{{ message() }}</p>
+}
+
+@if (loading()) {
+  <section class="settings-panel">
+    <p>Loading settings...</p>
+  </section>
+} @else {
+  <form [formGroup]="form" (ngSubmit)="save()" class="settings-form">
+    <section class="settings-panel">
+      <div class="panel-head">
+        <h3>Deployment defaults</h3>
+        <span>Repository paths and worker mounts</span>
+      </div>
+
+      <div class="field-grid">
+        <label>
+          <span>Data root</span>
+          <input formControlName="dataRoot" placeholder="/root/docker-apps" />
+        </label>
+
+        <label>
+          <span>SSH key path</span>
+          <input formControlName="sshKeyPath" placeholder="~/.ssh" />
+        </label>
+      </div>
+
+      <label class="check-row">
+        <input type="checkbox" formControlName="cleanupAfterDeploy" />
+        <span>Prefer cleanup after deploy once safety checks are available</span>
+      </label>
+    </section>
+
+    <section class="settings-panel">
+      <div class="panel-head">
+        <h3>Traefik defaults</h3>
+        <span>Applied when project-level Traefik fields are empty</span>
+      </div>
+
+      <div class="field-grid">
+        <label>
+          <span>Default network</span>
+          <input formControlName="defaultTraefikNetwork" placeholder="proxy" />
+        </label>
+
+        <label>
+          <span>Default entry points</span>
+          <input formControlName="defaultTraefikEntryPoints" placeholder="websecure" />
+        </label>
+
+        <label>
+          <span>Default cert resolver</span>
+          <input formControlName="defaultTraefikCertResolver" placeholder="letsencrypt" />
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-panel">
+      <div class="panel-head">
+        <h3>Admin access</h3>
+        <span>Set UPDATER_ADMIN_TOKEN or ADMIN_TOKEN on the server to require login</span>
+      </div>
+
+      <p class="muted-copy">
+        The admin token is intentionally configured through the process environment, not stored in the web UI.
+      </p>
+    </section>
+
+    <footer class="form-actions">
+      <button type="submit" [disabled]="saving()">
+        {{ saving() ? 'Saving...' : 'Save settings' }}
+      </button>
+    </footer>
+  </form>
+}

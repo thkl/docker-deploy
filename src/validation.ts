@@ -1,4 +1,4 @@
-import { ProjectPayload, TraefikSettings } from "./types.js";
+import { GlobalSettings, ProjectPayload, TraefikSettings } from "./types.js";
 
 export function normalizeProjectName(name?: string) {
     const repoName = name?.trim();
@@ -26,7 +26,7 @@ function normalizeOptionalName(name?: string) {
     return value;
 }
 
-export function normalizeTraefikSettings(body: ProjectPayload): TraefikSettings | undefined {
+export function normalizeTraefikSettings(body: ProjectPayload, globalSettings?: GlobalSettings): TraefikSettings | undefined {
     if (!body.traefikEnabled) {
         return undefined;
     }
@@ -45,9 +45,9 @@ export function normalizeTraefikSettings(body: ProjectPayload): TraefikSettings 
         throw new Error("Traefik service port must be a number between 1 and 65535.");
     }
 
-    const entryPoints = body.traefikEntryPoints?.trim() || "websecure";
-    const certResolver = body.traefikCertResolver?.trim() || "letsencrypt";
-    const network = body.traefikNetwork?.trim() || "proxy";
+    const entryPoints = body.traefikEntryPoints?.trim() || globalSettings?.defaultTraefikEntryPoints || "websecure";
+    const certResolver = body.traefikCertResolver?.trim() || globalSettings?.defaultTraefikCertResolver || "letsencrypt";
+    const network = body.traefikNetwork?.trim() || globalSettings?.defaultTraefikNetwork || "proxy";
     const service = normalizeOptionalName(body.traefikService);
     const wildcardDomain = body.traefikWildcardDomain?.trim();
 

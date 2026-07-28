@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ProjectPayload, ProjectSummary } from '../../models/project';
+import { GlobalSettings, ProjectPayload, ProjectSummary } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -29,6 +29,14 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly wildcardCertificate = signal(false);
   protected readonly title = computed(() => (this.isNew() ? 'New project' : `Settings for ${this.currentName()}`));
   protected readonly submitLabel = computed(() => (this.isNew() ? 'Create project' : 'Save'));
+  private readonly globalDefaults = signal<GlobalSettings>({
+    dataRoot: '/root/docker-apps',
+    defaultTraefikNetwork: 'proxy',
+    defaultTraefikEntryPoints: 'websecure',
+    defaultTraefikCertResolver: 'letsencrypt',
+    sshKeyPath: '~/.ssh',
+    cleanupAfterDeploy: false,
+  });
 
   protected readonly form = this.fb.group({
     name: ['', [Validators.required, Validators.pattern(/^[a-zA-Z0-9._-]+$/)]],
@@ -72,6 +80,15 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   ngOnInit() {
+    this.api.getGlobalSettings().subscribe({
+      next: (settings) => {
+        this.globalDefaults.set(settings);
+        if (this.isNew()) {
+          this.resetForNewProject();
+        }
+      },
+    });
+
     this.route.paramMap.subscribe((params) => {
       const name = params.get('name');
 
@@ -152,9 +169,9 @@ export class ProjectSettingsPage implements OnInit {
       traefikHostname: '',
       traefikService: '',
       traefikPort: '3000',
-      traefikEntryPoints: 'websecure',
-      traefikCertResolver: 'letsencrypt',
-      traefikNetwork: 'proxy',
+      traefikEntryPoints: this.globalDefaults().defaultTraefikEntryPoints,
+      traefikCertResolver: this.globalDefaults().defaultTraefikCertResolver,
+      traefikNetwork: this.globalDefaults().defaultTraefikNetwork,
       traefikWildcardCertificate: false,
       traefikWildcardDomain: '',
       traefikWebsocket: false,
@@ -177,9 +194,9 @@ export class ProjectSettingsPage implements OnInit {
       traefikHostname: traefik.hostname ?? '',
       traefikService: traefik.service ?? '',
       traefikPort: traefik.port ? String(traefik.port) : '3000',
-      traefikEntryPoints: traefik.entryPoints ?? 'websecure',
-      traefikCertResolver: traefik.certResolver ?? 'letsencrypt',
-      traefikNetwork: traefik.network ?? 'proxy',
+      traefikEntryPoints: traefik.entryPoints ?? this.globalDefaults().defaultTraefikEntryPoints,
+      traefikCertResolver: traefik.certResolver ?? this.globalDefaults().defaultTraefikCertResolver,
+      traefikNetwork: traefik.network ?? this.globalDefaults().defaultTraefikNetwork,
       traefikWildcardCertificate: Boolean(traefik.wildcardCertificate),
       traefikWildcardDomain: traefik.wildcardDomain ?? '',
       traefikWebsocket: Boolean(traefik.websocket),

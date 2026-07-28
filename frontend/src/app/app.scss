@@ -81,13 +81,19 @@
 }
 
 .project-list a,
-.global-nav a {
+.global-nav a,
+.global-nav button {
+  background: transparent;
   border: 1px solid transparent;
   border-radius: 7px;
+  color: inherit;
   display: grid;
+  font: inherit;
   gap: 0.15rem;
+  justify-content: stretch;
   min-width: 0;
   padding: 0.62rem 0.7rem;
+  text-align: left;
   transition:
     background-color 140ms ease,
     border-color 140ms ease,
@@ -95,8 +101,10 @@
 }
 
 .project-list a:hover,
-.global-nav a:hover {
+.global-nav a:hover,
+.global-nav button:hover {
   background: color-mix(in srgb, var(--sidebar-ink), transparent 94%);
+  transform: none;
 }
 
 .project-list a.active,
@@ -153,6 +161,14 @@ h1 {
 
 .content {
   padding: 1.35rem;
+}
+
+.auth-loading {
+  align-items: center;
+  color: var(--muted);
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
 }
 
 @media (max-width: 920px) {

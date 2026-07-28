@@ -3,18 +3,22 @@ import { createServer, Server } from "node:http";
 import { join } from "node:path";
 import express, { NextFunction, Request, Response } from "express";
 import { WebSocket, WebSocketServer } from "ws";
+import { AdminAuth } from "./auth.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
 import { dispatchBuildWorker } from "./deploy.js";
+import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { verifySignature } from "./signature.js";
-import { AuthenticatedRequest, ProjectPayload, ProjectSettings } from "./types.js";
+import { AuthenticatedRequest, GlobalSettingsPayload, ProjectPayload, ProjectSettings } from "./types.js";
 import { normalizeProjectName, normalizeTraefikSettings } from "./validation.js";
 
 class App {
     app = express();
     port = parseInt(process.env.PORT || "3999");
     configStore = new ConfigStore();
+    globalSettingsStore = new GlobalSettingsStore();
     deploymentStore = new DeploymentStore();
+    adminAuth = new AdminAuth();
     deploymentClients = new Map<string, Set<WebSocket>>();
 
     init() {
@@ -43,13 +47,44 @@ class App {
             res.status(200).send("I am alive");
         });
 
+        this.app.get("/api/auth/status", (req: Request, res: Response) => {
+            res.json(this.adminAuth.status());
+        });
+
+        this.app.post("/api/auth/login", (req: Request, res: Response) => {
+            const token = typeof req.body.token === "string" ? req.body.token : "";
+            if (!this.adminAuth.login(token)) {
+                res.status(401).json({ error: "Invalid admin token." });
+                return;
+            }
+
+            res.json({ authenticated: true, token: this.adminAuth.required ? token : "" });
+        });
+
+        this.app.use("/api/settings", this.adminAuth.requireAuth);
+        this.app.use("/api/projects", this.adminAuth.requireAuth);
+
+        this.app.get("/api/settings", (req: Request, res: Response) => {
+            res.json(this.globalSettingsStore.readSettings());
+        });
+
+        this.app.put("/api/settings", (req: Request, res: Response) => {
+            try {
+                const settings = this.globalSettingsStore.writeSettings(req.body as GlobalSettingsPayload);
+                res.json(settings);
+            } catch (error) {
+                res.status(400).json({ error: error instanceof Error ? error.message : "Could not save global settings." });
+            }
+        });
+
         this.app.get("/api/projects", (req: Request, res: Response, next: NextFunction) => {
             try {
+                const globalSettings = this.globalSettingsStore.readSettings();
                 const projects = Object.entries(this.configStore.readConfig())
                     .sort(([left], [right]) => left.localeCompare(right))
                     .map(([name, settings]) => ({
                         name,
-                        path: settings.path ?? "",
+                        path: settings.path ?? defaultProjectPath(globalSettings, name),
                         token: maskToken(settings.token ?? ""),
                         deployToken: settings.deployToken ? maskToken(settings.deployToken) : "",
                         composeOverride: settings.composeOverride ?? "",
@@ -72,7 +107,8 @@ class App {
                 const deployToken = payload.deployToken?.trim();
                 const repoPath = payload.path?.trim();
                 const composeOverride = payload.composeOverride?.trim();
-                const traefik = normalizeTraefikSettings(payload);
+                const globalSettings = this.globalSettingsStore.readSettings();
+                const traefik = normalizeTraefikSettings(payload, globalSettings);
 
                 if (!repoToken) {
                     res.status(400).json({ error: "Webhook secret token is required." });
@@ -105,7 +141,8 @@ class App {
                 const nextDeployToken = payload.deployToken?.trim();
                 const nextPath = payload.path?.trim();
                 const composeOverride = payload.composeOverride?.trim();
-                const traefik = normalizeTraefikSettings(payload);
+                const globalSettings = this.globalSettingsStore.readSettings();
+                const traefik = normalizeTraefikSettings(payload, globalSettings);
                 const config = this.configStore.readConfig();
                 const existing = config[currentName];
 
@@ -227,9 +264,10 @@ class App {
 
     private startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
         const deployment = this.deploymentStore.start(projectName, trigger);
+        const globalSettings = this.globalSettingsStore.readSettings();
         this.broadcastDeployment(projectName);
 
-        dispatchBuildWorker(projectName, appSettings, {
+        dispatchBuildWorker(projectName, appSettings, globalSettings, {
             onOutput: (stream, chunk) => {
                 this.deploymentStore.append(projectName, deployment.id, stream, chunk);
                 this.broadcastDeployment(projectName);
@@ -273,6 +311,12 @@ class App {
 
             if (!this.configStore.fetchProfile(projectName)) {
                 socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+                socket.destroy();
+                return;
+            }
+
+            if (!this.adminAuth.isValidToken(url.searchParams.get("token") ?? "")) {
+                socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
                 socket.destroy();
                 return;
             }

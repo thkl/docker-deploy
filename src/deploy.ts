@@ -1,5 +1,6 @@
 import { exec } from "node:child_process";
-import { ProjectSettings } from "./types.js";
+import { defaultProjectPath } from "./globalSettingsStore.js";
+import { GlobalSettings, ProjectSettings } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 
 export interface DeploymentHooks {
@@ -12,19 +13,21 @@ function shellQuote(value: string | number | boolean) {
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
-export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, hooks: DeploymentHooks = {}) {
-    const hostAppsPath = appSettings.path ?? `/root/docker-apps/${repoName}`;
-    const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings);
+export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
+    const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
     const composeOverrideScript = renderComposeOverrideScript(appSettings);
+    const cleanupScript = renderCleanupScript(globalSettings);
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const quotedHostAppsVolume = shellQuote(`${hostAppsPath}:${hostAppsPath}`);
+    const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
 
     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
     const dockerRunCommand = `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${quotedHostAppsVolume} \
-            -v ~/.ssh:/root/.ssh:ro \
+            -v ${quotedSshKeyPath} \
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
 
@@ -59,6 +62,7 @@ ${traefikOverrideScript}
                     echo "--> Starting newly built container..."
                     docker compose $COMPOSE_FILES up -d --no-build
                     echo "--> Deployment successful."
+${cleanupScript}
                 else
                     echo "--> CRITICAL: Build failed! Keeping the old container running."
                     exit 1
@@ -98,4 +102,25 @@ function renderComposeOverrideScript(appSettings: ProjectSettings) {
 ${composeOverride}
 UPDATER_COMPOSE_EOF
                 COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.updater.yml"`;
+}
+
+function renderCleanupScript(globalSettings: GlobalSettings) {
+    if (!globalSettings.cleanupAfterDeploy) {
+        return "";
+    }
+
+    return `
+                    echo "--> Cleanup is enabled. Leaving compose artifacts in place; repository cleanup is not active yet."`;
+}
+
+function resolveHostPath(value: string) {
+    if (value === "~") {
+        return process.env.HOME ?? value;
+    }
+
+    if (value.startsWith("~/")) {
+        return `${process.env.HOME ?? "~"}${value.slice(1)}`;
+    }
+
+    return value;
 }

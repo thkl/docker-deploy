@@ -1,0 +1,81 @@
+.login-shell {
+  align-items: center;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft), transparent 34%), transparent 62%),
+    var(--bg);
+  display: grid;
+  min-height: 100vh;
+  padding: 1.25rem;
+  place-items: center;
+}
+
+.login-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 1.25rem;
+  max-width: 420px;
+  padding: 1.1rem;
+  width: min(100%, 420px);
+}
+
+.brand-lockup {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+}
+
+.brand-mark {
+  align-items: center;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 36%);
+  border-radius: 7px;
+  color: var(--accent-strong);
+  display: inline-flex;
+  font-weight: 850;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+h1 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+p {
+  color: var(--muted);
+  margin: 0.2rem 0 0;
+}
+
+form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+label span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+input {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  min-height: 38px;
+  padding: 0.58rem 0.7rem;
+}
+
+.error {
+  color: var(--danger);
+}

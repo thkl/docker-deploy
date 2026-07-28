@@ -56,3 +56,16 @@ export interface ProjectPayload {
   traefikWebsocket: boolean;
   traefikRemovePublishedPorts: boolean;
 }
+
+export interface GlobalSettings {
+  dataRoot: string;
+  defaultTraefikNetwork: string;
+  defaultTraefikEntryPoints: string;
+  defaultTraefikCertResolver: string;
+  sshKeyPath: string;
+  cleanupAfterDeploy: boolean;
+}
+
+export interface AuthStatus {
+  required: boolean;
+}

@@ -28,6 +28,24 @@ export interface ProjectSettings {
 
 export type ProjectConfig = Record<string, ProjectSettings>;
 
+export interface GlobalSettings {
+    dataRoot: string;
+    defaultTraefikNetwork: string;
+    defaultTraefikEntryPoints: string;
+    defaultTraefikCertResolver: string;
+    sshKeyPath: string;
+    cleanupAfterDeploy: boolean;
+}
+
+export interface GlobalSettingsPayload {
+    dataRoot?: string;
+    defaultTraefikNetwork?: string;
+    defaultTraefikEntryPoints?: string;
+    defaultTraefikCertResolver?: string;
+    sshKeyPath?: string;
+    cleanupAfterDeploy?: boolean;
+}
+
 export interface ProjectPayload {
     name?: string;
     token?: string;

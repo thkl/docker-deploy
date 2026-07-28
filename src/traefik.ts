@@ -1,4 +1,4 @@
-import { ProjectSettings } from "./types.js";
+import { GlobalSettings, ProjectSettings } from "./types.js";
 
 function yamlQuote(value: string | number | boolean) {
     return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -8,7 +8,7 @@ function traefikRouterName(repoName: string) {
     return repoName.replace(/[^a-zA-Z0-9_-]/g, "-");
 }
 
-export function renderTraefikOverrideScript(repoName: string, settings: ProjectSettings) {
+export function renderTraefikOverrideScript(repoName: string, settings: ProjectSettings, globalSettings: GlobalSettings) {
     const traefik = settings.traefik;
     if (!traefik?.enabled) {
         return "";
@@ -16,7 +16,7 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
 
     const serviceName = traefik.service || repoName;
     const routerName = traefikRouterName(repoName);
-    const network = traefik.network || "proxy";
+    const network = traefik.network || globalSettings.defaultTraefikNetwork;
     const rule = `Host(\`${traefik.hostname}\`)`;
     const wildcardLabels = traefik.wildcardCertificate && traefik.wildcardDomain
         ? `
@@ -39,9 +39,9 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
       "traefik.enable": "true"
       "traefik.providers.docker.network": ${yamlQuote(network)}
       "traefik.http.routers.${routerName}.rule": ${yamlQuote(rule)}
-      "traefik.http.routers.${routerName}.entrypoints": ${yamlQuote(traefik.entryPoints || "websecure")}
+      "traefik.http.routers.${routerName}.entrypoints": ${yamlQuote(traefik.entryPoints || globalSettings.defaultTraefikEntryPoints)}
       "traefik.http.routers.${routerName}.tls": "true"
-      "traefik.http.routers.${routerName}.tls.certresolver": ${yamlQuote(traefik.certResolver || "letsencrypt")}
+      "traefik.http.routers.${routerName}.tls.certresolver": ${yamlQuote(traefik.certResolver || globalSettings.defaultTraefikCertResolver)}
 ${wildcardLabels}
       "traefik.http.services.${routerName}.loadbalancer.server.port": ${yamlQuote(traefik.port || 80)}
 ${websocketLabels}

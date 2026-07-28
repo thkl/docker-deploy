@@ -1,0 +1,26 @@
+<main class="login-shell">
+  <section class="login-panel">
+    <div class="brand-lockup">
+      <span class="brand-mark">U</span>
+      <div>
+        <h1>Updater</h1>
+        <p>Admin access</p>
+      </div>
+    </div>
+
+    <form [formGroup]="form" (ngSubmit)="submit()">
+      <label>
+        <span>Admin token</span>
+        <input formControlName="token" type="password" autocomplete="current-password" autofocus />
+      </label>
+
+      @if (error()) {
+        <p class="error">{{ error() }}</p>
+      }
+
+      <button type="submit" [disabled]="loading()">
+        {{ loading() ? 'Signing in...' : 'Sign in' }}
+      </button>
+    </form>
+  </section>
+</main>
