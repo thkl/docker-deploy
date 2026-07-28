@@ -11,9 +11,19 @@ const defaultSettings: GlobalSettings = {
     cleanupAfterDeploy: false
 };
 
+/**
+ * JSON-backed global settings store.
+ *
+ * These settings describe controller-wide defaults such as the checkout root,
+ * Traefik defaults, SSH key mount path, and cleanup behavior.
+ */
 export class GlobalSettingsStore {
     constructor(private readonly settingsPath = join("./data", "settings.json")) {}
 
+    /**
+     * Reads normalized global settings, falling back to defaults when the file
+     * does not exist yet.
+     */
     readSettings(): GlobalSettings {
         if (!existsSync(this.settingsPath)) {
             return defaultSettings;
@@ -32,6 +42,9 @@ export class GlobalSettingsStore {
         return normalizeGlobalSettings(parsed as GlobalSettingsPayload);
     }
 
+    /**
+     * Normalizes and persists global settings.
+     */
     writeSettings(payload: GlobalSettingsPayload) {
         const settings = normalizeGlobalSettings(payload);
         mkdirSync(dirname(this.settingsPath), { recursive: true });
@@ -40,6 +53,9 @@ export class GlobalSettingsStore {
     }
 }
 
+/**
+ * Applies defaults and validation to a global settings payload.
+ */
 export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalSettings {
     const dataRoot = normalizeAbsolutePath(payload.dataRoot, "Data root") || defaultSettings.dataRoot;
     const sshKeyPath = payload.sshKeyPath?.trim() || defaultSettings.sshKeyPath;
@@ -61,10 +77,16 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
     };
 }
 
+/**
+ * Builds the default checkout path for a project on the target host.
+ */
 export function defaultProjectPath(settings: GlobalSettings, repoName: string) {
     return `${settings.dataRoot.replace(/\/+$/, "")}/${repoName}`;
 }
 
+/**
+ * Normalizes an optional absolute path and removes trailing slashes.
+ */
 function normalizeAbsolutePath(value: string | undefined, label: string) {
     const trimmed = value?.trim();
     if (!trimmed) {
@@ -78,6 +100,9 @@ function normalizeAbsolutePath(value: string | undefined, label: string) {
     return trimmed.replace(/\/+$/, "") || "/";
 }
 
+/**
+ * Normalizes one Docker/Traefik-safe name.
+ */
 function normalizeName(value: string | undefined, label: string) {
     const trimmed = value?.trim();
     if (!trimmed) {
@@ -91,6 +116,9 @@ function normalizeName(value: string | undefined, label: string) {
     return trimmed;
 }
 
+/**
+ * Normalizes a comma-separated list of Docker/Traefik-safe names.
+ */
 function normalizeCsvNames(value: string | undefined, label: string) {
     const trimmed = value?.trim();
     if (!trimmed) {

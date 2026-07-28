@@ -1,19 +1,27 @@
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { createServer, Server } from "node:http";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import express, { NextFunction, Request, Response } from "express";
 import { WebSocket, WebSocketServer } from "ws";
 import { AdminAuth } from "./auth.js";
 import { importProjectCompose } from "./composeImport.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
-import { dispatchBuildWorker, stopProjectContainers } from "./deploy.js";
+import { deleteCheckoutPath, dispatchBuildWorker, stopProjectContainers } from "./deploy.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { verifySignature } from "./signature.js";
 import { AuthenticatedRequest, DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload, ProjectSettings } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 
+/**
+ * Express controller application.
+ *
+ * This class currently owns HTTP routes, WebSocket deployment streams, JSON
+ * stores, and deployment dispatch. The planned controller/agent split should
+ * move deployment execution behind an agent interface and keep this class as
+ * the API/controller surface.
+ */
 class App {
     app = express();
     port = parseInt(process.env.PORT || "3999");
@@ -23,6 +31,10 @@ class App {
     adminAuth = new AdminAuth();
     deploymentClients = new Map<string, Set<WebSocket>>();
 
+    /**
+     * Configures middleware/routes, attaches WebSocket upgrade handling, and
+     * starts the HTTP server.
+     */
     init() {
         this.configureBodyParsing();
         this.registerRoutes();
@@ -33,6 +45,10 @@ class App {
         server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
     }
 
+    /**
+     * Registers body parsers and preserves the raw request body for webhook
+     * signature verification.
+     */
     private configureBodyParsing() {
         const captureRawBody = (req: Request, res: Response, buf: Buffer) => {
             if (buf && buf.length) {
@@ -44,6 +60,10 @@ class App {
         this.app.use(express.urlencoded({ extended: true, verify: captureRawBody }));
     }
 
+    /**
+     * Registers health, auth, settings, project, webhook, deployment, compose
+     * import, and frontend fallback routes.
+     */
     private registerRoutes() {
         this.app.get("/health", (req: Request, res: Response) => {
             res.status(200).send("I am alive");
@@ -82,6 +102,7 @@ class App {
         this.app.get("/api/projects", (req: Request, res: Response, next: NextFunction) => {
             try {
                 const globalSettings = this.globalSettingsStore.readSettings();
+                // Shape the storage record into the UI-facing project summary.
                 const projects = Object.entries(this.configStore.readConfig())
                     .sort(([left], [right]) => left.localeCompare(right))
                     .map(([name, settings]) => ({
@@ -205,7 +226,7 @@ class App {
 
                 if (payload.deleteCheckout) {
                     const checkoutPath = assertSafeDeletePath(appSettings.path ?? defaultProjectPath(globalSettings, projectName), globalSettings.dataRoot);
-                    await rm(checkoutPath, { recursive: true, force: true });
+                    await removeCheckoutPath(checkoutPath);
                     actions.push("checkout deleted");
                 }
 
@@ -232,19 +253,22 @@ class App {
                 return;
             }
 
-            const repoName = req.body.repository.name;
-            const appSettings = this.configStore.fetchProfile(repoName);
-            if (!appSettings) {
+            // GitLab payload names can differ from the UI project key, so map
+            // the payload back to the configured project before recording logs.
+            const webhookProject = resolveWebhookProject(req.body, this.configStore.readConfig());
+            if (!webhookProject) {
                 throw new Error("No config for this repository");
             }
 
+            const { projectName, appSettings } = webhookProject;
             if (!appSettings.token) {
                 res.status(403).send("Webhook secret token is not configured for this project.");
                 return;
             }
 
             if (verifySignature(appSettings.token, req, res)) {
-                this.startDeployment(repoName, appSettings, "webhook");
+                const deployment = this.startDeployment(projectName, appSettings, "webhook");
+                console.log(`Webhook deployment dispatched for ${projectName} (${deployment.id}).`);
                 res.status(200).send("Build worker dispatched");
             }
         });
@@ -334,6 +358,10 @@ class App {
         this.registerFrontendRoutes();
     }
 
+    /**
+     * Creates a deployment record, starts the worker, and wires worker callbacks
+     * into persisted deployment history plus WebSocket broadcasts.
+     */
     private startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
         const deployment = this.deploymentStore.start(projectName, trigger);
         const globalSettings = this.globalSettingsStore.readSettings();
@@ -360,6 +388,9 @@ class App {
         return deployment;
     }
 
+    /**
+     * Handles WebSocket upgrade requests for live deployment log streams.
+     */
     private registerDeploymentStreams(server: Server) {
         const webSocketServer = new WebSocketServer({ noServer: true });
 
@@ -399,6 +430,10 @@ class App {
         });
     }
 
+    /**
+     * Registers one browser WebSocket as a subscriber for a project's latest
+     * deployment state.
+     */
     private registerDeploymentClient(projectName: string, webSocket: WebSocket) {
         const clients = this.deploymentClients.get(projectName) ?? new Set<WebSocket>();
         clients.add(webSocket);
@@ -414,6 +449,9 @@ class App {
         });
     }
 
+    /**
+     * Sends the newest deployment record to all connected clients for a project.
+     */
     private broadcastDeployment(projectName: string) {
         const clients = this.deploymentClients.get(projectName);
         if (!clients?.size) {
@@ -432,6 +470,9 @@ class App {
         }
     }
 
+    /**
+     * Sends the current deployment state immediately after a WebSocket connects.
+     */
     private sendDeploymentSnapshot(projectName: string, webSocket: WebSocket) {
         if (webSocket.readyState !== WebSocket.OPEN) {
             return;
@@ -445,6 +486,9 @@ class App {
         );
     }
 
+    /**
+     * Serves the built Angular app when it is available.
+     */
     private registerFrontendRoutes() {
         const frontendPath = join(process.cwd(), "frontend", "dist", "frontend", "browser");
         const indexPath = join(frontendPath, "index.html");
@@ -462,6 +506,9 @@ class App {
         });
     }
 
+    /**
+     * Converts uncaught Express errors into JSON responses.
+     */
     private registerErrorHandler() {
         this.app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
             console.error(error);
@@ -472,6 +519,12 @@ class App {
 
 new App().init();
 
+/**
+ * Validates that a configured checkout path is safe to delete automatically.
+ *
+ * The guard allows custom absolute checkout paths but refuses root, the data
+ * root itself, and very shallow paths that are too risky for recursive removal.
+ */
 function assertSafeDeletePath(path: string, dataRoot: string) {
     if (!isAbsolute(path)) {
         throw new Error("Checkout path must be absolute before it can be deleted.");
@@ -479,19 +532,129 @@ function assertSafeDeletePath(path: string, dataRoot: string) {
 
     const resolvedPath = resolve(path);
     const resolvedDataRoot = resolve(dataRoot);
-    const relativeToDataRoot = relative(resolvedDataRoot, resolvedPath);
     const pathParts = resolvedPath.split("/").filter(Boolean);
 
     if (
         resolvedPath === "/" ||
         resolvedPath === resolvedDataRoot ||
-        pathParts.length < 3 ||
-        !relativeToDataRoot ||
-        relativeToDataRoot.startsWith("..") ||
-        isAbsolute(relativeToDataRoot)
+        pathParts.length < 3
     ) {
         throw new Error(`Refusing to delete unsafe checkout path: ${resolvedPath}`);
     }
 
     return resolvedPath;
+}
+
+/**
+ * Removes a project checkout and verifies the path is gone.
+ *
+ * The local removal is fast when permissions allow it. The Docker fallback
+ * handles root-owned files created by deployment worker containers.
+ */
+async function removeCheckoutPath(checkoutPath: string) {
+    try {
+        await rm(checkoutPath, { recursive: true, force: true });
+    } catch (error) {
+        await deleteCheckoutPath(checkoutPath);
+    }
+
+    if (existsSync(checkoutPath)) {
+        await deleteCheckoutPath(checkoutPath);
+    }
+
+    if (existsSync(checkoutPath)) {
+        throw new Error(`Checkout path still exists after deletion attempt: ${checkoutPath}`);
+    }
+}
+
+/**
+ * Resolves a GitLab webhook payload to the configured project record.
+ *
+ * Matching first tries direct project-name candidates, then falls back to
+ * normalized repository URL identity so display names do not break UI status.
+ */
+function resolveWebhookProject(body: unknown, config: Record<string, ProjectSettings>) {
+    const candidates = webhookProjectCandidates(body);
+    for (const candidate of candidates) {
+        const exactMatch = config[candidate];
+        if (exactMatch) {
+            return { projectName: candidate, appSettings: exactMatch };
+        }
+    }
+
+    const normalizedRepositoryCandidates = new Set(candidates.map(normalizeGitRepositoryIdentity).filter(Boolean));
+    for (const [projectName, appSettings] of Object.entries(config)) {
+        if (appSettings.repositoryUrl && normalizedRepositoryCandidates.has(normalizeGitRepositoryIdentity(appSettings.repositoryUrl))) {
+            return { projectName, appSettings };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Extracts all useful project identifiers from a GitLab push payload.
+ */
+function webhookProjectCandidates(body: unknown) {
+    if (!body || typeof body !== "object") {
+        return [];
+    }
+
+    const payload = body as Record<string, unknown>;
+    const repository = readRecord(payload.repository);
+    const project = readRecord(payload.project);
+    const candidates = [
+        readString(repository?.name),
+        readString(repository?.path),
+        readString(project?.name),
+        readString(project?.path),
+        readString(project?.path_with_namespace),
+        readString(repository?.git_http_url),
+        readString(repository?.git_ssh_url),
+        readString(repository?.url),
+        readString(payload.repository_url)
+    ];
+
+    return [...new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))];
+}
+
+/**
+ * Safely narrows an unknown value to a record-like object.
+ */
+function readRecord(value: unknown) {
+    return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
+/**
+ * Safely reads string fields from unknown webhook payload values.
+ */
+function readString(value: unknown) {
+    return typeof value === "string" ? value : "";
+}
+
+/**
+ * Converts Git repository URLs into comparable `host/path` identities.
+ *
+ * This makes `git@gitlab.example.com:group/repo.git` and
+ * `https://gitlab.example.com/group/repo.git` match the same configured repo.
+ */
+function normalizeGitRepositoryIdentity(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return "";
+    }
+
+    const urlValue = trimmed.replace(/^git@([^:]+):/i, "ssh://git@$1/");
+    try {
+        const url = new URL(urlValue);
+        return `${url.hostname}${url.pathname}`
+            .replace(/\.git$/i, "")
+            .replace(/\/+$/g, "")
+            .toLowerCase();
+    } catch (error) {
+        return trimmed
+            .replace(/\.git$/i, "")
+            .replace(/\/+$/g, "")
+            .toLowerCase();
+    }
 }

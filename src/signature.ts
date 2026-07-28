@@ -2,12 +2,34 @@ import crypto from "node:crypto";
 import { Request, Response } from "express";
 import { AuthenticatedRequest } from "./types.js";
 
+/**
+ * Verifies the configured webhook secret against the incoming request.
+ *
+ * GitLab sends the shared secret in `X-Gitlab-Token`. The older Svix-style HMAC
+ * verifier is kept as a fallback for webhook sources that use signed payloads.
+ */
 export function verifySignature(repoToken: string, req: Request, res: Response) {
     try {
+        const gitlabToken = readHeader(req.headers["x-gitlab-token"]);
+        if (gitlabToken) {
+            if (gitlabToken.length === repoToken.length && crypto.timingSafeEqual(Buffer.from(gitlabToken), Buffer.from(repoToken))) {
+                return true;
+            }
+
+            console.warn("Unauthorized: Invalid GitLab webhook token.");
+            res.status(403).send("Forbidden: Invalid webhook token.");
+            return false;
+        }
+
         const authReq = req as AuthenticatedRequest;
-        const webhookId = req.headers["webhook-id"] as string;
-        const webhookTimestamp = req.headers["webhook-timestamp"] as string;
-        const webhookSignatureHeader = req.headers["webhook-signature"] as string;
+        const webhookId = readHeader(req.headers["webhook-id"]);
+        const webhookTimestamp = readHeader(req.headers["webhook-timestamp"]);
+        const webhookSignatureHeader = readHeader(req.headers["webhook-signature"]);
+        if (!webhookId || !webhookTimestamp || !webhookSignatureHeader) {
+            res.status(403).send("Forbidden: Missing webhook signature.");
+            return false;
+        }
+
         const secretKeyRaw = repoToken.replace(/^whsec_/, "");
         const secretBuffer = Buffer.from(secretKeyRaw, "base64");
         const rawBodyString = authReq.rawBody ? authReq.rawBody.toString("utf8") : "";
@@ -49,4 +71,11 @@ export function verifySignature(repoToken: string, req: Request, res: Response) 
     }
 
     return true;
+}
+
+/**
+ * Reads a single HTTP header value from Express' string-or-array header shape.
+ */
+function readHeader(value: string | string[] | undefined) {
+    return Array.isArray(value) ? value[0] : value ?? "";
 }

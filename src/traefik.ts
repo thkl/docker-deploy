@@ -1,13 +1,23 @@
 import { GlobalSettings, ProjectSettings } from "./types.js";
 
+/**
+ * Quotes a scalar for the generated YAML fragment.
+ */
 function yamlQuote(value: string | number | boolean) {
     return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * Converts a project name into a Traefik-safe router identifier.
+ */
 function traefikRouterName(repoName: string) {
     return repoName.replace(/[^a-zA-Z0-9_-]/g, "-");
 }
 
+/**
+ * Builds the shell block that writes a Docker Compose override containing
+ * Traefik labels and network configuration.
+ */
 export function renderTraefikOverrideScript(repoName: string, settings: ProjectSettings, globalSettings: GlobalSettings) {
     const traefik = settings.traefik;
     if (!traefik?.enabled) {
@@ -18,6 +28,7 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
     const routerName = traefikRouterName(repoName);
     const network = traefik.network || globalSettings.defaultTraefikNetwork;
     const rule = `Host(\`${traefik.hostname}\`)`;
+    // Wildcard certificate labels follow Traefik's domains[0] syntax.
     const wildcardLabels = traefik.wildcardCertificate && traefik.wildcardDomain
         ? `
       "traefik.http.routers.${routerName}.tls.domains[0].main": ${yamlQuote(traefik.wildcardDomain)}
@@ -31,6 +42,8 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
       "traefik.http.routers.${routerName}.middlewares": "${routerName}-websocket@docker"`
         : "";
   
+    // When Traefik fronts the service, published host ports usually create
+    // conflicts and are not needed.
     const resetPorts = traefik.removePublishedPorts !== false ? "\n    ports: !reset []" : "";
 
     const overrideContent = `services:

@@ -6,16 +6,33 @@ import { renderTraefikOverrideScript } from "./traefik.js";
 
 const execAsync = promisify(exec);
 
+/**
+ * Optional lifecycle callbacks for a deployment worker process.
+ *
+ * The controller uses these hooks to persist logs and status while the shell
+ * worker is still running inside Docker.
+ */
 export interface DeploymentHooks {
     onOutput?: (stream: "stdout" | "stderr", chunk: string) => void;
     onSuccess?: () => void;
     onFailure?: (error: Error & { code?: number | string }) => void;
 }
 
+/**
+ * Quotes a value so it can be embedded safely in a POSIX shell command.
+ */
 function shellQuote(value: string | number | boolean) {
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * Starts the ephemeral Docker-based deployment worker for a project.
+ *
+ * The worker mounts the project checkout path and Docker socket, clones or
+ * pulls the repository, writes the stored compose override when configured,
+ * applies generated Traefik compose labels, builds, replaces containers, and
+ * streams process output through the supplied hooks.
+ */
 export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
@@ -30,6 +47,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
 
     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
+    // Keep the deployment logic inside the worker so the host only needs Docker.
     const dockerRunCommand = `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${quotedHostAppsVolume} \
@@ -98,6 +116,10 @@ EOF`;
     });
 }
 
+/**
+ * Runs `docker compose down` for a project using the same compose file selection
+ * rules as a deployment.
+ */
 export async function stopProjectContainers(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
@@ -127,6 +149,34 @@ EOF`;
     return `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
 }
 
+/**
+ * Deletes a project checkout path from inside a short-lived Docker container.
+ *
+ * This is used as a fallback when the host Node process cannot remove files
+ * because they were created by the root-owned deployment worker container.
+ */
+export async function deleteCheckoutPath(checkoutPath: string) {
+    const parentPath = checkoutPath.replace(/\/+$/, "").replace(/\/[^/]+$/, "") || "/";
+    const checkoutName = checkoutPath.replace(/\/+$/, "").split("/").at(-1);
+
+    if (!checkoutName) {
+        throw new Error("Checkout path must include a directory name.");
+    }
+
+    const dockerRunCommand = `docker run -i --rm \
+            -v ${shellQuote(`${parentPath}:${parentPath}`)} \
+            alpine:latest sh << 'EOF'
+                rm -rf -- ${shellQuote(`${parentPath}/${checkoutName}`)}
+EOF`;
+
+    const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
+    return `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
+}
+
+/**
+ * Builds the shell block that writes a stored Docker Compose override into the
+ * project checkout before compose commands run.
+ */
 function renderComposeOverrideScript(composeOverride: string | undefined) {
     if (!composeOverride) {
         return "";
@@ -139,6 +189,12 @@ ${composeOverride}
 UPDATER_COMPOSE_EOF`;
 }
 
+/**
+ * Builds the shell block that chooses which Docker Compose file(s) to use.
+ *
+ * A stored override intentionally replaces repository compose files. Without an
+ * override the worker searches common compose filenames in the checkout.
+ */
 function renderComposeSelectionScript(composeOverride: string | undefined) {
     if (composeOverride) {
         return `
@@ -165,6 +221,12 @@ function renderComposeSelectionScript(composeOverride: string | undefined) {
                 COMPOSE_FILES="-f $COMPOSE_FILE"`;
 }
 
+/**
+ * Builds the deployment cleanup shell block.
+ *
+ * Cleanup is intentionally a placeholder for now because deleting repository
+ * files can break bind mounts until data mapping is modeled explicitly.
+ */
 function renderCleanupScript(globalSettings: GlobalSettings) {
     if (!globalSettings.cleanupAfterDeploy) {
         return "";
@@ -174,6 +236,9 @@ function renderCleanupScript(globalSettings: GlobalSettings) {
                     echo "--> Cleanup is enabled. Leaving compose artifacts in place; repository cleanup is not active yet."`;
 }
 
+/**
+ * Expands `~` in host paths that are mounted into the worker container.
+ */
 function resolveHostPath(value: string) {
     if (value === "~") {
         return process.env.HOME ?? value;

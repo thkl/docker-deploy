@@ -9,11 +9,21 @@ import { GlobalSettings, ProjectSettings } from "./types.js";
 const execFileAsync = promisify(execFile);
 const composeFileNames = ["docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml"];
 
+/**
+ * Docker Compose file content imported from a project checkout.
+ */
 export interface ImportedCompose {
     composeFile: string;
     compose: string;
 }
 
+/**
+ * Ensures the repository exists locally and returns the first supported Compose
+ * file found in the checkout.
+ *
+ * The returned compose content is intended to become the project's stored
+ * override, which then replaces repository compose files during deployments.
+ */
 export async function importProjectCompose(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ImportedCompose> {
     const projectPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     await ensureProjectCheckout(projectPath, appSettings.repositoryUrl);
@@ -31,6 +41,9 @@ export async function importProjectCompose(repoName: string, appSettings: Projec
     throw new Error("No Docker Compose file found in the repository.");
 }
 
+/**
+ * Clones a missing checkout or fast-forwards an existing Git checkout.
+ */
 async function ensureProjectCheckout(projectPath: string, repositoryUrl?: string) {
     if (existsSync(join(projectPath, ".git"))) {
         await execFileAsync("git", ["-C", projectPath, "pull", "--ff-only"]);
@@ -49,6 +62,9 @@ async function ensureProjectCheckout(projectPath: string, repositoryUrl?: string
     await execFileAsync("git", ["clone", repositoryUrl, projectPath]);
 }
 
+/**
+ * Returns true when a directory exists and has no entries.
+ */
 async function isEmptyDirectory(path: string) {
     try {
         return (await readdir(path)).length === 0;

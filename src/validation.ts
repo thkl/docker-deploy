@@ -1,5 +1,8 @@
 import { GlobalSettings, ProjectPayload, TraefikSettings } from "./types.js";
 
+/**
+ * Normalizes and validates the project name used as the primary project key.
+ */
 export function normalizeProjectName(name?: string) {
     const repoName = name?.trim();
     if (!repoName) {
@@ -13,6 +16,10 @@ export function normalizeProjectName(name?: string) {
     return repoName;
 }
 
+/**
+ * Normalizes an optional repository URL and accepts HTTPS, SSH URLs, and
+ * scp-like Git syntax such as `git@example.com:group/project.git`.
+ */
 export function normalizeRepositoryUrl(repositoryUrl?: string) {
     const value = repositoryUrl?.trim();
     if (!value) {
@@ -39,6 +46,9 @@ export function normalizeRepositoryUrl(repositoryUrl?: string) {
     }
 }
 
+/**
+ * Normalizes optional Docker/Traefik resource names.
+ */
 function normalizeOptionalName(name?: string) {
     const value = name?.trim();
     if (!value) {
@@ -52,6 +62,10 @@ function normalizeOptionalName(name?: string) {
     return value;
 }
 
+/**
+ * Validates project-level Traefik settings and fills missing values from global
+ * defaults.
+ */
 export function normalizeTraefikSettings(body: ProjectPayload, globalSettings?: GlobalSettings): TraefikSettings | undefined {
     if (!body.traefikEnabled) {
         return undefined;
