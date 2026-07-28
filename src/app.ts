@@ -4,6 +4,7 @@ import { join } from "node:path";
 import express, { NextFunction, Request, Response } from "express";
 import { WebSocket, WebSocketServer } from "ws";
 import { AdminAuth } from "./auth.js";
+import { importProjectCompose } from "./composeImport.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
 import { dispatchBuildWorker } from "./deploy.js";
@@ -86,7 +87,7 @@ class App {
                         name,
                         repositoryUrl: settings.repositoryUrl ?? "",
                         path: settings.path ?? defaultProjectPath(globalSettings, name),
-                        token: maskToken(settings.token ?? ""),
+                        token: settings.token ? maskToken(settings.token) : "",
                         deployToken: settings.deployToken ? maskToken(settings.deployToken) : "",
                         composeOverride: settings.composeOverride ?? "",
                         hasComposeOverride: Boolean(settings.composeOverride),
@@ -112,14 +113,9 @@ class App {
                 const globalSettings = this.globalSettingsStore.readSettings();
                 const traefik = normalizeTraefikSettings(payload, globalSettings);
 
-                if (!repoToken) {
-                    res.status(400).json({ error: "Webhook secret token is required." });
-                    return;
-                }
-
                 const config = this.configStore.readConfig();
                 config[repoName] = {
-                    token: repoToken,
+                    ...(repoToken ? { token: repoToken } : {}),
                     ...(repositoryUrl ? { repositoryUrl } : {}),
                     ...(deployToken ? { deployToken } : {}),
                     ...(repoPath ? { path: repoPath } : {}),
@@ -194,6 +190,11 @@ class App {
                 throw new Error("No config for this repository");
             }
 
+            if (!appSettings.token) {
+                res.status(403).send("Webhook secret token is not configured for this project.");
+                return;
+            }
+
             if (verifySignature(appSettings.token, req, res)) {
                 this.startDeployment(repoName, appSettings, "webhook");
                 res.status(200).send("Build worker dispatched");
@@ -238,6 +239,24 @@ class App {
 
             const deployment = this.startDeployment(projectName, appSettings, "manual");
             res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id });
+        });
+
+        this.app.post("/api/projects/:name/compose/import", async (req: Request, res: Response) => {
+            try {
+                const rawProjectName = req.params.name;
+                const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+                const appSettings = this.configStore.fetchProfile(projectName);
+
+                if (!appSettings) {
+                    res.status(404).json({ error: "Project does not exist." });
+                    return;
+                }
+
+                const importedCompose = await importProjectCompose(projectName, appSettings, this.globalSettingsStore.readSettings());
+                res.json(importedCompose);
+            } catch (error) {
+                res.status(400).json({ error: error instanceof Error ? error.message : "Could not import Docker Compose file." });
+            }
         });
 
         this.app.get("/api/projects/:name/deployments", (req: Request, res: Response) => {

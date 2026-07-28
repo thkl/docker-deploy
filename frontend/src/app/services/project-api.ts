@@ -23,6 +23,10 @@ export class ProjectApi {
     return this.http.post<{ status: string; deploymentId: string }>(`/api/projects/${encodeURIComponent(name)}/deploy`, {});
   }
 
+  importCompose(name: string): Observable<{ composeFile: string; compose: string }> {
+    return this.http.post<{ composeFile: string; compose: string }>(`/api/projects/${encodeURIComponent(name)}/compose/import`, {});
+  }
+
   getLatestDeployment(name: string): Observable<DeploymentRecord | null> {
     return this.http.get<DeploymentRecord | null>(`/api/projects/${encodeURIComponent(name)}/deployments/latest`);
   }

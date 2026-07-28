@@ -33,7 +33,17 @@
           <tr>
             <td>
               <strong>{{ project.name }}</strong>
-              <small>{{ project.deployToken ? 'CI trigger ready' : 'Manual/webhook only' }}</small>
+              <small>
+                @if (project.deployToken && project.token) {
+                  CI and webhook ready
+                } @else if (project.deployToken) {
+                  CI trigger ready
+                } @else if (project.token) {
+                  Webhook ready
+                } @else {
+                  Manual deploy only
+                }
+              </small>
             </td>
             <td>
               @if (project.repositoryUrl) {

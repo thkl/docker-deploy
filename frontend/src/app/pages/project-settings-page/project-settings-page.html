@@ -47,7 +47,7 @@
         <input
           formControlName="token"
           autocomplete="new-password"
-          [placeholder]="isNew() ? 'required' : 'leave blank to keep current secret'"
+          [placeholder]="isNew() ? 'optional for UI/CI deploys' : 'leave blank to keep current secret'"
           type="password"
         />
       </label>
@@ -65,9 +65,15 @@
   </section>
 
   <section class="form-panel">
-    <div class="panel-head">
-      <h3>Docker Compose</h3>
-      <span>Stored compose file for projects that should not use the repository file</span>
+    <div class="panel-head split">
+      <div>
+        <h3>Docker Compose</h3>
+        <span>Stored compose file for projects that should not use the repository file</span>
+      </div>
+
+      <button type="button" class="secondary" (click)="importCompose()" [disabled]="saving() !== '' || importingCompose()">
+        {{ importingCompose() ? 'Importing...' : 'Import from repo' }}
+      </button>
     </div>
 
     <label class="compose-field">

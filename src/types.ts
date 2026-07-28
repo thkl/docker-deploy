@@ -19,7 +19,7 @@ export interface TraefikSettings {
 }
 
 export interface ProjectSettings {
-    token: string;
+    token?: string;
     repositoryUrl?: string;
     deployToken?: string;
     path?: string;

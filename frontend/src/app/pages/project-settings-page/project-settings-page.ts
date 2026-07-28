@@ -23,6 +23,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly isNew = signal(true);
   protected readonly currentName = signal('');
   protected readonly saving = signal<'save' | 'deploy' | ''>('');
+  protected readonly importingCompose = signal(false);
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly traefikEnabled = signal(false);
@@ -121,11 +122,6 @@ export class ProjectSettingsPage implements OnInit {
       return;
     }
 
-    if (this.isNew() && !this.form.controls.token.value.trim()) {
-      this.error.set('Webhook secret token is required for new projects.');
-      return;
-    }
-
     this.saving.set(mode);
 
     try {
@@ -154,6 +150,29 @@ export class ProjectSettingsPage implements OnInit {
   protected cancel() {
     const name = this.currentName();
     void this.router.navigate(name ? ['/projects', name, 'overview'] : ['/projects']);
+  }
+
+  protected importCompose() {
+    this.message.set('');
+    this.error.set('');
+
+    if (this.isNew()) {
+      this.error.set('Save the project before importing compose from its repository.');
+      return;
+    }
+
+    this.importingCompose.set(true);
+    this.api.importCompose(this.currentName()).subscribe({
+      next: (result) => {
+        this.form.controls.composeOverride.setValue(result.compose);
+        this.message.set(`Imported ${result.composeFile}. Review the override and save the project.`);
+        this.importingCompose.set(false);
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not import Docker Compose file.');
+        this.importingCompose.set(false);
+      },
+    });
   }
 
   private resetForNewProject() {
