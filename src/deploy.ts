@@ -85,7 +85,9 @@ ${cleanupScript}
                     exit 1
                 fi
 EOF`;
-
+    console.log("Running Docker with");
+    console.log(dockerRunCommand);
+    
     const worker = exec(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
         if (error) {
             console.error(`Deployment Aborted: ${error.message}`);
