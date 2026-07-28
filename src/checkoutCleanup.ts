@@ -3,6 +3,10 @@ import { rm } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { deleteCheckoutPath } from "./deploy.js";
 
+export interface CheckoutCleanupResult {
+    steps: string[];
+}
+
 /**
  * Validates that a configured checkout path is safe to delete automatically.
  *
@@ -35,18 +39,59 @@ export function assertSafeDeletePath(path: string, dataRoot: string) {
  * The local removal is fast when permissions allow it. The Docker fallback
  * handles root-owned files created by deployment worker containers.
  */
-export async function removeCheckoutPath(checkoutPath: string) {
+export async function removeCheckoutPath(checkoutPath: string): Promise<CheckoutCleanupResult> {
+    const steps: string[] = [];
+    logCleanupStep(steps, `requested checkout delete: ${checkoutPath}`);
+    logCleanupStep(steps, `exists before delete: ${existsSync(checkoutPath)}`);
+
     try {
         await rm(checkoutPath, { recursive: true, force: true });
+        logCleanupStep(steps, "local rm completed");
     } catch (error) {
-        await deleteCheckoutPath(checkoutPath);
+        logCleanupStep(steps, `local rm failed: ${readErrorMessage(error)}`);
+        await runDockerCleanup(checkoutPath, steps, "local rm failure");
     }
 
     if (existsSync(checkoutPath)) {
-        await deleteCheckoutPath(checkoutPath);
+        logCleanupStep(steps, "path still exists after local rm; running Docker cleanup fallback");
+        await runDockerCleanup(checkoutPath, steps, "path still exists after local rm");
     }
 
     if (existsSync(checkoutPath)) {
+        logCleanupStep(steps, "path still exists after Docker cleanup");
         throw new Error(`Checkout path still exists after deletion attempt: ${checkoutPath}`);
     }
+
+    logCleanupStep(steps, "checkout path removed");
+    return { steps };
+}
+
+/**
+ * Runs the Docker cleanup helper and records stdout/stderr for troubleshooting.
+ */
+async function runDockerCleanup(checkoutPath: string, steps: string[], reason: string) {
+    logCleanupStep(steps, `docker cleanup starting: ${reason}`);
+    try {
+        const output = await deleteCheckoutPath(checkoutPath);
+        logCleanupStep(steps, output ? `docker cleanup completed: ${output}` : "docker cleanup completed with no output");
+    } catch (error) {
+        logCleanupStep(steps, `docker cleanup failed: ${readErrorMessage(error)}`);
+        throw error;
+    }
+}
+
+/**
+ * Records one cleanup step in both the API debug trail and server logs.
+ */
+function logCleanupStep(steps: string[], message: string) {
+    const line = `[checkout-cleanup] ${message}`;
+    steps.push(line);
+    console.log(line);
+}
+
+/**
+ * Extracts a readable message from unknown caught errors.
+ */
+function readErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
 }

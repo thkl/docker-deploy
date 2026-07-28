@@ -163,6 +163,9 @@ export async function deleteCheckoutPath(checkoutPath: string) {
         throw new Error("Checkout path must include a directory name.");
     }
 
+    console.log(`[checkout-cleanup] docker fallback mount: ${parentPath}:${parentPath}`);
+    console.log(`[checkout-cleanup] docker fallback target: ${parentPath}/${checkoutName}`);
+
     const dockerRunCommand = `docker run -i --rm \
             -v ${shellQuote(`${parentPath}:${parentPath}`)} \
             alpine:latest sh << 'EOF'

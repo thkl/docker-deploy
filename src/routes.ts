@@ -211,7 +211,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
             if (payload.deleteCheckout) {
                 const checkoutPath = assertSafeDeletePath(appSettings.path ?? defaultProjectPath(globalSettings, projectName), globalSettings.dataRoot);
-                await removeCheckoutPath(checkoutPath);
+                const cleanup = await removeCheckoutPath(checkoutPath);
+                actions.push(...cleanup.steps);
                 actions.push("checkout deleted");
             }
 
