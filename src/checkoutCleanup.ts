@@ -34,35 +34,34 @@ export function assertSafeDeletePath(path: string, dataRoot: string) {
 }
 
 /**
- * Removes a project checkout and verifies the path is gone.
+ * Removes a project checkout from both the controller namespace and the Docker
+ * host namespace.
  *
- * The local removal is fast when permissions allow it. The Docker fallback
- * handles root-owned files created by deployment worker containers.
+ * The controller can run in a container where `/root/docker-apps` is not the
+ * same filesystem path as the Docker host. Because deployments clone through
+ * the host Docker daemon, Docker cleanup must always run even when local `rm`
+ * appears to succeed.
  */
 export async function removeCheckoutPath(checkoutPath: string): Promise<CheckoutCleanupResult> {
     const steps: string[] = [];
     logCleanupStep(steps, `requested checkout delete: ${checkoutPath}`);
-    logCleanupStep(steps, `exists before delete: ${existsSync(checkoutPath)}`);
+    logCleanupStep(steps, `controller namespace exists before delete: ${existsSync(checkoutPath)}`);
 
     try {
         await rm(checkoutPath, { recursive: true, force: true });
-        logCleanupStep(steps, "local rm completed");
+        logCleanupStep(steps, "controller namespace rm completed");
     } catch (error) {
-        logCleanupStep(steps, `local rm failed: ${readErrorMessage(error)}`);
-        await runDockerCleanup(checkoutPath, steps, "local rm failure");
+        logCleanupStep(steps, `controller namespace rm failed: ${readErrorMessage(error)}`);
     }
+
+    await runDockerCleanup(checkoutPath, steps, "delete Docker host checkout path");
 
     if (existsSync(checkoutPath)) {
-        logCleanupStep(steps, "path still exists after local rm; running Docker cleanup fallback");
-        await runDockerCleanup(checkoutPath, steps, "path still exists after local rm");
+        logCleanupStep(steps, "controller namespace path still exists after cleanup");
+    } else {
+        logCleanupStep(steps, "controller namespace path removed");
     }
 
-    if (existsSync(checkoutPath)) {
-        logCleanupStep(steps, "path still exists after Docker cleanup");
-        throw new Error(`Checkout path still exists after deletion attempt: ${checkoutPath}`);
-    }
-
-    logCleanupStep(steps, "checkout path removed");
     return { steps };
 }
 

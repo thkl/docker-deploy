@@ -169,7 +169,13 @@ export async function deleteCheckoutPath(checkoutPath: string) {
     const dockerRunCommand = `docker run -i --rm \
             -v ${shellQuote(`${parentPath}:${parentPath}`)} \
             alpine:latest sh << 'EOF'
+                echo "--> Docker host cleanup exists before delete: $(test -e ${shellQuote(`${parentPath}/${checkoutName}`)} && echo true || echo false)"
                 rm -rf -- ${shellQuote(`${parentPath}/${checkoutName}`)}
+                if [ -e ${shellQuote(`${parentPath}/${checkoutName}`)} ]; then
+                    echo "--> CRITICAL: Docker host checkout path still exists after rm."
+                    exit 1
+                fi
+                echo "--> Docker host cleanup verified path removed."
 EOF`;
 
     const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
