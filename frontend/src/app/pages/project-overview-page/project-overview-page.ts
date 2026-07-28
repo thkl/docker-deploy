@@ -1,6 +1,8 @@
-import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { DeploymentRecord } from '../../models/project';
+import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -20,22 +22,26 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly deploying = signal(false);
   protected readonly deployMessage = signal('');
   protected readonly deployError = signal('');
+  protected readonly streamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
+  protected readonly autoScroll = signal(true);
 
-  private refreshTimer: ReturnType<typeof setInterval> | undefined;
+  private readonly deploymentStream = inject(DeploymentStreamService);
+  private streamSubscription: Subscription | undefined;
+
+  @ViewChild('deployLog') private deployLog?: ElementRef<HTMLElement>;
 
   ngOnInit() {
     this.route.paramMap.subscribe((params) => {
       const name = params.get('name');
       if (name) {
         this.store.selectProject(name);
-        this.loadLatestDeployment(name);
-        this.startRefreshTimer(name);
+        this.connectDeploymentStream(name);
       }
     });
   }
 
   ngOnDestroy() {
-    this.stopRefreshTimer();
+    this.disconnectDeploymentStream();
   }
 
   protected deploy(name: string) {
@@ -61,6 +67,25 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.loadLatestDeployment(name);
   }
 
+  protected toggleAutoScroll(event: Event) {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.autoScroll.set(checked);
+
+    if (checked) {
+      this.scrollLogToBottom();
+    }
+  }
+
+  protected onLogScroll() {
+    const element = this.deployLog?.nativeElement;
+    if (!element) {
+      return;
+    }
+
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    this.autoScroll.set(distanceFromBottom < 48);
+  }
+
   protected formatDate(value?: string) {
     if (!value) {
       return 'Not finished';
@@ -84,12 +109,22 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         : 'Failed';
   }
 
+  protected streamLabel() {
+    return this.streamState() === 'live'
+      ? 'Live'
+      : this.streamState() === 'connecting'
+        ? 'Connecting'
+        : this.streamState() === 'error'
+          ? 'Stream lost'
+          : 'Offline';
+  }
+
   private loadLatestDeployment(name: string) {
     this.loadingDeployment.set(true);
 
     this.api.getLatestDeployment(name).subscribe({
       next: (deployment) => {
-        this.latestDeployment.set(deployment);
+        this.setLatestDeployment(deployment);
         this.loadingDeployment.set(false);
         this.deployError.set('');
       },
@@ -100,17 +135,58 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     });
   }
 
-  private startRefreshTimer(name: string) {
-    this.stopRefreshTimer();
-    this.refreshTimer = setInterval(() => {
-      this.loadLatestDeployment(name);
-    }, 4000);
+  private connectDeploymentStream(name: string) {
+    this.disconnectDeploymentStream();
+    this.loadingDeployment.set(true);
+    this.streamState.set('connecting');
+
+    this.streamSubscription = this.deploymentStream.streamLatest(name).subscribe({
+      next: (deployment) => {
+        this.setLatestDeployment(deployment);
+        this.loadingDeployment.set(false);
+        this.streamState.set('live');
+
+        if (deployment?.status !== 'running') {
+          this.store.loadProjects();
+        }
+      },
+      error: () => {
+        this.loadingDeployment.set(false);
+        this.streamState.set('error');
+        this.deployError.set('Live log stream disconnected. Use Refresh to load the latest deployment state.');
+      },
+      complete: () => {
+        this.loadingDeployment.set(false);
+        if (this.streamState() !== 'error') {
+          this.streamState.set('closed');
+        }
+      },
+    });
   }
 
-  private stopRefreshTimer() {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-      this.refreshTimer = undefined;
+  private disconnectDeploymentStream() {
+    this.streamSubscription?.unsubscribe();
+    this.streamSubscription = undefined;
+    this.streamState.set('closed');
+  }
+
+  private setLatestDeployment(deployment: DeploymentRecord | null) {
+    this.latestDeployment.set(deployment);
+    this.queueLogScroll();
+  }
+
+  private queueLogScroll() {
+    if (!this.autoScroll()) {
+      return;
+    }
+
+    window.setTimeout(() => this.scrollLogToBottom());
+  }
+
+  private scrollLogToBottom() {
+    const element = this.deployLog?.nativeElement;
+    if (element) {
+      element.scrollTop = element.scrollHeight;
     }
   }
 }

@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
+import { createServer, Server } from "node:http";
 import { join } from "node:path";
 import express, { NextFunction, Request, Response } from "express";
+import { WebSocket, WebSocketServer } from "ws";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
 import { dispatchBuildWorker } from "./deploy.js";
@@ -13,13 +15,16 @@ class App {
     port = parseInt(process.env.PORT || "3999");
     configStore = new ConfigStore();
     deploymentStore = new DeploymentStore();
+    deploymentClients = new Map<string, Set<WebSocket>>();
 
     init() {
         this.configureBodyParsing();
         this.registerRoutes();
         this.registerErrorHandler();
 
-        this.app.listen(this.port, () => console.log("Build-First Webhook Factory active."));
+        const server = createServer(this.app);
+        this.registerDeploymentStreams(server);
+        server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
     }
 
     private configureBodyParsing() {
@@ -222,18 +227,106 @@ class App {
 
     private startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
         const deployment = this.deploymentStore.start(projectName, trigger);
+        this.broadcastDeployment(projectName);
 
         dispatchBuildWorker(projectName, appSettings, {
-            onOutput: (stream, chunk) => this.deploymentStore.append(projectName, deployment.id, stream, chunk),
-            onSuccess: () => this.deploymentStore.finish(projectName, deployment.id, "succeeded"),
-            onFailure: (error) =>
+            onOutput: (stream, chunk) => {
+                this.deploymentStore.append(projectName, deployment.id, stream, chunk);
+                this.broadcastDeployment(projectName);
+            },
+            onSuccess: () => {
+                this.deploymentStore.finish(projectName, deployment.id, "succeeded");
+                this.broadcastDeployment(projectName);
+            },
+            onFailure: (error) => {
                 this.deploymentStore.finish(projectName, deployment.id, "failed", {
                     error: error.message,
                     exitCode: error.code
-                })
+                });
+                this.broadcastDeployment(projectName);
+            }
         });
 
         return deployment;
+    }
+
+    private registerDeploymentStreams(server: Server) {
+        const webSocketServer = new WebSocketServer({ noServer: true });
+
+        server.on("upgrade", (request, socket, head) => {
+            const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+            const match = url.pathname.match(/^\/api\/projects\/([^/]+)\/deployments\/stream$/);
+
+            if (!match) {
+                socket.destroy();
+                return;
+            }
+
+            let projectName = "";
+            try {
+                projectName = normalizeProjectName(decodeURIComponent(match[1]));
+            } catch (error) {
+                socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+                socket.destroy();
+                return;
+            }
+
+            if (!this.configStore.fetchProfile(projectName)) {
+                socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+                socket.destroy();
+                return;
+            }
+
+            webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+                this.registerDeploymentClient(projectName, webSocket);
+            });
+        });
+    }
+
+    private registerDeploymentClient(projectName: string, webSocket: WebSocket) {
+        const clients = this.deploymentClients.get(projectName) ?? new Set<WebSocket>();
+        clients.add(webSocket);
+        this.deploymentClients.set(projectName, clients);
+
+        this.sendDeploymentSnapshot(projectName, webSocket);
+
+        webSocket.on("close", () => {
+            clients.delete(webSocket);
+            if (clients.size === 0) {
+                this.deploymentClients.delete(projectName);
+            }
+        });
+    }
+
+    private broadcastDeployment(projectName: string) {
+        const clients = this.deploymentClients.get(projectName);
+        if (!clients?.size) {
+            return;
+        }
+
+        const payload = JSON.stringify({
+            type: "deployment",
+            deployment: this.deploymentStore.latest(projectName)
+        });
+
+        for (const client of clients) {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(payload);
+            }
+        }
+    }
+
+    private sendDeploymentSnapshot(projectName: string, webSocket: WebSocket) {
+        if (webSocket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        webSocket.send(
+            JSON.stringify({
+                type: "snapshot",
+                deployment: this.deploymentStore.latest(projectName)
+            })
+        );
     }
 
     private registerFrontendRoutes() {

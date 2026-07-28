@@ -65,6 +65,17 @@
         @if (loadingDeployment()) {
           <span class="loading-state">Refreshing</span>
         }
+        <span
+          class="stream-chip"
+          [class.live]="streamState() === 'live'"
+          [class.error]="streamState() === 'error'"
+        >
+          {{ streamLabel() }}
+        </span>
+        <label class="auto-scroll">
+          <input type="checkbox" [checked]="autoScroll()" (change)="toggleAutoScroll($event)" />
+          <span>Auto-scroll</span>
+        </label>
         <button type="button" class="secondary" (click)="refresh(project.name)" [disabled]="loadingDeployment()">
           Refresh
         </button>
@@ -85,7 +96,7 @@
         }
       </div>
 
-      <pre class="deploy-log">{{ deployment.log || 'Waiting for worker output...' }}</pre>
+      <pre #deployLog class="deploy-log" (scroll)="onLogScroll()">{{ deployment.log || 'Waiting for worker output...' }}</pre>
     } @else {
       <div class="empty-log">Trigger a deployment to capture worker output here.</div>
     }
