@@ -153,13 +153,15 @@ textarea {
 }
 
 button.secondary {
-  background: var(--button-subtle);
-  border: 1px solid color-mix(in srgb, var(--accent), transparent 80%);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 28%);
   color: var(--accent-strong);
 }
 
 button.secondary:hover {
-  background: var(--button-subtle-hover);
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 @media (max-width: 900px) {

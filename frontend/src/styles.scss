@@ -69,10 +69,10 @@ a {
 button,
 a[role='button'] {
   align-items: center;
-  background: var(--accent);
-  border: 0;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 28%);
   border-radius: 6px;
-  color: #ffffff;
+  color: var(--accent-strong);
   cursor: pointer;
   display: inline-flex;
   font: inherit;
@@ -88,8 +88,10 @@ a[role='button'] {
 
 button:hover,
 a[role='button']:hover {
-  background: var(--accent-strong);
-  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: none;
   transform: translateY(-1px);
 }
 

@@ -13,6 +13,12 @@
   padding: 0.9rem;
 }
 
+.summary {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft), transparent 46%), transparent 68%),
+    var(--panel);
+}
+
 .summary span {
   color: var(--muted);
   display: block;
@@ -56,8 +62,8 @@
 .panel-actions a,
 button.secondary {
   align-items: center;
-  background: var(--button-subtle);
-  border: 1px solid color-mix(in srgb, var(--accent), transparent 80%);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 28%);
   border-radius: 6px;
   color: var(--accent-strong);
   display: inline-flex;
@@ -68,7 +74,9 @@ button.secondary {
 
 .panel-actions a:hover,
 button.secondary:hover {
-  background: var(--button-subtle-hover);
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .notice {
