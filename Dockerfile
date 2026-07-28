@@ -20,7 +20,7 @@ COPY src ./src
 COPY frontend/src ./frontend/src
 COPY frontend/public ./frontend/public
 RUN npm run build
-RUN npm --dir frontend build
+RUN cd frontend && npm run build
 
 # 5. Define volume and runtime settings
 VOLUME ["/app/data"]
