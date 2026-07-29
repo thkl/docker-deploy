@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  updater-agent:
+    build:
+      context: .
+    env_file:
+      - .env
+    environment:
+      - UPDATER_ROLE=agent
+      - UPDATER_AGENT_HOST=0.0.0.0
+      - UPDATER_AGENT_PORT=${UPDATER_AGENT_PORT:-3998}
+      - UPDATER_SERVER_ID=${UPDATER_SERVER_ID:-docker-agent}
+    ports:
+      - "${UPDATER_AGENT_PORT:-3998}:${UPDATER_AGENT_PORT:-3998}"
+    volumes:
+      # Persistent agent key material, pairing state, and nonce cache.
+      - ./data/agent:/app/data
+      # Allows the agent worker containers to control Docker on this host.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Target-server checkout root used by deployments and compose imports.
+      - ${UPDATER_DATA_ROOT:-/root/docker-apps}:${UPDATER_DATA_ROOT:-/root/docker-apps}
+      # Optional: mount SSH keys when repositories are private.
+      - ${UPDATER_SSH_PATH:-/root/.ssh}:/root/.ssh:ro
+    restart: always
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://localhost:' + (process.env.UPDATER_AGENT_PORT || 3998) + '/agent/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
