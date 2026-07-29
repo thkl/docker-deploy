@@ -3,6 +3,8 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
+const pairingTokenStorageKey = 'updater.agentPairingTokens';
+
 @Component({
   selector: 'app-global-settings-page',
   imports: [ReactiveFormsModule],
@@ -42,6 +44,7 @@ export class GlobalSettingsPage implements OnInit {
   });
 
   ngOnInit() {
+    this.pairingTokens.set(readStoredPairingTokens());
     this.store.loadServers();
     this.loadSettings();
   }
@@ -86,18 +89,13 @@ export class GlobalSettingsPage implements OnInit {
     this.savingServer.set(true);
     this.api.createServer(payload).subscribe({
       next: (server) => {
-        this.pairingTokens.update((tokens) => ({ ...tokens, [server.id]: payload.pairingToken }));
-        this.serverForm.reset({
-          id: '',
-          name: '',
-          baseUrl: 'http://',
-          pairingJson: '',
-          agentPublicEncryptionKey: '',
-          agentPublicSigningKey: '',
-          pairingToken: '',
+        this.storePairingToken(server.id, payload.pairingToken);
+        this.serverForm.patchValue({
+          id: server.id,
+          name: server.name,
         });
         this.store.loadServers();
-        this.message.set(`Remote server ${server.name} saved. Pair it before assigning projects.`);
+        this.message.set(`Remote server ${server.name} saved. Pairing data is still loaded for this agent.`);
         this.savingServer.set(false);
       },
       error: (error) => {
@@ -113,6 +111,7 @@ export class GlobalSettingsPage implements OnInit {
     this.error.set('');
     this.api.deleteServer(serverId).subscribe({
       next: () => {
+        this.removeStoredPairingToken(serverId);
         this.store.loadServers();
         this.message.set(`Remote agent ${serverId} removed.`);
         this.deletingServer.set('');
@@ -139,10 +138,15 @@ export class GlobalSettingsPage implements OnInit {
       next: (server) => {
         this.store.loadServers();
         this.message.set(`Remote server ${server.name} paired.`);
-        this.pairingTokens.update((tokens) => {
-          const next = { ...tokens };
-          delete next[server.id];
-          return next;
+        this.removeStoredPairingToken(server.id);
+        this.serverForm.reset({
+          id: '',
+          name: '',
+          baseUrl: 'http://',
+          pairingJson: '',
+          agentPublicEncryptionKey: '',
+          agentPublicSigningKey: '',
+          pairingToken: '',
         });
         this.pairingServer.set('');
       },
@@ -180,6 +184,27 @@ export class GlobalSettingsPage implements OnInit {
     }
   }
 
+  private storePairingToken(serverId: string, pairingToken: string) {
+    if (!pairingToken) {
+      return;
+    }
+
+    this.pairingTokens.update((tokens) => {
+      const next = { ...tokens, [serverId]: pairingToken };
+      sessionStorage.setItem(pairingTokenStorageKey, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  private removeStoredPairingToken(serverId: string) {
+    this.pairingTokens.update((tokens) => {
+      const next = { ...tokens };
+      delete next[serverId];
+      sessionStorage.setItem(pairingTokenStorageKey, JSON.stringify(next));
+      return next;
+    });
+  }
+
   private loadSettings() {
     this.loading.set(true);
     this.api.getGlobalSettings().subscribe({
@@ -192,5 +217,13 @@ export class GlobalSettingsPage implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+}
+
+function readStoredPairingTokens(): Record<string, string> {
+  try {
+    return JSON.parse(sessionStorage.getItem(pairingTokenStorageKey) || '{}') as Record<string, string>;
+  } catch {
+    return {};
   }
 }
