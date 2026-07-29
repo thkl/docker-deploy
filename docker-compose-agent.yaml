@@ -8,7 +8,7 @@ services:
       - .env
     environment:
       - UPDATER_ROLE=agent
-      - UPDATER_AGENT_HOST=0.0.0.0
+      - UPDATER_AGENT_HOST=${UPDATER_AGENT_HOST:-0.0.0.0}
       - UPDATER_AGENT_PORT=${UPDATER_AGENT_PORT:-3998}
       - UPDATER_SERVER_ID=${UPDATER_SERVER_ID:-docker-agent}
     ports:
