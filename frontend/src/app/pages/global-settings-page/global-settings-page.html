@@ -53,7 +53,7 @@
         <div class="panel-head inline">
           <div>
             <h3>Add remote agent</h3>
-            <span>Paste the values printed by the agent on first startup</span>
+            <span>Paste /app/data/agent-pairing.json from the agent</span>
           </div>
           <button type="button" class="secondary" (click)="saveServer()" [disabled]="savingServer()">
             {{ savingServer() ? 'Saving...' : 'Save agent' }}
@@ -75,22 +75,21 @@
             <span>Agent URL</span>
             <input formControlName="baseUrl" placeholder="http://10.0.0.22:3998" />
           </label>
-
-          <label>
-            <span>Pairing token</span>
-            <input formControlName="pairingToken" autocomplete="off" placeholder="printed by the agent" />
-          </label>
         </div>
 
-        <label>
-          <span>Agent public encryption key</span>
-          <textarea formControlName="agentPublicEncryptionKey" spellcheck="false"></textarea>
+        <label class="pairing-json-field">
+          <span>agent-pairing.json</span>
+          <textarea
+            formControlName="pairingJson"
+            spellcheck="false"
+            (blur)="applyPairingJson()"
+            placeholder='{"serverId":"docker-2","pairingToken":"...","agentPublicEncryptionKey":"-----BEGIN PUBLIC KEY-----...","agentPublicSigningKey":"-----BEGIN PUBLIC KEY-----..."}'
+          ></textarea>
         </label>
 
-        <label>
-          <span>Agent public signing key</span>
-          <textarea formControlName="agentPublicSigningKey" spellcheck="false"></textarea>
-        </label>
+        <input type="hidden" formControlName="pairingToken" />
+        <input type="hidden" formControlName="agentPublicEncryptionKey" />
+        <input type="hidden" formControlName="agentPublicSigningKey" />
       </section>
     </section>
 

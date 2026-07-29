@@ -21,6 +21,7 @@ export class GlobalSettingsPage implements OnInit {
   protected readonly deletingServer = signal('');
   protected readonly message = signal('');
   protected readonly error = signal('');
+  protected readonly pairingTokens = signal<Record<string, string>>({});
   protected readonly servers = this.store.servers;
   protected readonly form = this.fb.group({
     dataRoot: ['/root/docker-apps', [Validators.required]],
@@ -34,6 +35,7 @@ export class GlobalSettingsPage implements OnInit {
     id: ['', [Validators.required, Validators.pattern(/^[a-zA-Z0-9._-]+$/)]],
     name: ['', [Validators.required]],
     baseUrl: ['http://', [Validators.required]],
+    pairingJson: ['', [Validators.required]],
     agentPublicEncryptionKey: ['', [Validators.required]],
     agentPublicSigningKey: ['', [Validators.required]],
     pairingToken: ['', [Validators.required]],
@@ -72,20 +74,24 @@ export class GlobalSettingsPage implements OnInit {
   protected saveServer() {
     this.message.set('');
     this.error.set('');
+    this.applyPairingJson();
 
     if (this.serverForm.invalid) {
       this.serverForm.markAllAsTouched();
-      this.error.set('Complete the remote agent fields before saving.');
+      this.error.set('Paste a valid agent-pairing.json file and complete the remote agent fields before saving.');
       return;
     }
 
+    const payload = this.serverForm.getRawValue();
     this.savingServer.set(true);
-    this.api.createServer(this.serverForm.getRawValue()).subscribe({
+    this.api.createServer(payload).subscribe({
       next: (server) => {
+        this.pairingTokens.update((tokens) => ({ ...tokens, [server.id]: payload.pairingToken }));
         this.serverForm.reset({
           id: '',
           name: '',
           baseUrl: 'http://',
+          pairingJson: '',
           agentPublicEncryptionKey: '',
           agentPublicSigningKey: '',
           pairingToken: '',
@@ -119,9 +125,10 @@ export class GlobalSettingsPage implements OnInit {
   }
 
   protected pairServer(serverId: string) {
-    const pairingToken = this.serverForm.controls.pairingToken.value.trim();
+    this.applyPairingJson();
+    const pairingToken = this.pairingTokens()[serverId] || this.serverForm.controls.pairingToken.value.trim();
     if (!pairingToken) {
-      this.error.set('Enter the agent pairing token before pairing.');
+      this.error.set('Paste agent-pairing.json before pairing.');
       return;
     }
 
@@ -132,6 +139,11 @@ export class GlobalSettingsPage implements OnInit {
       next: (server) => {
         this.store.loadServers();
         this.message.set(`Remote server ${server.name} paired.`);
+        this.pairingTokens.update((tokens) => {
+          const next = { ...tokens };
+          delete next[server.id];
+          return next;
+        });
         this.pairingServer.set('');
       },
       error: (error) => {
@@ -139,6 +151,33 @@ export class GlobalSettingsPage implements OnInit {
         this.pairingServer.set('');
       },
     });
+  }
+
+  protected applyPairingJson() {
+    const rawJson = this.serverForm.controls.pairingJson.value.trim();
+    if (!rawJson) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(rawJson) as Partial<{
+        serverId: string;
+        pairingToken: string;
+        agentPublicEncryptionKey: string;
+        agentPublicSigningKey: string;
+      }>;
+
+      this.serverForm.patchValue({
+        id: parsed.serverId || this.serverForm.controls.id.value,
+        name: this.serverForm.controls.name.value || parsed.serverId || '',
+        agentPublicEncryptionKey: parsed.agentPublicEncryptionKey || '',
+        agentPublicSigningKey: parsed.agentPublicSigningKey || '',
+        pairingToken: parsed.pairingToken || '',
+      });
+      this.error.set('');
+    } catch {
+      this.error.set('agent-pairing.json is not valid JSON.');
+    }
   }
 
   private loadSettings() {

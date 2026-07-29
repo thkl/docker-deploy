@@ -76,6 +76,10 @@ textarea {
   resize: vertical;
 }
 
+.pairing-json-field textarea {
+  min-height: 230px;
+}
+
 .server-list {
   display: grid;
   gap: 0.65rem;
