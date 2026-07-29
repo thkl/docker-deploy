@@ -56,7 +56,8 @@ label {
   gap: 0.45rem;
 }
 
-input {
+input,
+textarea {
   background: var(--panel-soft);
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -65,6 +66,14 @@ input {
   min-height: 38px;
   padding: 0.58rem 0.7rem;
   width: 100%;
+}
+
+textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  min-height: 98px;
+  resize: vertical;
 }
 
 .server-list {
@@ -83,6 +92,12 @@ input {
   justify-content: space-between;
   min-height: 54px;
   padding: 0.72rem 0.8rem;
+}
+
+.server-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
 }
 
 .server-row div {
@@ -108,9 +123,42 @@ input {
   padding: 0.2rem 0.55rem;
 }
 
-input:focus {
+.server-chip.unpaired {
+  border-color: color-mix(in srgb, var(--warning), transparent 34%);
+  color: var(--warning);
+}
+
+.remote-agent-panel {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+}
+
+.panel-head.inline {
+  align-items: center;
+  border-bottom: 0;
+  margin: 0;
+  padding: 0;
+}
+
+input:focus,
+textarea:focus {
   border-color: var(--accent);
   outline: 3px solid color-mix(in srgb, var(--accent), transparent 78%);
+}
+
+button.secondary {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 28%);
+  color: var(--accent-strong);
+}
+
+button.secondary:hover {
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .check-row {
@@ -161,5 +209,15 @@ input:focus {
 
   .panel-head {
     flex-direction: column;
+  }
+
+  .server-row,
+  .panel-head.inline {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .server-actions {
+    justify-content: flex-start;
   }
 }

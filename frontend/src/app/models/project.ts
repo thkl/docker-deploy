@@ -91,6 +91,21 @@ export interface ServerRecord {
   id: string;
   name: string;
   kind: 'local' | 'remote';
+  baseUrl?: string;
+  agentPublicEncryptionKey?: string;
+  agentPublicSigningKey?: string;
+  status?: 'online' | 'offline' | 'unpaired';
+  lastSeenAt?: string;
+  pairedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ServerPayload {
+  id?: string;
+  name?: string;
+  baseUrl?: string;
+  agentPublicEncryptionKey?: string;
+  agentPublicSigningKey?: string;
+  pairingToken?: string;
 }

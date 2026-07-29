@@ -2,6 +2,7 @@ import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js"
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
 import { deleteCheckoutPath, dispatchBuildWorker, DeploymentHooks, stopProjectContainers } from "./deploy.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
+import { AgentClient } from "./agentTypes.js";
 
 /**
  * Local target-server agent.
@@ -10,7 +11,7 @@ import { GlobalSettings, ProjectSettings } from "./types.js";
  * boundary. It still runs in-process, but every project operation is reachable
  * through one object so remote WebSocket agents can implement the same shape.
  */
-export class LocalAgent {
+export class LocalAgent implements AgentClient {
     /**
      * Starts a deployment worker for the selected local target server.
      */

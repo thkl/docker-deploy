@@ -30,14 +30,65 @@
           <article class="server-row">
             <div>
               <strong>{{ server.name }}</strong>
-              <span>{{ server.id }}</span>
+              <span>{{ server.id }} @if (server.baseUrl) { · {{ server.baseUrl }} }</span>
             </div>
-            <span class="server-chip">{{ server.kind }}</span>
+            <div class="server-actions">
+              <span class="server-chip" [class.unpaired]="server.status === 'unpaired'">{{ server.status || server.kind }}</span>
+              @if (server.kind === 'remote') {
+                <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">
+                  {{ pairingServer() === server.id ? 'Pairing...' : 'Pair' }}
+                </button>
+              }
+            </div>
           </article>
         } @empty {
           <p class="muted-copy">No servers have been registered yet.</p>
         }
       </div>
+
+      <section class="remote-agent-panel" [formGroup]="serverForm">
+        <div class="panel-head inline">
+          <div>
+            <h3>Add remote agent</h3>
+            <span>Paste the values printed by the agent on first startup</span>
+          </div>
+          <button type="button" class="secondary" (click)="saveServer()" [disabled]="savingServer()">
+            {{ savingServer() ? 'Saving...' : 'Save agent' }}
+          </button>
+        </div>
+
+        <div class="field-grid">
+          <label>
+            <span>Server ID</span>
+            <input formControlName="id" placeholder="docker-2" />
+          </label>
+
+          <label>
+            <span>Name</span>
+            <input formControlName="name" placeholder="Docker 2" />
+          </label>
+
+          <label>
+            <span>Agent URL</span>
+            <input formControlName="baseUrl" placeholder="http://10.0.0.22:3998" />
+          </label>
+
+          <label>
+            <span>Pairing token</span>
+            <input formControlName="pairingToken" autocomplete="off" placeholder="printed by the agent" />
+          </label>
+        </div>
+
+        <label>
+          <span>Agent public encryption key</span>
+          <textarea formControlName="agentPublicEncryptionKey" spellcheck="false"></textarea>
+        </label>
+
+        <label>
+          <span>Agent public signing key</span>
+          <textarea formControlName="agentPublicSigningKey" spellcheck="false"></textarea>
+        </label>
+      </section>
     </section>
 
     <section class="settings-panel">

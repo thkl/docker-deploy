@@ -1,16 +1,18 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import express, { Express, NextFunction, Request, Response } from "express";
+import { AgentManager } from "./agentManager.js";
+import { sealEnvelope } from "./agentCrypto.js";
 import { AdminAuth } from "./auth.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { DeploymentService } from "./deploymentService.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
-import { LocalAgent } from "./localAgent.js";
+import { ControllerKeyState } from "./keyStore.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
-import { DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload, ServerPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject } from "./webhookResolver.js";
 
@@ -23,7 +25,8 @@ export interface RouteDependencies {
     deploymentService: DeploymentService;
     deploymentStore: DeploymentStore;
     globalSettingsStore: GlobalSettingsStore;
-    localAgent: LocalAgent;
+    agentManager: AgentManager;
+    controllerKeys: ControllerKeyState;
     serverStore: ServerStore;
 }
 
@@ -31,7 +34,7 @@ export interface RouteDependencies {
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, configStore, deploymentService, deploymentStore, globalSettingsStore, localAgent, serverStore } = dependencies;
+    const { adminAuth, configStore, deploymentService, deploymentStore, globalSettingsStore, agentManager, controllerKeys, serverStore } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -56,8 +59,8 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/servers", adminAuth.requireAuth);
 
     registerSettingsRoutes(app, globalSettingsStore);
-    registerServerRoutes(app, serverStore);
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, globalSettingsStore, localAgent });
+    registerServerRoutes(app, serverStore, controllerKeys);
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, globalSettingsStore, agentManager });
     registerWebhookRoute(app, { configStore, deploymentService });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
@@ -84,9 +87,70 @@ function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSetting
 /**
  * Registers target-server read endpoints.
  */
-function registerServerRoutes(app: Express, serverStore: ServerStore) {
+function registerServerRoutes(app: Express, serverStore: ServerStore, controllerKeys: ControllerKeyState) {
     app.get("/api/servers", (req: Request, res: Response) => {
         res.json(serverStore.list());
+    });
+
+    app.post("/api/servers", (req: Request, res: Response) => {
+        try {
+            res.status(201).json(serverStore.createRemote(req.body as ServerPayload));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
+        }
+    });
+
+    app.put("/api/servers/:id", (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            res.json(serverStore.updateRemote(serverId, req.body as ServerPayload));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not update server." });
+        }
+    });
+
+    app.post("/api/servers/:id/pair", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            const server = serverStore.requireRemote(serverId);
+            const pairingToken = String((req.body as ServerPayload).pairingToken || "").trim();
+            if (!pairingToken) {
+                res.status(400).json({ error: "Pairing token is required." });
+                return;
+            }
+
+            if (!server.baseUrl || !server.agentPublicEncryptionKey || !server.agentPublicSigningKey) {
+                res.status(400).json({ error: "Server URL and agent public keys are required before pairing." });
+                return;
+            }
+
+            const pairResponse = await fetch(`${server.baseUrl.replace(/\/+$/, "")}/agent/pair`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    controllerId: controllerKeys.controllerId,
+                    controllerPublicEncryptionKey: controllerKeys.encryptionPublicKey,
+                    controllerPublicSigningKey: controllerKeys.signingPublicKey,
+                    envelope: sealEnvelope({ pairingToken }, {
+                        senderId: controllerKeys.controllerId,
+                        recipientId: server.id,
+                        messageType: "pair.request"
+                    }, {
+                        senderSigningPrivateKey: controllerKeys.signingPrivateKey,
+                        recipientEncryptionPublicKey: server.agentPublicEncryptionKey
+                    })
+                })
+            });
+
+            if (!pairResponse.ok) {
+                res.status(400).json({ error: `Agent pairing failed: ${await pairResponse.text()}` });
+                return;
+            }
+
+            res.json(serverStore.markPaired(server.id, controllerKeys.encryptionPublicKey, controllerKeys.signingPublicKey));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not pair server." });
+        }
     });
 }
 
@@ -94,8 +158,8 @@ function registerServerRoutes(app: Express, serverStore: ServerStore) {
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "globalSettingsStore" | "localAgent">) {
-    const { configStore, deploymentService, deploymentStore, globalSettingsStore, localAgent } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "globalSettingsStore" | "agentManager">) {
+    const { configStore, deploymentService, deploymentStore, globalSettingsStore, agentManager } = dependencies;
 
     app.get("/api/projects", (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -219,15 +283,16 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
             const globalSettings = globalSettingsStore.readSettings();
             const actions: string[] = [];
+            const agent = agentManager.getClient(appSettings.serverId ?? "local");
 
             if (payload.stopContainers) {
-                await localAgent.stopProject(projectName, appSettings, globalSettings);
+                await agent.stopProject(projectName, appSettings, globalSettings);
                 actions.push("containers stopped");
             }
 
             if (payload.deleteCheckout) {
                 const checkoutPath = assertSafeDeletePath(appSettings.path ?? defaultProjectPath(globalSettings, projectName), globalSettings.dataRoot);
-                const cleanup = await localAgent.deleteCheckout(checkoutPath);
+                const cleanup = await agent.deleteCheckout(checkoutPath);
                 actions.push(...cleanup.steps);
                 actions.push("checkout deleted");
             }
@@ -272,7 +337,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 return;
             }
 
-            const importedCompose = await localAgent.importCompose(projectName, appSettings, globalSettingsStore.readSettings());
+            const importedCompose = await agentManager.getClient(appSettings.serverId ?? "local").importCompose(projectName, appSettings, globalSettingsStore.readSettings());
             res.json(importedCompose);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not import Docker Compose file." });

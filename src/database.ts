@@ -54,6 +54,14 @@ export class AppDatabase {
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 kind TEXT NOT NULL,
+                base_url TEXT,
+                agent_public_encryption_key TEXT,
+                agent_public_signing_key TEXT,
+                controller_public_encryption_key TEXT,
+                controller_public_signing_key TEXT,
+                status TEXT NOT NULL DEFAULT 'unpaired',
+                last_seen_at TEXT,
+                paired_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -117,7 +125,25 @@ export class AppDatabase {
             );
         `);
 
+        this.ensureColumn("servers", "base_url", "TEXT");
+        this.ensureColumn("servers", "agent_public_encryption_key", "TEXT");
+        this.ensureColumn("servers", "agent_public_signing_key", "TEXT");
+        this.ensureColumn("servers", "controller_public_encryption_key", "TEXT");
+        this.ensureColumn("servers", "controller_public_signing_key", "TEXT");
+        this.ensureColumn("servers", "status", "TEXT NOT NULL DEFAULT 'unpaired'");
+        this.ensureColumn("servers", "last_seen_at", "TEXT");
+        this.ensureColumn("servers", "paired_at", "TEXT");
         this.connection.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)").run(String(schemaVersion));
+    }
+
+    /**
+     * Adds a column for existing SQLite databases when a migration grows a table.
+     */
+    private ensureColumn(tableName: string, columnName: string, definition: string) {
+        const columns = this.connection.prepare(`PRAGMA table_info(${tableName})`).all() as unknown as Array<{ name: string }>;
+        if (!columns.some((column) => column.name === columnName)) {
+            this.connection.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`);
+        }
     }
 
     /**
@@ -127,10 +153,11 @@ export class AppDatabase {
         const now = new Date().toISOString();
         this.connection
             .prepare(
-                `INSERT OR IGNORE INTO servers (id, name, kind, created_at, updated_at)
-                 VALUES ('local', 'Local Server', 'local', ?, ?)`
+                `INSERT OR IGNORE INTO servers (id, name, kind, status, created_at, updated_at)
+                 VALUES ('local', 'Local Server', 'local', 'online', ?, ?)`
             )
             .run(now, now);
+        this.connection.prepare("UPDATE servers SET status = 'online' WHERE id = 'local'").run();
 
         this.connection
             .prepare(
@@ -199,7 +226,26 @@ export class AppDatabase {
  * Returns all configured servers.
  */
 export function listServers(database: DatabaseSync): ServerRecord[] {
-    return database.prepare("SELECT id, name, kind, created_at AS createdAt, updated_at AS updatedAt FROM servers ORDER BY name").all() as unknown as ServerRecord[];
+    return database
+        .prepare(
+            `SELECT
+                id,
+                name,
+                kind,
+                base_url AS baseUrl,
+                agent_public_encryption_key AS agentPublicEncryptionKey,
+                agent_public_signing_key AS agentPublicSigningKey,
+                controller_public_encryption_key AS controllerPublicEncryptionKey,
+                controller_public_signing_key AS controllerPublicSigningKey,
+                status,
+                last_seen_at AS lastSeenAt,
+                paired_at AS pairedAt,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+             FROM servers
+             ORDER BY name`
+        )
+        .all() as unknown as ServerRecord[];
 }
 
 /**

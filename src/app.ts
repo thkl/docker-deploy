@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
 import express, { NextFunction, Request, Response } from "express";
+import { AgentManager } from "./agentManager.js";
+import { AgentRuntime } from "./agentRuntime.js";
 import { AdminAuth } from "./auth.js";
 import { AppDatabase } from "./database.js";
 import { ConfigStore } from "./configStore.js";
@@ -7,6 +9,7 @@ import { DeploymentService } from "./deploymentService.js";
 import { DeploymentStreamHub } from "./deploymentStreams.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
+import { ensureControllerKeys } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
 import { registerRoutes } from "./routes.js";
 import { ServerStore } from "./serverStore.js";
@@ -28,12 +31,14 @@ class App {
     private readonly deploymentStore = new DeploymentStore(this.database.connection);
     private readonly globalSettingsStore = new GlobalSettingsStore(this.database.connection);
     private readonly serverStore = new ServerStore(this.database.connection);
+    private readonly controllerKeys = ensureControllerKeys();
     private readonly localAgent = new LocalAgent();
+    private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
     private readonly deploymentStreams = new DeploymentStreamHub(this.configStore, this.deploymentStore, this.adminAuth);
     private readonly deploymentService = new DeploymentService(
         this.deploymentStore,
         this.globalSettingsStore,
-        this.localAgent,
+        this.agentManager,
         (projectName) => this.deploymentStreams.broadcast(projectName)
     );
 
@@ -49,7 +54,8 @@ class App {
             deploymentService: this.deploymentService,
             deploymentStore: this.deploymentStore,
             globalSettingsStore: this.globalSettingsStore,
-            localAgent: this.localAgent,
+            agentManager: this.agentManager,
+            controllerKeys: this.controllerKeys,
             serverStore: this.serverStore
         });
         this.registerErrorHandler();
@@ -85,4 +91,11 @@ class App {
     }
 }
 
-new App().init();
+const role = process.env.UPDATER_ROLE || "standalone";
+if (role === "agent") {
+    new AgentRuntime().start();
+} else if (role === "standalone" || role === "controller") {
+    new App().init();
+} else {
+    throw new Error(`Unsupported UPDATER_ROLE: ${role}`);
+}

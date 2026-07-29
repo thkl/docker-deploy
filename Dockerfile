@@ -24,6 +24,6 @@ RUN cd frontend && npm run build
 
 # 5. Define volume and runtime settings
 VOLUME ["/app/data"]
-EXPOSE 3999
+EXPOSE 3999 3998
 
 CMD ["node", "dist/app.js"]
