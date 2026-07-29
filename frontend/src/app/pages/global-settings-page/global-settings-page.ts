@@ -34,12 +34,8 @@ export class GlobalSettingsPage implements OnInit {
     cleanupAfterDeploy: [false],
   });
   protected readonly serverForm = this.fb.group({
-    id: ['', [Validators.required, Validators.pattern(/^[a-zA-Z0-9._-]+$/)]],
-    name: ['', [Validators.required]],
+    name: [''],
     baseUrl: ['http://', [Validators.required]],
-    pairingJson: ['', [Validators.required]],
-    agentPublicEncryptionKey: ['', [Validators.required]],
-    agentPublicSigningKey: ['', [Validators.required]],
     pairingToken: ['', [Validators.required]],
   });
 
@@ -77,11 +73,10 @@ export class GlobalSettingsPage implements OnInit {
   protected saveServer() {
     this.message.set('');
     this.error.set('');
-    this.applyPairingJson();
 
     if (this.serverForm.invalid) {
       this.serverForm.markAllAsTouched();
-      this.error.set('Paste a valid agent-pairing.json file and complete the remote agent fields before saving.');
+      this.error.set('Enter the agent URL and pairing token before saving.');
       return;
     }
 
@@ -91,11 +86,10 @@ export class GlobalSettingsPage implements OnInit {
       next: (server) => {
         this.storePairingToken(server.id, payload.pairingToken);
         this.serverForm.patchValue({
-          id: server.id,
           name: server.name,
         });
         this.store.loadServers();
-        this.message.set(`Remote server ${server.name} saved. Pairing data is still loaded for this agent.`);
+        this.message.set(`Remote server ${server.name} saved. Pairing token is loaded for this agent.`);
         this.savingServer.set(false);
       },
       error: (error) => {
@@ -124,10 +118,9 @@ export class GlobalSettingsPage implements OnInit {
   }
 
   protected pairServer(serverId: string) {
-    this.applyPairingJson();
     const pairingToken = this.pairingTokens()[serverId] || this.serverForm.controls.pairingToken.value.trim();
     if (!pairingToken) {
-      this.error.set('Paste agent-pairing.json before pairing.');
+      this.error.set('Enter the agent pairing token before pairing.');
       return;
     }
 
@@ -140,12 +133,8 @@ export class GlobalSettingsPage implements OnInit {
         this.message.set(`Remote server ${server.name} paired.`);
         this.removeStoredPairingToken(server.id);
         this.serverForm.reset({
-          id: '',
           name: '',
           baseUrl: 'http://',
-          pairingJson: '',
-          agentPublicEncryptionKey: '',
-          agentPublicSigningKey: '',
           pairingToken: '',
         });
         this.pairingServer.set('');
@@ -155,33 +144,6 @@ export class GlobalSettingsPage implements OnInit {
         this.pairingServer.set('');
       },
     });
-  }
-
-  protected applyPairingJson() {
-    const rawJson = this.serverForm.controls.pairingJson.value.trim();
-    if (!rawJson) {
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(rawJson) as Partial<{
-        serverId: string;
-        pairingToken: string;
-        agentPublicEncryptionKey: string;
-        agentPublicSigningKey: string;
-      }>;
-
-      this.serverForm.patchValue({
-        id: parsed.serverId || this.serverForm.controls.id.value,
-        name: this.serverForm.controls.name.value || parsed.serverId || '',
-        agentPublicEncryptionKey: parsed.agentPublicEncryptionKey || '',
-        agentPublicSigningKey: parsed.agentPublicSigningKey || '',
-        pairingToken: parsed.pairingToken || '',
-      });
-      this.error.set('');
-    } catch {
-      this.error.set('agent-pairing.json is not valid JSON.');
-    }
   }
 
   private storePairingToken(serverId: string, pairingToken: string) {

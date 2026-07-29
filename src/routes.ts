@@ -94,7 +94,7 @@ function registerServerRoutes(app: Express, serverStore: ServerStore, controller
 
     app.post("/api/servers", (req: Request, res: Response) => {
         try {
-            res.status(201).json(serverStore.createRemote(req.body as ServerPayload));
+            void createRemoteServer(req.body as ServerPayload, serverStore, res);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
         }
@@ -134,7 +134,16 @@ function registerServerRoutes(app: Express, serverStore: ServerStore, controller
                 return;
             }
 
-            const pairResponse = await fetch(`${server.baseUrl.replace(/\/+$/, "")}/agent/pair`, {
+            const agentBaseUrl = server.baseUrl.replace(/\/+$/, "");
+            const health = await fetchAgentHealth(agentBaseUrl);
+            if (!health.ok) {
+                res.status(400).json({
+                    error: `Agent URL is not reaching an updater agent. ${health.message}`
+                });
+                return;
+            }
+
+            const pairResponse = await fetch(`${agentBaseUrl}/agent/pair`, {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
@@ -153,7 +162,7 @@ function registerServerRoutes(app: Express, serverStore: ServerStore, controller
             });
 
             if (!pairResponse.ok) {
-                res.status(400).json({ error: `Agent pairing failed: ${await pairResponse.text()}` });
+                res.status(400).json({ error: `Agent pairing failed: ${await readResponseError(pairResponse)}` });
                 return;
             }
 
@@ -162,6 +171,82 @@ function registerServerRoutes(app: Express, serverStore: ServerStore, controller
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not pair server." });
         }
     });
+}
+
+/**
+ * Creates a remote server and discovers public agent keys from `/agent/health`
+ * when the UI only submits a base URL.
+ */
+async function createRemoteServer(payload: ServerPayload, serverStore: ServerStore, res: Response) {
+    try {
+        const baseUrl = String(payload.baseUrl || "").trim().replace(/\/+$/, "");
+        const health = await fetchAgentHealth(baseUrl);
+        if (!health.ok || !health.body) {
+            res.status(400).json({ error: `Agent URL is not reaching an updater agent. ${health.message}` });
+            return;
+        }
+
+        res.status(201).json(serverStore.createRemote({
+            ...payload,
+            id: payload.id || health.body.serverId,
+            name: payload.name || health.body.serverId,
+            baseUrl,
+            agentPublicEncryptionKey: health.body.encryptionPublicKey,
+            agentPublicSigningKey: health.body.signingPublicKey
+        }));
+    } catch (error) {
+        res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
+    }
+}
+
+/**
+ * Checks that the configured URL points to the updater agent API, not a proxy
+ * default site or another application.
+ */
+async function fetchAgentHealth(agentBaseUrl: string) {
+    if (!agentBaseUrl) {
+        return { ok: false, message: "Agent URL is required." };
+    }
+
+    const healthUrl = `${agentBaseUrl}/agent/health`;
+    try {
+        const response = await fetch(healthUrl);
+        if (!response.ok) {
+            return {
+                ok: false,
+                message: `${healthUrl} returned HTTP ${response.status}. Configure the proxy/port so this URL reaches the agent container.`
+            };
+        }
+
+        const body = await response.json() as { serverId?: string; encryptionPublicKey?: string; signingPublicKey?: string };
+        if (!body.serverId || !body.encryptionPublicKey || !body.signingPublicKey) {
+            return {
+                ok: false,
+                message: `${healthUrl} answered, but it did not look like an updater agent.`
+            };
+        }
+
+        return { ok: true, message: "", body };
+    } catch (error) {
+        return {
+            ok: false,
+            message: `${healthUrl} could not be reached: ${error instanceof Error ? error.message : String(error)}`
+        };
+    }
+}
+
+/**
+ * Reads a concise error from a failed agent response.
+ */
+async function readResponseError(response: globalThis.Response) {
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+        const body = await response.json() as { error?: string };
+        return body.error || `HTTP ${response.status}`;
+    }
+
+    const text = await response.text();
+    return text.replace(/\s+/g, " ").trim().slice(0, 240) || `HTTP ${response.status}`;
 }
 
 /**

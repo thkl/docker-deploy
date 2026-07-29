@@ -35,9 +35,11 @@
             <div class="server-actions">
               <span class="server-chip" [class.unpaired]="server.status === 'unpaired'">{{ server.status || server.kind }}</span>
               @if (server.kind === 'remote') {
-                <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">
-                  {{ pairingServer() === server.id ? 'Pairing...' : 'Pair' }}
-                </button>
+                @if (server.status === 'unpaired') {
+                  <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">
+                    {{ pairingServer() === server.id ? 'Pairing...' : 'Pair' }}
+                  </button>
+                }
                 <button type="button" class="danger-action" (click)="deleteServer(server.id)" [disabled]="deletingServer() !== ''">
                   {{ deletingServer() === server.id ? 'Removing...' : 'Remove' }}
                 </button>
@@ -53,7 +55,7 @@
         <div class="panel-head inline">
           <div>
             <h3>Add remote agent</h3>
-            <span>Paste /app/data/agent-pairing.json from the agent</span>
+            <span>Enter the agent URL and the token from /app/data/agent-pairing.json</span>
           </div>
           <button type="button" class="secondary" (click)="saveServer()" [disabled]="savingServer()">
             {{ savingServer() ? 'Saving...' : 'Save agent' }}
@@ -62,34 +64,20 @@
 
         <div class="field-grid">
           <label>
-            <span>Server ID</span>
-            <input formControlName="id" placeholder="docker-2" />
-          </label>
-
-          <label>
-            <span>Name</span>
-            <input formControlName="name" placeholder="Docker 2" />
+            <span>Name optional</span>
+            <input formControlName="name" placeholder="uses the agent serverId when empty" />
           </label>
 
           <label>
             <span>Agent URL</span>
             <input formControlName="baseUrl" placeholder="http://10.0.0.22:3998" />
           </label>
+
+          <label>
+            <span>Pairing token</span>
+            <input formControlName="pairingToken" autocomplete="off" placeholder="token from agent-pairing.json" />
+          </label>
         </div>
-
-        <label class="pairing-json-field">
-          <span>agent-pairing.json</span>
-          <textarea
-            formControlName="pairingJson"
-            spellcheck="false"
-            (blur)="applyPairingJson()"
-            placeholder='{"serverId":"docker-2","pairingToken":"...","agentPublicEncryptionKey":"-----BEGIN PUBLIC KEY-----...","agentPublicSigningKey":"-----BEGIN PUBLIC KEY-----..."}'
-          ></textarea>
-        </label>
-
-        <input type="hidden" formControlName="pairingToken" />
-        <input type="hidden" formControlName="agentPublicEncryptionKey" />
-        <input type="hidden" formControlName="agentPublicSigningKey" />
       </section>
     </section>
 
