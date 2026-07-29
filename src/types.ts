@@ -19,6 +19,7 @@ export interface TraefikSettings {
 }
 
 export interface ProjectSettings {
+    serverId?: string;
     token?: string;
     repositoryUrl?: string;
     deployToken?: string;
@@ -49,6 +50,7 @@ export interface GlobalSettingsPayload {
 
 export interface ProjectPayload {
     name?: string;
+    serverId?: string;
     token?: string;
     repositoryUrl?: string;
     deployToken?: string;
@@ -72,4 +74,12 @@ export interface DeleteProjectPayload {
     stopContainers?: boolean;
     deleteCheckout?: boolean;
     deleteDeploymentHistory?: boolean;
+}
+
+export interface ServerRecord {
+    id: string;
+    name: string;
+    kind: "local" | "remote";
+    createdAt: string;
+    updatedAt: string;
 }

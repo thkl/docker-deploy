@@ -1,11 +1,10 @@
-import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
-import { deleteCheckoutPath } from "./deploy.js";
 
 export interface CheckoutCleanupResult {
     steps: string[];
 }
+
+type CheckoutDeleteWorker = (checkoutPath: string) => Promise<string>;
 
 /**
  * Validates that a configured checkout path is safe to delete automatically.
@@ -34,47 +33,30 @@ export function assertSafeDeletePath(path: string, dataRoot: string) {
 }
 
 /**
- * Removes a project checkout from both the controller namespace and the Docker
- * host namespace.
+ * Removes a project checkout from the target server namespace.
  *
  * The controller can run in a container where `/root/docker-apps` is not the
- * same filesystem path as the Docker host. Because deployments clone through
- * the host Docker daemon, Docker cleanup must always run even when local `rm`
- * appears to succeed.
+ * same filesystem path as the Docker host, so cleanup must be delegated to an
+ * agent/worker that has target-server path access.
  */
-export async function removeCheckoutPath(checkoutPath: string): Promise<CheckoutCleanupResult> {
+export async function removeCheckoutPath(checkoutPath: string, deleteWorker: CheckoutDeleteWorker): Promise<CheckoutCleanupResult> {
     const steps: string[] = [];
     logCleanupStep(steps, `requested checkout delete: ${checkoutPath}`);
-    logCleanupStep(steps, `controller namespace exists before delete: ${existsSync(checkoutPath)}`);
-
-    try {
-        await rm(checkoutPath, { recursive: true, force: true });
-        logCleanupStep(steps, "controller namespace rm completed");
-    } catch (error) {
-        logCleanupStep(steps, `controller namespace rm failed: ${readErrorMessage(error)}`);
-    }
-
-    await runDockerCleanup(checkoutPath, steps, "delete Docker host checkout path");
-
-    if (existsSync(checkoutPath)) {
-        logCleanupStep(steps, "controller namespace path still exists after cleanup");
-    } else {
-        logCleanupStep(steps, "controller namespace path removed");
-    }
+    await runWorkerCleanup(checkoutPath, steps, deleteWorker, "delete target-server checkout path");
 
     return { steps };
 }
 
 /**
- * Runs the Docker cleanup helper and records stdout/stderr for troubleshooting.
+ * Runs the agent cleanup helper and records stdout/stderr for troubleshooting.
  */
-async function runDockerCleanup(checkoutPath: string, steps: string[], reason: string) {
-    logCleanupStep(steps, `docker cleanup starting: ${reason}`);
+async function runWorkerCleanup(checkoutPath: string, steps: string[], deleteWorker: CheckoutDeleteWorker, reason: string) {
+    logCleanupStep(steps, `agent cleanup starting: ${reason}`);
     try {
-        const output = await deleteCheckoutPath(checkoutPath);
-        logCleanupStep(steps, output ? `docker cleanup completed: ${output}` : "docker cleanup completed with no output");
+        const output = await deleteWorker(checkoutPath);
+        logCleanupStep(steps, output ? `agent cleanup completed: ${output}` : "agent cleanup completed with no output");
     } catch (error) {
-        logCleanupStep(steps, `docker cleanup failed: ${readErrorMessage(error)}`);
+        logCleanupStep(steps, `agent cleanup failed: ${readErrorMessage(error)}`);
         throw error;
     }
 }

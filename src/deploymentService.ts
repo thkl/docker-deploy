@@ -1,6 +1,6 @@
 import { DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
-import { dispatchBuildWorker } from "./deploy.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
+import { LocalAgent } from "./localAgent.js";
 import { ProjectSettings } from "./types.js";
 
 /**
@@ -14,6 +14,7 @@ export class DeploymentService {
     constructor(
         private readonly deploymentStore: DeploymentStore,
         private readonly globalSettingsStore: GlobalSettingsStore,
+        private readonly localAgent: LocalAgent,
         private readonly broadcastDeployment: (projectName: string) => void
     ) {}
 
@@ -22,11 +23,11 @@ export class DeploymentService {
      * into persisted deployment history plus WebSocket broadcasts.
      */
     startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
-        const deployment = this.deploymentStore.start(projectName, trigger);
+        const deployment = this.deploymentStore.start(projectName, trigger, appSettings.serverId ?? "local");
         const globalSettings = this.globalSettingsStore.readSettings();
         this.broadcastDeployment(projectName);
 
-        dispatchBuildWorker(projectName, appSettings, globalSettings, {
+        this.localAgent.deployProject(projectName, appSettings, globalSettings, {
             onOutput: (stream, chunk) => {
                 this.deploymentStore.append(projectName, deployment.id, stream, chunk);
                 this.broadcastDeployment(projectName);

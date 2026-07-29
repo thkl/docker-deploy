@@ -1,12 +1,15 @@
 import { createServer } from "node:http";
 import express, { NextFunction, Request, Response } from "express";
 import { AdminAuth } from "./auth.js";
+import { AppDatabase } from "./database.js";
 import { ConfigStore } from "./configStore.js";
 import { DeploymentService } from "./deploymentService.js";
 import { DeploymentStreamHub } from "./deploymentStreams.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
+import { LocalAgent } from "./localAgent.js";
 import { registerRoutes } from "./routes.js";
+import { ServerStore } from "./serverStore.js";
 import { AuthenticatedRequest } from "./types.js";
 
 /**
@@ -19,14 +22,18 @@ import { AuthenticatedRequest } from "./types.js";
 class App {
     private readonly app = express();
     private readonly port = parseInt(process.env.PORT || "3999");
+    private readonly database = new AppDatabase();
     private readonly adminAuth = new AdminAuth();
-    private readonly configStore = new ConfigStore();
-    private readonly deploymentStore = new DeploymentStore();
-    private readonly globalSettingsStore = new GlobalSettingsStore();
+    private readonly configStore = new ConfigStore(this.database.connection);
+    private readonly deploymentStore = new DeploymentStore(this.database.connection);
+    private readonly globalSettingsStore = new GlobalSettingsStore(this.database.connection);
+    private readonly serverStore = new ServerStore(this.database.connection);
+    private readonly localAgent = new LocalAgent();
     private readonly deploymentStreams = new DeploymentStreamHub(this.configStore, this.deploymentStore, this.adminAuth);
     private readonly deploymentService = new DeploymentService(
         this.deploymentStore,
         this.globalSettingsStore,
+        this.localAgent,
         (projectName) => this.deploymentStreams.broadcast(projectName)
     );
 
@@ -41,7 +48,9 @@ class App {
             configStore: this.configStore,
             deploymentService: this.deploymentService,
             deploymentStore: this.deploymentStore,
-            globalSettingsStore: this.globalSettingsStore
+            globalSettingsStore: this.globalSettingsStore,
+            localAgent: this.localAgent,
+            serverStore: this.serverStore
         });
         this.registerErrorHandler();
 

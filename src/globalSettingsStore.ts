@@ -1,8 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { AppDatabase, runDatabaseTransaction } from "./database.js";
 import { GlobalSettings, GlobalSettingsPayload } from "./types.js";
 
-const defaultSettings: GlobalSettings = {
+export const defaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     defaultTraefikNetwork: "proxy",
     defaultTraefikEntryPoints: "websecure",
@@ -12,34 +11,26 @@ const defaultSettings: GlobalSettings = {
 };
 
 /**
- * JSON-backed global settings store.
+ * SQLite-backed global settings store.
  *
  * These settings describe controller-wide defaults such as the checkout root,
  * Traefik defaults, SSH key mount path, and cleanup behavior.
  */
 export class GlobalSettingsStore {
-    constructor(private readonly settingsPath = join("./data", "settings.json")) {}
+    constructor(private readonly database = new AppDatabase().connection) {}
 
     /**
      * Reads normalized global settings, falling back to defaults when the file
      * does not exist yet.
      */
     readSettings(): GlobalSettings {
-        if (!existsSync(this.settingsPath)) {
-            return defaultSettings;
-        }
+        const rows = this.database.prepare("SELECT key, value FROM settings").all() as unknown as Array<{ key: keyof GlobalSettings; value: string }>;
+        const stored = rows.reduce<GlobalSettingsPayload>((settings, row) => {
+            settings[row.key] = JSON.parse(row.value);
+            return settings;
+        }, {});
 
-        const content = readFileSync(this.settingsPath, "utf8").trim();
-        if (!content) {
-            return defaultSettings;
-        }
-
-        const parsed = JSON.parse(content);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-            throw new Error("Global settings must be an object.");
-        }
-
-        return normalizeGlobalSettings(parsed as GlobalSettingsPayload);
+        return normalizeGlobalSettings({ ...defaultGlobalSettings, ...stored });
     }
 
     /**
@@ -47,8 +38,11 @@ export class GlobalSettingsStore {
      */
     writeSettings(payload: GlobalSettingsPayload) {
         const settings = normalizeGlobalSettings(payload);
-        mkdirSync(dirname(this.settingsPath), { recursive: true });
-        writeFileSync(this.settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+        runDatabaseTransaction(this.database, () => {
+            for (const [key, value] of Object.entries(settings)) {
+                this.database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, JSON.stringify(value));
+            }
+        });
         return settings;
     }
 }
@@ -57,11 +51,11 @@ export class GlobalSettingsStore {
  * Applies defaults and validation to a global settings payload.
  */
 export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalSettings {
-    const dataRoot = normalizeAbsolutePath(payload.dataRoot, "Data root") || defaultSettings.dataRoot;
-    const sshKeyPath = payload.sshKeyPath?.trim() || defaultSettings.sshKeyPath;
-    const defaultTraefikNetwork = normalizeName(payload.defaultTraefikNetwork, "Default Traefik network") || defaultSettings.defaultTraefikNetwork;
-    const defaultTraefikEntryPoints = normalizeCsvNames(payload.defaultTraefikEntryPoints, "Default Traefik entry points") || defaultSettings.defaultTraefikEntryPoints;
-    const defaultTraefikCertResolver = normalizeName(payload.defaultTraefikCertResolver, "Default Traefik cert resolver") || defaultSettings.defaultTraefikCertResolver;
+    const dataRoot = normalizeAbsolutePath(payload.dataRoot, "Data root") || defaultGlobalSettings.dataRoot;
+    const sshKeyPath = payload.sshKeyPath?.trim() || defaultGlobalSettings.sshKeyPath;
+    const defaultTraefikNetwork = normalizeName(payload.defaultTraefikNetwork, "Default Traefik network") || defaultGlobalSettings.defaultTraefikNetwork;
+    const defaultTraefikEntryPoints = normalizeCsvNames(payload.defaultTraefikEntryPoints, "Default Traefik entry points") || defaultGlobalSettings.defaultTraefikEntryPoints;
+    const defaultTraefikCertResolver = normalizeName(payload.defaultTraefikCertResolver, "Default Traefik cert resolver") || defaultGlobalSettings.defaultTraefikCertResolver;
 
     if (!sshKeyPath.startsWith("/") && !sshKeyPath.startsWith("~/")) {
         throw new Error("SSH key path must be an absolute path or start with ~/.");

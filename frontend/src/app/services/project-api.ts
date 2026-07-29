@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary } from '../models/project';
+import { DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, ServerRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -45,5 +45,9 @@ export class ProjectApi {
 
   updateGlobalSettings(payload: GlobalSettings): Observable<GlobalSettings> {
     return this.http.put<GlobalSettings>('/api/settings', payload);
+  }
+
+  listServers(): Observable<ServerRecord[]> {
+    return this.http.get<ServerRecord[]>('/api/servers');
   }
 }

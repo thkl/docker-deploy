@@ -2,13 +2,13 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import express, { Express, NextFunction, Request, Response } from "express";
 import { AdminAuth } from "./auth.js";
-import { assertSafeDeletePath, removeCheckoutPath } from "./checkoutCleanup.js";
-import { importProjectCompose } from "./composeImport.js";
+import { assertSafeDeletePath } from "./checkoutCleanup.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { DeploymentService } from "./deploymentService.js";
-import { stopProjectContainers } from "./deploy.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
+import { LocalAgent } from "./localAgent.js";
+import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
 import { DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
@@ -23,13 +23,15 @@ export interface RouteDependencies {
     deploymentService: DeploymentService;
     deploymentStore: DeploymentStore;
     globalSettingsStore: GlobalSettingsStore;
+    localAgent: LocalAgent;
+    serverStore: ServerStore;
 }
 
 /**
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, configStore, deploymentService, deploymentStore, globalSettingsStore } = dependencies;
+    const { adminAuth, configStore, deploymentService, deploymentStore, globalSettingsStore, localAgent, serverStore } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -51,9 +53,11 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
 
     app.use("/api/settings", adminAuth.requireAuth);
     app.use("/api/projects", adminAuth.requireAuth);
+    app.use("/api/servers", adminAuth.requireAuth);
 
     registerSettingsRoutes(app, globalSettingsStore);
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, globalSettingsStore });
+    registerServerRoutes(app, serverStore);
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, globalSettingsStore, localAgent });
     registerWebhookRoute(app, { configStore, deploymentService });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
@@ -78,11 +82,20 @@ function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSetting
 }
 
 /**
+ * Registers target-server read endpoints.
+ */
+function registerServerRoutes(app: Express, serverStore: ServerStore) {
+    app.get("/api/servers", (req: Request, res: Response) => {
+        res.json(serverStore.list());
+    });
+}
+
+/**
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "globalSettingsStore">) {
-    const { configStore, deploymentService, deploymentStore, globalSettingsStore } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "globalSettingsStore" | "localAgent">) {
+    const { configStore, deploymentService, deploymentStore, globalSettingsStore, localAgent } = dependencies;
 
     app.get("/api/projects", (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -92,6 +105,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 .sort(([left], [right]) => left.localeCompare(right))
                 .map(([name, settings]) => ({
                     name,
+                    serverId: settings.serverId ?? "local",
                     repositoryUrl: settings.repositoryUrl ?? "",
                     path: settings.path ?? defaultProjectPath(globalSettings, name),
                     token: settings.token ? maskToken(settings.token) : "",
@@ -122,6 +136,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
             const config = configStore.readConfig();
             config[repoName] = {
+                serverId: payload.serverId?.trim() || "local",
                 ...(repoToken ? { token: repoToken } : {}),
                 ...(repositoryUrl ? { repositoryUrl } : {}),
                 ...(deployToken ? { deployToken } : {}),
@@ -168,6 +183,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             }
 
             config[nextName] = {
+                serverId: payload.serverId?.trim() || existing.serverId || "local",
                 token: nextToken || existing.token,
                 ...(nextRepositoryUrl ? { repositoryUrl: nextRepositoryUrl } : {}),
                 ...(nextDeployToken || existing.deployToken ? { deployToken: nextDeployToken || existing.deployToken } : {}),
@@ -205,13 +221,13 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const actions: string[] = [];
 
             if (payload.stopContainers) {
-                await stopProjectContainers(projectName, appSettings, globalSettings);
+                await localAgent.stopProject(projectName, appSettings, globalSettings);
                 actions.push("containers stopped");
             }
 
             if (payload.deleteCheckout) {
                 const checkoutPath = assertSafeDeletePath(appSettings.path ?? defaultProjectPath(globalSettings, projectName), globalSettings.dataRoot);
-                const cleanup = await removeCheckoutPath(checkoutPath);
+                const cleanup = await localAgent.deleteCheckout(checkoutPath);
                 actions.push(...cleanup.steps);
                 actions.push("checkout deleted");
             }
@@ -256,7 +272,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 return;
             }
 
-            const importedCompose = await importProjectCompose(projectName, appSettings, globalSettingsStore.readSettings());
+            const importedCompose = await localAgent.importCompose(projectName, appSettings, globalSettingsStore.readSettings());
             res.json(importedCompose);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not import Docker Compose file." });

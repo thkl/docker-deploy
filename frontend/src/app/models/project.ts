@@ -18,6 +18,7 @@ export type DeploymentTrigger = 'webhook' | 'ci' | 'manual';
 export interface DeploymentRecord {
   id: string;
   projectName: string;
+  serverId?: string;
   trigger: DeploymentTrigger;
   status: DeploymentStatus;
   startedAt: string;
@@ -29,6 +30,7 @@ export interface DeploymentRecord {
 
 export interface ProjectSummary {
   name: string;
+  serverId?: string;
   repositoryUrl: string;
   path: string;
   token: string;
@@ -41,6 +43,7 @@ export interface ProjectSummary {
 
 export interface ProjectPayload {
   name: string;
+  serverId?: string;
   repositoryUrl: string;
   token: string;
   deployToken: string;
@@ -82,4 +85,12 @@ export interface GlobalSettings {
 
 export interface AuthStatus {
   required: boolean;
+}
+
+export interface ServerRecord {
+  id: string;
+  name: string;
+  kind: 'local' | 'remote';
+  createdAt: string;
+  updatedAt: string;
 }
