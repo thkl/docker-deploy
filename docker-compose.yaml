@@ -6,6 +6,7 @@ services:
   webhook-updater:
     build:
       context: /root/updater # path to your Node.js files
+      target: runtime
     env_file:
       - .env
     environment:

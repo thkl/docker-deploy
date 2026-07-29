@@ -4,6 +4,7 @@ services:
   updater-agent:
     build:
       context: .
+      target: agent
     env_file:
       - .env
     environment:
