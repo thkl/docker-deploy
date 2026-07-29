@@ -109,6 +109,16 @@ function registerServerRoutes(app: Express, serverStore: ServerStore, controller
         }
     });
 
+    app.delete("/api/servers/:id", (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            serverStore.deleteRemote(serverId);
+            res.json({ deleted: true });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not remove server." });
+        }
+    });
+
     app.post("/api/servers/:id/pair", async (req: Request, res: Response) => {
         try {
             const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

@@ -75,6 +75,19 @@ export class ServerStore {
     }
 
     /**
+     * Deletes a remote server when no project still targets it.
+     */
+    deleteRemote(serverId: string) {
+        const server = this.requireRemote(serverId);
+        const projectCount = this.database.prepare("SELECT COUNT(*) AS count FROM projects WHERE server_id = ?").get(server.id) as { count: number };
+        if (projectCount.count > 0) {
+            throw new Error("Cannot remove this agent while projects still target it.");
+        }
+
+        this.database.prepare("DELETE FROM servers WHERE id = ?").run(server.id);
+    }
+
+    /**
      * Marks a remote server as paired with controller public keys.
      */
     markPaired(serverId: string, controllerPublicEncryptionKey: string, controllerPublicSigningKey: string) {

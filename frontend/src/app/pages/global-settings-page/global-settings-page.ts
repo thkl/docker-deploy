@@ -18,6 +18,7 @@ export class GlobalSettingsPage implements OnInit {
   protected readonly saving = signal(false);
   protected readonly savingServer = signal(false);
   protected readonly pairingServer = signal('');
+  protected readonly deletingServer = signal('');
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly servers = this.store.servers;
@@ -81,6 +82,14 @@ export class GlobalSettingsPage implements OnInit {
     this.savingServer.set(true);
     this.api.createServer(this.serverForm.getRawValue()).subscribe({
       next: (server) => {
+        this.serverForm.reset({
+          id: '',
+          name: '',
+          baseUrl: 'http://',
+          agentPublicEncryptionKey: '',
+          agentPublicSigningKey: '',
+          pairingToken: '',
+        });
         this.store.loadServers();
         this.message.set(`Remote server ${server.name} saved. Pair it before assigning projects.`);
         this.savingServer.set(false);
@@ -88,6 +97,23 @@ export class GlobalSettingsPage implements OnInit {
       error: (error) => {
         this.error.set(error?.error?.error || 'Could not save remote server.');
         this.savingServer.set(false);
+      },
+    });
+  }
+
+  protected deleteServer(serverId: string) {
+    this.deletingServer.set(serverId);
+    this.message.set('');
+    this.error.set('');
+    this.api.deleteServer(serverId).subscribe({
+      next: () => {
+        this.store.loadServers();
+        this.message.set(`Remote agent ${serverId} removed.`);
+        this.deletingServer.set('');
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not remove remote agent.');
+        this.deletingServer.set('');
       },
     });
   }

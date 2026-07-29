@@ -161,6 +161,17 @@ button.secondary:hover {
   color: var(--accent);
 }
 
+button.danger-action {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 36%);
+  color: var(--danger);
+}
+
+button.danger-action:hover {
+  background: transparent;
+  border-color: var(--danger);
+}
+
 .check-row {
   align-items: center;
   display: flex;

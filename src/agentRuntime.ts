@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
-import { rememberNonce, ensureAgentState, writeAgentState, AgentState } from "./keyStore.js";
+import { rememberNonce, ensureAgentState, removeAgentPairingFile, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
 
 interface AgentJobState {
@@ -29,6 +29,7 @@ export class AgentRuntime {
      * Starts the agent HTTP API and log WebSocket endpoint.
      */
     start() {
+        writeAgentPairingFile(this.state);
         this.app.use(express.json({ limit: "12mb" }));
         this.registerRoutes();
         const server = createServer(this.app);
@@ -36,9 +37,11 @@ export class AgentRuntime {
         server.listen(this.port, this.host, () => {
             console.log(`Updater agent listening on ${this.host}:${this.port}.`);
             console.log(`Agent server ID: ${this.state.serverId}`);
-            console.log(`Agent pairing token: ${this.state.pairingToken}`);
-            console.log(`Agent public encryption key:\n${this.state.encryptionPublicKey}`);
-            console.log(`Agent public signing key:\n${this.state.signingPublicKey}`);
+            if (this.state.controllerPublicEncryptionKey && this.state.controllerPublicSigningKey) {
+                console.log("Agent is already paired. Pairing file removed.");
+            } else {
+                console.log("Agent pairing data written to /app/data/agent-pairing.json.");
+            }
         });
     }
 
@@ -89,6 +92,7 @@ export class AgentRuntime {
                     pairedAt: new Date().toISOString()
                 };
                 writeAgentState(this.state);
+                removeAgentPairingFile();
                 res.json({ paired: true, serverId: this.state.serverId, pairedAt: this.state.pairedAt });
             } catch (error) {
                 res.status(400).json({ error: error instanceof Error ? error.message : "Pairing failed." });

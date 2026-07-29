@@ -1,5 +1,5 @@
 import { generateKeyPairSync, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { AgentKeyMaterial } from "./agentCrypto.js";
 
@@ -57,6 +57,30 @@ export function ensureAgentState(path = join("./data", "agent-state.json")): Age
  */
 export function writeAgentState(state: AgentState, path = join("./data", "agent-state.json")) {
     writeJson(path, state);
+}
+
+/**
+ * Writes copyable pairing data for a fresh agent and removes stale files after pairing.
+ */
+export function writeAgentPairingFile(state: AgentState, path = join("./data", "agent-pairing.json")) {
+    if (state.controllerPublicEncryptionKey && state.controllerPublicSigningKey) {
+        removeAgentPairingFile(path);
+        return;
+    }
+
+    writeJson(path, {
+        serverId: state.serverId,
+        pairingToken: state.pairingToken,
+        agentPublicEncryptionKey: state.encryptionPublicKey,
+        agentPublicSigningKey: state.signingPublicKey
+    });
+}
+
+/**
+ * Removes the copyable pairing file after successful pairing.
+ */
+export function removeAgentPairingFile(path = join("./data", "agent-pairing.json")) {
+    rmSync(path, { force: true });
 }
 
 /**

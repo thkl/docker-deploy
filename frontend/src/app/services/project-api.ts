@@ -62,4 +62,8 @@ export class ProjectApi {
   pairServer(id: string, pairingToken: string): Observable<ServerRecord> {
     return this.http.post<ServerRecord>(`/api/servers/${encodeURIComponent(id)}/pair`, { pairingToken });
   }
+
+  deleteServer(id: string): Observable<{ deleted: boolean }> {
+    return this.http.delete<{ deleted: boolean }>(`/api/servers/${encodeURIComponent(id)}`);
+  }
 }

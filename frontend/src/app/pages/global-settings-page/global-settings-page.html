@@ -38,6 +38,9 @@
                 <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">
                   {{ pairingServer() === server.id ? 'Pairing...' : 'Pair' }}
                 </button>
+                <button type="button" class="danger-action" (click)="deleteServer(server.id)" [disabled]="deletingServer() !== ''">
+                  {{ deletingServer() === server.id ? 'Removing...' : 'Remove' }}
+                </button>
               }
             </div>
           </article>
