@@ -294,6 +294,11 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const traefik = normalizeTraefikSettings(payload, globalSettings);
 
             const config = configStore.readConfig();
+            if (config[repoName]) {
+                res.status(409).json({ error: "A project with that repository name already exists." });
+                return;
+            }
+
             config[repoName] = {
                 serverId: payload.serverId?.trim() || "local",
                 ...(repoToken ? { token: repoToken } : {}),
