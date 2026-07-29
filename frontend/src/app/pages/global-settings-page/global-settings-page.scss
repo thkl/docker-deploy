@@ -67,6 +67,47 @@ input {
   width: 100%;
 }
 
+.server-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.server-row {
+  align-items: center;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft), transparent 52%), transparent 72%),
+    var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 54px;
+  padding: 0.72rem 0.8rem;
+}
+
+.server-row div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.server-row strong {
+  font-size: 0.94rem;
+}
+
+.server-row span:not(.server-chip) {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.server-chip {
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 30%);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.2rem 0.55rem;
+}
+
 input:focus {
   border-color: var(--accent);
   outline: 3px solid color-mix(in srgb, var(--accent), transparent 78%);

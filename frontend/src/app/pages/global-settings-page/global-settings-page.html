@@ -21,6 +21,27 @@
   <form [formGroup]="form" (ngSubmit)="save()" class="settings-form">
     <section class="settings-panel">
       <div class="panel-head">
+        <h3>Servers</h3>
+        <span>Deployment agents controlled by this updater</span>
+      </div>
+
+      <div class="server-list">
+        @for (server of servers(); track server.id) {
+          <article class="server-row">
+            <div>
+              <strong>{{ server.name }}</strong>
+              <span>{{ server.id }}</span>
+            </div>
+            <span class="server-chip">{{ server.kind }}</span>
+          </article>
+        } @empty {
+          <p class="muted-copy">No servers have been registered yet.</p>
+        }
+      </div>
+    </section>
+
+    <section class="settings-panel">
+      <div class="panel-head">
         <h3>Deployment defaults</h3>
         <span>Repository paths and worker mounts</span>
       </div>

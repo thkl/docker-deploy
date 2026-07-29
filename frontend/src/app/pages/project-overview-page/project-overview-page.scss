@@ -34,6 +34,13 @@
   overflow-wrap: anywhere;
 }
 
+.summary small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+}
+
 .panel {
   align-items: center;
   display: flex;

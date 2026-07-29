@@ -18,6 +18,7 @@ export class GlobalSettingsPage implements OnInit {
   protected readonly saving = signal(false);
   protected readonly message = signal('');
   protected readonly error = signal('');
+  protected readonly servers = this.store.servers;
   protected readonly form = this.fb.group({
     dataRoot: ['/root/docker-apps', [Validators.required]],
     defaultTraefikNetwork: ['proxy', [Validators.required]],
@@ -28,6 +29,7 @@ export class GlobalSettingsPage implements OnInit {
   });
 
   ngOnInit() {
+    this.store.loadServers();
     this.loadSettings();
   }
 

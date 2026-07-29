@@ -5,6 +5,11 @@
       <strong>{{ project.path || '/root/docker-apps/' + project.name }}</strong>
     </article>
     <article class="summary">
+      <span>Target server</span>
+      <strong>{{ selectedServer()?.name || project.serverId || 'local' }}</strong>
+      <small>{{ selectedServer()?.kind || 'local' }}</small>
+    </article>
+    <article class="summary">
       <span>Repository</span>
       <strong>{{ project.repositoryUrl || 'Not set' }}</strong>
     </article>
@@ -93,6 +98,7 @@
           {{ statusLabel(deployment) }}
         </span>
         <span>ID {{ deployment.id }}</span>
+        <span>Server {{ deployment.serverId || project.serverId || 'local' }}</span>
         @if (deployment.exitCode !== undefined) {
           <span>Exit {{ deployment.exitCode }}</span>
         }

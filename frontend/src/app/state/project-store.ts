@@ -1,5 +1,5 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
-import { ProjectSummary } from '../models/project';
+import { ProjectSummary, ServerRecord } from '../models/project';
 import { ProjectApi } from '../services/project-api';
 
 const selectedProjectKey = 'updater.selectedProject';
@@ -10,12 +10,17 @@ export class ProjectStore {
   private readonly selectedName = signal(localStorage.getItem(selectedProjectKey) ?? '');
 
   readonly projects = signal<ProjectSummary[]>([]);
+  readonly servers = signal<ServerRecord[]>([]);
   readonly loading = signal(false);
   readonly error = signal('');
   readonly selectedProjectName = this.selectedName.asReadonly();
   readonly selectedProject = computed(() =>
     this.projects().find((project) => project.name === this.selectedName()) ?? null,
   );
+  readonly selectedProjectServer = computed(() => {
+    const project = this.selectedProject();
+    return this.servers().find((server) => server.id === (project?.serverId ?? 'local')) ?? null;
+  });
 
   constructor() {
     effect(() => {
@@ -47,8 +52,18 @@ export class ProjectStore {
     });
   }
 
+  loadServers() {
+    this.api.listServers().subscribe({
+      next: (servers) => {
+        this.servers.set(servers);
+      },
+      error: () => {
+        this.error.set('Could not load servers.');
+      },
+    });
+  }
+
   selectProject(name: string) {
     this.selectedName.set(name);
   }
 }
-

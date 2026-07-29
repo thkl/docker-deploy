@@ -18,6 +18,7 @@ export class App implements OnInit {
     this.auth.loadStatus().subscribe({
       next: () => {
         if (!this.auth.authRequired()) {
+          this.store.loadServers();
           this.store.loadProjects();
           return;
         }
@@ -30,6 +31,7 @@ export class App implements OnInit {
 
         this.auth.login(token).subscribe({
           next: () => {
+            this.store.loadServers();
             this.store.loadProjects();
           },
           error: () => {

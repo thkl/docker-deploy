@@ -33,6 +33,17 @@
       </label>
 
       <label>
+        <span>Target server</span>
+        <select formControlName="serverId">
+          @for (server of servers(); track server.id) {
+            <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
+          } @empty {
+            <option value="local">Local Server · local</option>
+          }
+        </select>
+      </label>
+
+      <label>
         <span>Repository URL</span>
         <input formControlName="repositoryUrl" autocomplete="off" placeholder="git@gitlab.example.com:team/service-a.git" />
       </label>

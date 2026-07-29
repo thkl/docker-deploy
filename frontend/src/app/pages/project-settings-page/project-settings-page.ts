@@ -28,6 +28,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly error = signal('');
   protected readonly traefikEnabled = signal(false);
   protected readonly wildcardCertificate = signal(false);
+  protected readonly servers = this.store.servers;
   protected readonly title = computed(() => (this.isNew() ? 'New project' : `Settings for ${this.currentName()}`));
   protected readonly submitLabel = computed(() => (this.isNew() ? 'Create project' : 'Save'));
   private readonly globalDefaults = signal<GlobalSettings>({
@@ -41,6 +42,7 @@ export class ProjectSettingsPage implements OnInit {
 
   protected readonly form = this.fb.group({
     name: ['', [Validators.required, Validators.pattern(/^[a-zA-Z0-9._-]+$/)]],
+    serverId: ['local', [Validators.required]],
     repositoryUrl: [''],
     token: [''],
     deployToken: [''],
@@ -82,6 +84,8 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   ngOnInit() {
+    this.store.loadServers();
+
     this.api.getGlobalSettings().subscribe({
       next: (settings) => {
         this.globalDefaults.set(settings);
@@ -181,6 +185,7 @@ export class ProjectSettingsPage implements OnInit {
     this.wildcardCertificate.set(false);
     this.form.reset({
       name: '',
+      serverId: this.servers()[0]?.id ?? 'local',
       repositoryUrl: '',
       token: '',
       deployToken: '',
@@ -207,6 +212,7 @@ export class ProjectSettingsPage implements OnInit {
     this.wildcardCertificate.set(Boolean(traefik.wildcardCertificate));
     this.form.reset({
       name: project.name,
+      serverId: project.serverId ?? 'local',
       repositoryUrl: project.repositoryUrl ?? '',
       token: '',
       deployToken: '',
@@ -231,6 +237,7 @@ export class ProjectSettingsPage implements OnInit {
 
     return {
       name: value.name.trim(),
+      serverId: value.serverId.trim() || 'local',
       repositoryUrl: value.repositoryUrl.trim(),
       token: value.token.trim(),
       deployToken: value.deployToken.trim(),

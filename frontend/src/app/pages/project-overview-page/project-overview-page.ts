@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { DeploymentRecord, ProjectSummary } from '../../models/project';
@@ -32,6 +32,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly deleteStopContainers = signal(true);
   protected readonly deleteCheckout = signal(true);
   protected readonly deleteDeploymentHistory = signal(true);
+  protected readonly selectedServer = computed(() => this.store.selectedProjectServer());
 
   private readonly deploymentStream = inject(DeploymentStreamService);
   private streamSubscription: Subscription | undefined;
