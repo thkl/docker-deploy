@@ -99,6 +99,7 @@ export interface ServerRecord {
   status?: 'online' | 'offline' | 'unpaired';
   lastSeenAt?: string;
   pairedAt?: string;
+  capabilities?: ServerCapabilities;
   createdAt: string;
   updatedAt: string;
 }
@@ -131,6 +132,8 @@ export interface RuntimeServiceStatus {
   health?: string;
   image?: string;
   ports?: string;
+  networkMode?: string;
+  exposedPorts?: string[];
 }
 
 export interface RuntimeStatus {

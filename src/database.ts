@@ -62,6 +62,7 @@ export class AppDatabase {
                 status TEXT NOT NULL DEFAULT 'unpaired',
                 last_seen_at TEXT,
                 paired_at TEXT,
+                capabilities_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -134,6 +135,7 @@ export class AppDatabase {
         this.ensureColumn("servers", "status", "TEXT NOT NULL DEFAULT 'unpaired'");
         this.ensureColumn("servers", "last_seen_at", "TEXT");
         this.ensureColumn("servers", "paired_at", "TEXT");
+        this.ensureColumn("servers", "capabilities_json", "TEXT");
         this.migrateProjectsToStableIds();
         this.connection.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)").run(String(schemaVersion));
     }
@@ -363,7 +365,7 @@ export class AppDatabase {
  * Returns all configured servers.
  */
 export function listServers(database: DatabaseSync): ServerRecord[] {
-    return database
+    const rows = database
         .prepare(
             `SELECT
                 id,
@@ -377,12 +379,47 @@ export function listServers(database: DatabaseSync): ServerRecord[] {
                 status,
                 last_seen_at AS lastSeenAt,
                 paired_at AS pairedAt,
+                capabilities_json AS capabilitiesJson,
                 created_at AS createdAt,
                 updated_at AS updatedAt
              FROM servers
              ORDER BY name`
         )
-        .all() as unknown as ServerRecord[];
+        .all() as unknown as ServerRow[];
+
+    return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        kind: row.kind,
+        ...(row.baseUrl ? { baseUrl: row.baseUrl } : {}),
+        ...(row.agentPublicEncryptionKey ? { agentPublicEncryptionKey: row.agentPublicEncryptionKey } : {}),
+        ...(row.agentPublicSigningKey ? { agentPublicSigningKey: row.agentPublicSigningKey } : {}),
+        ...(row.controllerPublicEncryptionKey ? { controllerPublicEncryptionKey: row.controllerPublicEncryptionKey } : {}),
+        ...(row.controllerPublicSigningKey ? { controllerPublicSigningKey: row.controllerPublicSigningKey } : {}),
+        status: row.status,
+        ...(row.lastSeenAt ? { lastSeenAt: row.lastSeenAt } : {}),
+        ...(row.pairedAt ? { pairedAt: row.pairedAt } : {}),
+        ...(row.capabilitiesJson ? { capabilities: JSON.parse(row.capabilitiesJson) } : {}),
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt
+    }));
+}
+
+interface ServerRow {
+    id: string;
+    name: string;
+    kind: "local" | "remote";
+    baseUrl: string | null;
+    agentPublicEncryptionKey: string | null;
+    agentPublicSigningKey: string | null;
+    controllerPublicEncryptionKey: string | null;
+    controllerPublicSigningKey: string | null;
+    status: "online" | "offline" | "unpaired";
+    lastSeenAt: string | null;
+    pairedAt: string | null;
+    capabilitiesJson: string | null;
+    createdAt: string;
+    updatedAt: string;
 }
 
 /**

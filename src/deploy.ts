@@ -188,17 +188,12 @@ EOF`;
  */
 export async function detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]> {
     const networkName = globalSettings.defaultTraefikNetwork || "proxy";
-    const dockerRunCommand = `docker run -i --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            alpine:latest sh << 'EOF'
-                apk add --no-cache docker-cli > /dev/null 2>&1
-                CONTAINERS="$(docker ps -a --format '{{.Image}} {{.Names}} {{.Labels}}' | grep -Ei '(^|[ /])traefik(:| |,|$)|org.opencontainers.image.title=Traefik' | wc -l | tr -d ' ')"
-                NETWORK_PRESENT="$(docker network inspect ${shellQuote(networkName)} > /dev/null 2>&1 && echo true || echo false)"
-                printf '{"containerCount":%s,"networkPresent":%s}\\n' "$CONTAINERS" "$NETWORK_PRESENT"
-EOF`;
+    const command = `CONTAINERS="$(docker ps -a --format '{{.Image}} {{.Names}} {{.Labels}}' | grep -Ei '(^|[ /])traefik(:| |,|$)|org.opencontainers.image.title=Traefik' | wc -l | tr -d ' ')"
+NETWORK_PRESENT="$(docker network inspect ${shellQuote(networkName)} > /dev/null 2>&1 && echo true || echo false)"
+printf '{"containerCount":%s,"networkPresent":%s}\\n' "$CONTAINERS" "$NETWORK_PRESENT"`;
 
     try {
-        const { stdout } = await execAsync(dockerRunCommand, { maxBuffer: 1024 * 1024 });
+        const { stdout } = await execAsync(command, { maxBuffer: 1024 * 1024 });
         const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) || "{}") as { containerCount?: number; networkPresent?: boolean };
         const containerCount = Number(result.containerCount || 0);
         const networkPresent = Boolean(result.networkPresent);
@@ -229,7 +224,12 @@ export async function inspectProjectStatus(repoName: string, appSettings: Projec
             -v /var/run/docker.sock:/var/run/docker.sock \
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli > /dev/null 2>&1
-                docker ps -a --filter ${shellQuote(`label=com.docker.compose.project=${composeProjectName}`)} --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}\t{{.Ports}}\t{{.Label "com.docker.compose.service"}}'
+                IDS="$(docker ps -aq --filter ${shellQuote(`label=com.docker.compose.project=${composeProjectName}`)})"
+                if [ -z "$IDS" ]; then
+                    echo "[]"
+                else
+                    docker inspect $IDS
+                fi
 EOF`;
 
     try {
@@ -239,10 +239,8 @@ EOF`;
         }
 
         const services = stdout
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter(Boolean)
-            .map(parseRuntimeService);
+            ? (JSON.parse(stdout.trim()) as DockerInspectContainer[]).map(parseRuntimeService)
+            : [];
 
         return {
             status: summarizeRuntimeStatus(services),
@@ -332,19 +330,59 @@ function resolveHostPath(value: string) {
     return value;
 }
 
-function parseRuntimeService(line: string): RuntimeServiceStatus {
-    const [containerId, containerName, image, state, statusText, ports, service] = line.split("\t");
-    const health = statusText?.match(/\((healthy|unhealthy|starting)\)/i)?.[1]?.toLowerCase();
+type DockerPortBindings = Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+
+interface DockerInspectContainer {
+    Id?: string;
+    Name?: string;
+    Config?: {
+        Image?: string;
+        Labels?: Record<string, string>;
+        ExposedPorts?: Record<string, unknown>;
+    };
+    State?: {
+        Status?: string;
+        Health?: {
+            Status?: string;
+        };
+    };
+    HostConfig?: {
+        NetworkMode?: string;
+    };
+    NetworkSettings?: {
+        Ports?: DockerPortBindings;
+    };
+}
+
+function parseRuntimeService(container: DockerInspectContainer): RuntimeServiceStatus {
+    const ports = formatPublishedPorts(container.NetworkSettings?.Ports);
+    const exposedPorts = Object.keys(container.Config?.ExposedPorts ?? {});
+    const networkMode = container.HostConfig?.NetworkMode || "unknown";
+    const containerName = container.Name?.replace(/^\/+/, "");
 
     return {
-        service: service || containerName || containerId || "unknown",
+        service: container.Config?.Labels?.["com.docker.compose.service"] || containerName || container.Id || "unknown",
         ...(containerName ? { containerName } : {}),
-        ...(containerId ? { containerId } : {}),
-        state: state || "unknown",
-        ...(health ? { health } : {}),
-        ...(image ? { image } : {}),
-        ...(ports ? { ports } : {})
+        ...(container.Id ? { containerId: container.Id.slice(0, 12) } : {}),
+        state: container.State?.Status || "unknown",
+        ...(container.State?.Health?.Status ? { health: container.State.Health.Status } : {}),
+        ...(container.Config?.Image ? { image: container.Config.Image } : {}),
+        ...(ports ? { ports } : {}),
+        networkMode,
+        ...(exposedPorts.length ? { exposedPorts } : {})
     };
+}
+
+function formatPublishedPorts(ports: DockerPortBindings | undefined) {
+    return Object.entries(ports ?? {})
+        .flatMap(([containerPort, bindings]) => {
+            if (!bindings?.length) {
+                return [];
+            }
+
+            return bindings.map((binding) => `${containerPort} -> ${binding.HostIp || "0.0.0.0"}:${binding.HostPort || ""}`);
+        })
+        .join(", ");
 }
 
 function summarizeRuntimeStatus(services: RuntimeServiceStatus[]) {

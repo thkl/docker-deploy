@@ -1,5 +1,5 @@
 import { AppDatabase, listServers } from "./database.js";
-import { ServerPayload, ServerRecord } from "./types.js";
+import { ServerCapabilities, ServerPayload, ServerRecord } from "./types.js";
 
 /**
  * Stores target Docker servers known to the controller.
@@ -30,8 +30,8 @@ export class ServerStore {
         this.database
             .prepare(
                 `INSERT INTO servers
-                 (id, name, kind, base_url, agent_public_encryption_key, agent_public_signing_key, status, created_at, updated_at)
-                 VALUES (?, ?, 'remote', ?, ?, ?, 'unpaired', ?, ?)`
+                 (id, name, kind, base_url, agent_public_encryption_key, agent_public_signing_key, status, capabilities_json, created_at, updated_at)
+                 VALUES (?, ?, 'remote', ?, ?, ?, 'unpaired', ?, ?, ?)`
             )
             .run(
                 id,
@@ -39,6 +39,7 @@ export class ServerStore {
                 normalizeBaseUrl(payload.baseUrl),
                 payload.agentPublicEncryptionKey?.trim() || null,
                 payload.agentPublicSigningKey?.trim() || null,
+                payload.capabilities ? JSON.stringify(payload.capabilities) : null,
                 now,
                 now
             );
@@ -104,6 +105,16 @@ export class ServerStore {
                  WHERE id = ?`
             )
             .run(controllerPublicEncryptionKey, controllerPublicSigningKey, now, now, now, serverId);
+        return this.get(serverId);
+    }
+
+    /**
+     * Stores the latest capability snapshot reported by an agent.
+     */
+    updateCapabilities(serverId: string, capabilities: ServerCapabilities) {
+        this.database
+            .prepare("UPDATE servers SET capabilities_json = ?, last_seen_at = ?, updated_at = ?, status = 'online' WHERE id = ?")
+            .run(JSON.stringify(capabilities), new Date().toISOString(), new Date().toISOString(), serverId);
         return this.get(serverId);
     }
 

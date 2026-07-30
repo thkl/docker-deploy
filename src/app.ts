@@ -47,6 +47,14 @@ class App {
      * HTTP server.
      */
     init() {
+        void this.start();
+    }
+
+    /**
+     * Warms local target metadata, configures Express, and starts listening.
+     */
+    private async start() {
+        await this.warmLocalCapabilities();
         this.configureBodyParsing();
         registerRoutes(this.app, {
             adminAuth: this.adminAuth,
@@ -63,6 +71,14 @@ class App {
         const server = createServer(this.app);
         this.deploymentStreams.register(server);
         server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
+    }
+
+    /**
+     * Caches local server capabilities so the UI can render settings instantly.
+     */
+    private async warmLocalCapabilities() {
+        const traefik = await this.localAgent.detectTraefik(this.globalSettingsStore.readSettings());
+        this.serverStore.updateCapabilities("local", { traefik });
     }
 
     /**

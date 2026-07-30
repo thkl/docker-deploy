@@ -1,7 +1,7 @@
 import { Component, computed, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord, ProjectSummary, RuntimeStatus } from '../../models/project';
+import { DeploymentRecord, ProjectSummary, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
@@ -218,6 +218,16 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
           : status.status === 'error'
             ? 'Error'
             : 'Unknown';
+  }
+
+  protected servicePortLabel(service: RuntimeServiceStatus) {
+    if (service.networkMode === 'host') {
+      return service.exposedPorts?.length
+        ? `host network: ${service.exposedPorts.join(', ')}`
+        : 'host network: container ports exposed on host';
+    }
+
+    return service.ports || 'no published ports';
   }
 
   private loadLatestDeployment(projectRef: string, projectName = projectRef) {

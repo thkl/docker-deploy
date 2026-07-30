@@ -12,7 +12,7 @@ import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.j
 import { ControllerKeyState } from "./keyStore.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
-import { DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload, ServerPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ServerCapabilities, ServerPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject } from "./webhookResolver.js";
 
@@ -97,13 +97,20 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
     app.get("/api/servers/:id/capabilities", async (req: Request, res: Response) => {
         try {
             const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-            if (!serverStore.get(serverId)) {
+            const server = serverStore.get(serverId);
+            if (!server) {
                 res.status(404).json({ error: "Server does not exist." });
                 return;
             }
 
-            const traefik = await agentManager.getClient(serverId).detectTraefik(globalSettingsStore.readSettings());
-            res.json({ traefik });
+            if (req.query.refresh !== "true" && server.capabilities) {
+                res.json(server.capabilities);
+                return;
+            }
+
+            const capabilities = { traefik: await agentManager.getClient(serverId).detectTraefik(globalSettingsStore.readSettings()) };
+            serverStore.updateCapabilities(serverId, capabilities);
+            res.json(capabilities);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not inspect server capabilities." });
         }
@@ -111,7 +118,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
 
     app.post("/api/servers", (req: Request, res: Response) => {
         try {
-            void createRemoteServer(req.body as ServerPayload, serverStore, res);
+            void createRemoteServer(req.body as ServerPayload, serverStore, globalSettingsStore, res);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
         }
@@ -152,7 +159,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             }
 
             const agentBaseUrl = server.baseUrl.replace(/\/+$/, "");
-            const health = await fetchAgentHealth(agentBaseUrl);
+            const health = await fetchAgentHealth(agentBaseUrl, globalSettingsStore.readSettings());
             if (!health.ok) {
                 res.status(400).json({
                     error: `Agent URL is not reaching an updater agent. ${health.message}`
@@ -183,7 +190,13 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
                 return;
             }
 
-            res.json(serverStore.markPaired(server.id, controllerKeys.encryptionPublicKey, controllerKeys.signingPublicKey));
+            const paired = serverStore.markPaired(server.id, controllerKeys.encryptionPublicKey, controllerKeys.signingPublicKey);
+            if (health.body?.capabilities) {
+                res.json(serverStore.updateCapabilities(server.id, health.body.capabilities));
+                return;
+            }
+
+            res.json(paired);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not pair server." });
         }
@@ -194,10 +207,10 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
  * Creates a remote server and discovers public agent keys from `/agent/health`
  * when the UI only submits a base URL.
  */
-async function createRemoteServer(payload: ServerPayload, serverStore: ServerStore, res: Response) {
+async function createRemoteServer(payload: ServerPayload, serverStore: ServerStore, globalSettingsStore: GlobalSettingsStore, res: Response) {
     try {
         const baseUrl = String(payload.baseUrl || "").trim().replace(/\/+$/, "");
-        const health = await fetchAgentHealth(baseUrl);
+        const health = await fetchAgentHealth(baseUrl, globalSettingsStore.readSettings());
         if (!health.ok || !health.body) {
             res.status(400).json({ error: `Agent URL is not reaching an updater agent. ${health.message}` });
             return;
@@ -209,7 +222,8 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
             name: payload.name || health.body.serverId,
             baseUrl,
             agentPublicEncryptionKey: health.body.encryptionPublicKey,
-            agentPublicSigningKey: health.body.signingPublicKey
+            agentPublicSigningKey: health.body.signingPublicKey,
+            capabilities: health.body.capabilities
         }));
     } catch (error) {
         res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
@@ -220,12 +234,12 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
  * Checks that the configured URL points to the updater agent API, not a proxy
  * default site or another application.
  */
-async function fetchAgentHealth(agentBaseUrl: string) {
+async function fetchAgentHealth(agentBaseUrl: string, globalSettings: GlobalSettings) {
     if (!agentBaseUrl) {
         return { ok: false, message: "Agent URL is required." };
     }
 
-    const healthUrl = `${agentBaseUrl}/agent/health`;
+    const healthUrl = `${agentBaseUrl}/agent/health?traefikNetwork=${encodeURIComponent(globalSettings.defaultTraefikNetwork)}`;
     try {
         const response = await fetch(healthUrl);
         if (!response.ok) {
@@ -235,7 +249,7 @@ async function fetchAgentHealth(agentBaseUrl: string) {
             };
         }
 
-        const body = await response.json() as { serverId?: string; encryptionPublicKey?: string; signingPublicKey?: string };
+        const body = await response.json() as { serverId?: string; encryptionPublicKey?: string; signingPublicKey?: string; capabilities?: ServerCapabilities };
         if (!body.serverId || !body.encryptionPublicKey || !body.signingPublicKey) {
             return {
                 ok: false,

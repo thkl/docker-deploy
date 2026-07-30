@@ -107,7 +107,7 @@
               <span class="service-state">{{ service.state }}</span>
               <span>{{ service.health || 'no healthcheck' }}</span>
               <code>{{ service.image || 'image unknown' }}</code>
-              <small>{{ service.ports || 'no published ports' }}</small>
+              <small>{{ servicePortLabel(service) }}</small>
             </div>
           }
         </div>

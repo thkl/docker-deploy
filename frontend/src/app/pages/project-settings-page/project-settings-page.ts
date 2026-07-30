@@ -28,8 +28,12 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly error = signal('');
   protected readonly traefikEnabled = signal(false);
   protected readonly wildcardCertificate = signal(false);
-  protected readonly traefikAvailable = signal(true);
+  protected readonly selectedServerId = signal('local');
   protected readonly servers = this.store.servers;
+  protected readonly traefikAvailable = computed(() => {
+    const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
+    return server ? (server.capabilities?.traefik.available ?? true) : false;
+  });
   protected readonly title = computed(() => (this.isNew() ? 'New project' : `Settings for ${this.currentName()}`));
   protected readonly submitLabel = computed(() => (this.isNew() ? 'Create project' : 'Save'));
   private readonly globalDefaults = signal<GlobalSettings>({
@@ -73,7 +77,7 @@ export class ProjectSettingsPage implements OnInit {
       this.wildcardCertificate.set(enabled);
     });
     this.form.controls.serverId.valueChanges.pipe(takeUntilDestroyed()).subscribe((serverId) => {
-      this.loadServerCapabilities(serverId || 'local');
+      this.selectedServerId.set(serverId || 'local');
     });
 
     effect(() => {
@@ -84,6 +88,12 @@ export class ProjectSettingsPage implements OnInit {
       const project = this.store.selectedProject();
       if (project?.name === this.currentName() && this.patchedProjectName !== project.name) {
         this.patchFromProject(project);
+      }
+    });
+
+    effect(() => {
+      if (!this.traefikAvailable()) {
+        this.form.controls.traefikEnabled.setValue(false);
       }
     });
   }
@@ -99,8 +109,6 @@ export class ProjectSettingsPage implements OnInit {
         }
       },
     });
-
-    this.loadServerCapabilities(this.form.controls.serverId.value || 'local');
 
     this.route.paramMap.subscribe((params) => {
       const projectRef = params.get('name');
@@ -122,7 +130,7 @@ export class ProjectSettingsPage implements OnInit {
       this.store.selectProject(projectRef);
       this.currentName.set(this.currentProject()?.name ?? projectRef);
       this.patchedProjectName = '';
-      this.loadServerCapabilities(this.currentProject()?.serverId ?? this.form.controls.serverId.value ?? 'local');
+      this.selectedServerId.set(this.currentProject()?.serverId ?? this.form.controls.serverId.value ?? 'local');
     });
   }
 
@@ -215,6 +223,7 @@ export class ProjectSettingsPage implements OnInit {
       traefikWebsocket: false,
       traefikRemovePublishedPorts: true,
     });
+    this.selectedServerId.set(this.form.controls.serverId.value || 'local');
   }
 
   private patchFromProject(project: ProjectSummary) {
@@ -242,25 +251,12 @@ export class ProjectSettingsPage implements OnInit {
       traefikWebsocket: Boolean(traefik.websocket),
       traefikRemovePublishedPorts: traefik.removePublishedPorts !== false,
     });
+    this.selectedServerId.set(this.form.controls.serverId.value || 'local');
   }
 
   private currentProject() {
     const projectRef = this.currentProjectRef || this.currentName();
     return this.store.projects().find((project) => project.id === projectRef || project.name === projectRef) ?? null;
-  }
-
-  private loadServerCapabilities(serverId: string) {
-    this.api.getServerCapabilities(serverId || 'local').subscribe({
-      next: (capabilities) => {
-        this.traefikAvailable.set(capabilities.traefik.available);
-        if (!capabilities.traefik.available) {
-          this.form.controls.traefikEnabled.setValue(false);
-        }
-      },
-      error: () => {
-        this.traefikAvailable.set(true);
-      },
-    });
   }
 
   private toPayload(): ProjectPayload {

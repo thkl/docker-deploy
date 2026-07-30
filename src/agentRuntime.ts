@@ -49,13 +49,27 @@ export class AgentRuntime {
      * Registers health, pairing, and encrypted job endpoints.
      */
     private registerRoutes() {
-        this.app.get("/agent/health", (req: Request, res: Response) => {
+        this.app.get("/agent/health", async (req: Request, res: Response) => {
+            const defaultTraefikNetwork = typeof req.query.traefikNetwork === "string" && req.query.traefikNetwork.trim()
+                ? req.query.traefikNetwork.trim()
+                : "proxy";
+
             res.json({
                 serverId: this.state.serverId,
                 paired: Boolean(this.state.controllerPublicEncryptionKey && this.state.controllerPublicSigningKey),
                 encryptionPublicKey: this.state.encryptionPublicKey,
                 signingPublicKey: this.state.signingPublicKey,
-                pairedAt: this.state.pairedAt
+                pairedAt: this.state.pairedAt,
+                capabilities: {
+                    traefik: await this.localAgent.detectTraefik({
+                        dataRoot: "/root/docker-apps",
+                        defaultTraefikNetwork,
+                        defaultTraefikEntryPoints: "websecure",
+                        defaultTraefikCertResolver: "letsencrypt",
+                        sshKeyPath: "~/.ssh",
+                        cleanupAfterDeploy: false
+                    })
+                }
             });
         });
 
