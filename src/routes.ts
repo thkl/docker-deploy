@@ -263,6 +263,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const projects = Object.entries(configStore.readConfig())
                 .sort(([left], [right]) => left.localeCompare(right))
                 .map(([name, settings]) => ({
+                    id: settings.id,
                     name,
                     serverId: settings.serverId ?? "local",
                     repositoryUrl: settings.repositoryUrl ?? "",
@@ -272,7 +273,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                     composeOverride: settings.composeOverride ?? "",
                     hasComposeOverride: Boolean(settings.composeOverride),
                     traefik: settings.traefik ?? { enabled: false },
-                    lastDeployment: deploymentStore.latest(name)
+                    lastDeployment: deploymentStore.latest(settings.id ?? name)
                 }));
 
             res.json(projects);
@@ -310,7 +311,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             };
             configStore.writeConfig(config);
 
-            res.status(201).json({ name: repoName });
+            const created = configStore.resolveProject(repoName);
+            res.status(201).json({ id: created?.settings.id, name: repoName });
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not save project." });
         }
@@ -319,7 +321,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
     app.put("/api/projects/:name", (req: Request, res: Response) => {
         try {
             const rawCurrentName = req.params.name;
-            const currentName = normalizeProjectName(Array.isArray(rawCurrentName) ? rawCurrentName[0] : rawCurrentName);
+            const currentRef = normalizeProjectName(Array.isArray(rawCurrentName) ? rawCurrentName[0] : rawCurrentName);
             const payload = req.body as ProjectPayload;
             const nextName = normalizeProjectName(payload.name);
             const nextToken = payload.token?.trim();
@@ -330,7 +332,9 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const globalSettings = globalSettingsStore.readSettings();
             const traefik = normalizeTraefikSettings(payload, globalSettings);
             const config = configStore.readConfig();
-            const existing = config[currentName];
+            const existingProject = configStore.resolveProject(currentRef);
+            const existing = existingProject?.settings;
+            const currentName = existingProject?.name ?? currentRef;
 
             if (!existing) {
                 res.status(404).json({ error: "Project does not exist." });
@@ -347,6 +351,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             }
 
             config[nextName] = {
+                id: existing.id,
                 serverId: payload.serverId?.trim() || existing.serverId || "local",
                 token: nextToken || existing.token,
                 ...(nextRepositoryUrl ? { repositoryUrl: nextRepositoryUrl } : {}),
@@ -357,7 +362,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             };
             configStore.writeConfig(config);
 
-            res.json({ name: nextName });
+            res.json({ id: existing.id, name: nextName });
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not update project." });
         }
@@ -366,10 +371,12 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
     app.delete("/api/projects/:name", async (req: Request, res: Response) => {
         try {
             const rawProjectName = req.params.name;
-            const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
             const payload = req.body as DeleteProjectPayload;
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
             const config = configStore.readConfig();
-            const appSettings = config[projectName];
+            const appSettings = project?.settings;
 
             if (!appSettings) {
                 res.status(404).json({ error: "Project does not exist." });
@@ -398,7 +405,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             }
 
             if (payload.deleteDeploymentHistory) {
-                deploymentStore.deleteProject(projectName);
+                deploymentStore.deleteProject(appSettings.id ?? projectName);
                 actions.push("deployment history deleted");
             }
 
@@ -414,8 +421,10 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
     app.post("/api/projects/:name/deploy", (req: Request, res: Response) => {
         const rawProjectName = req.params.name;
-        const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
-        const appSettings = configStore.fetchProfile(projectName);
+        const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+        const project = configStore.resolveProject(projectRef);
+        const projectName = project?.name ?? projectRef;
+        const appSettings = project?.settings;
 
         if (!appSettings) {
             res.status(404).json({ error: "Project does not exist." });
@@ -429,8 +438,10 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
     app.post("/api/projects/:name/compose/import", async (req: Request, res: Response) => {
         try {
             const rawProjectName = req.params.name;
-            const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
-            const appSettings = configStore.fetchProfile(projectName);
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
 
             if (!appSettings) {
                 res.status(404).json({ error: "Project does not exist." });
@@ -446,26 +457,28 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
     app.get("/api/projects/:name/deployments", (req: Request, res: Response) => {
         const rawProjectName = req.params.name;
-        const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+        const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+        const project = configStore.resolveProject(projectRef);
 
-        if (!configStore.fetchProfile(projectName)) {
+        if (!project) {
             res.status(404).json({ error: "Project does not exist." });
             return;
         }
 
-        res.json(deploymentStore.list(projectName));
+        res.json(deploymentStore.list(project.settings.id ?? project.name));
     });
 
     app.get("/api/projects/:name/deployments/latest", (req: Request, res: Response) => {
         const rawProjectName = req.params.name;
-        const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+        const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+        const project = configStore.resolveProject(projectRef);
 
-        if (!configStore.fetchProfile(projectName)) {
+        if (!project) {
             res.status(404).json({ error: "Project does not exist." });
             return;
         }
 
-        res.json(deploymentStore.latest(projectName));
+        res.json(deploymentStore.latest(project.settings.id ?? project.name));
     });
 }
 
@@ -512,8 +525,10 @@ function registerCiDeployRoute(app: Express, dependencies: Pick<RouteDependencie
 
     app.post("/api/deploy/:name", (req: Request, res: Response) => {
         const rawProjectName = req.params.name;
-        const projectName = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
-        const appSettings = configStore.fetchProfile(projectName);
+        const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+        const project = configStore.resolveProject(projectRef);
+        const projectName = project?.name ?? projectRef;
+        const appSettings = project?.settings;
 
         if (!appSettings) {
             res.status(404).json({ error: "Project does not exist." });

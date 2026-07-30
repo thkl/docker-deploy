@@ -17,6 +17,7 @@ export type DeploymentTrigger = 'webhook' | 'ci' | 'manual';
 
 export interface DeploymentRecord {
   id: string;
+  projectId?: string;
   projectName: string;
   serverId?: string;
   trigger: DeploymentTrigger;
@@ -29,6 +30,7 @@ export interface DeploymentRecord {
 }
 
 export interface ProjectSummary {
+  id: string;
   name: string;
   serverId?: string;
   repositoryUrl: string;

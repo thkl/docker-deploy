@@ -44,7 +44,8 @@ export class DeploymentStreamHub {
                 return;
             }
 
-            if (!this.configStore.fetchProfile(projectName)) {
+            const project = this.configStore.resolveProject(projectName);
+            if (!project) {
                 socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
                 socket.destroy();
                 return;
@@ -57,7 +58,7 @@ export class DeploymentStreamHub {
             }
 
             webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-                this.registerClient(projectName, webSocket);
+                this.registerClient(project.name, webSocket);
             });
         });
     }

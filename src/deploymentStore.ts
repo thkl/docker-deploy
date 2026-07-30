@@ -7,6 +7,7 @@ export type DeploymentStream = "stdout" | "stderr";
 
 export interface DeploymentRecord {
     id: string;
+    projectId?: string;
     projectName: string;
     serverId: string;
     trigger: DeploymentTrigger;
@@ -38,20 +39,22 @@ export class DeploymentStore {
         const rows = this.database
             .prepare(
                 `SELECT
-                    id,
-                    project_name AS projectName,
-                    server_id AS serverId,
-                    trigger,
-                    status,
-                    started_at AS startedAt,
-                    finished_at AS finishedAt,
-                    exit_code AS exitCode,
-                    error
-                 FROM deployments
-                 WHERE project_name = ?
-                 ORDER BY started_at ASC`
+                    d.id,
+                    d.project_id AS projectId,
+                    p.name AS projectName,
+                    d.server_id AS serverId,
+                    d.trigger,
+                    d.status,
+                    d.started_at AS startedAt,
+                    d.finished_at AS finishedAt,
+                    d.exit_code AS exitCode,
+                    d.error
+                 FROM deployments d
+                 JOIN projects p ON p.id = d.project_id
+                 WHERE p.name = ? OR p.id = ?
+                 ORDER BY d.started_at ASC`
             )
-            .all(projectName) as unknown as DeploymentRow[];
+            .all(projectName, projectName) as unknown as DeploymentRow[];
 
         return rows.map((row) => this.rowToRecord(row));
     }
@@ -63,21 +66,23 @@ export class DeploymentStore {
         const row = this.database
             .prepare(
                 `SELECT
-                    id,
-                    project_name AS projectName,
-                    server_id AS serverId,
-                    trigger,
-                    status,
-                    started_at AS startedAt,
-                    finished_at AS finishedAt,
-                    exit_code AS exitCode,
-                    error
-                 FROM deployments
-                 WHERE project_name = ?
-                 ORDER BY started_at DESC
+                    d.id,
+                    d.project_id AS projectId,
+                    p.name AS projectName,
+                    d.server_id AS serverId,
+                    d.trigger,
+                    d.status,
+                    d.started_at AS startedAt,
+                    d.finished_at AS finishedAt,
+                    d.exit_code AS exitCode,
+                    d.error
+                 FROM deployments d
+                 JOIN projects p ON p.id = d.project_id
+                 WHERE p.name = ? OR p.id = ?
+                 ORDER BY d.started_at DESC
                  LIMIT 1`
             )
-            .get(projectName) as DeploymentRow | undefined;
+            .get(projectName, projectName) as DeploymentRow | undefined;
 
         return row ? this.rowToRecord(row) : null;
     }
@@ -86,7 +91,10 @@ export class DeploymentStore {
      * Removes all deployment history for a deleted project.
      */
     deleteProject(projectName: string) {
-        this.database.prepare("DELETE FROM deployments WHERE project_name = ?").run(projectName);
+        const projectId = this.projectIdByRef(projectName);
+        if (projectId) {
+            this.database.prepare("DELETE FROM deployments WHERE project_id = ?").run(projectId);
+        }
     }
 
     /**
@@ -94,8 +102,14 @@ export class DeploymentStore {
      */
     start(projectName: string, trigger: DeploymentTrigger, serverId = "local") {
         const now = new Date().toISOString();
+        const projectId = this.projectIdByRef(projectName);
+        if (!projectId) {
+            throw new Error("Project does not exist.");
+        }
+
         const record: DeploymentRecord = {
             id: `${Date.now()}-${randomUUID().slice(0, 8)}`,
+            projectId,
             projectName,
             serverId,
             trigger,
@@ -108,10 +122,10 @@ export class DeploymentStore {
             this.database
                 .prepare(
                     `INSERT INTO deployments
-                     (id, project_name, server_id, trigger, status, started_at)
+                     (id, project_id, server_id, trigger, status, started_at)
                      VALUES (?, ?, ?, ?, ?, ?)`
                 )
-                .run(record.id, projectName, serverId, trigger, record.status, now);
+                .run(record.id, projectId, serverId, trigger, record.status, now);
 
             this.database
                 .prepare("INSERT INTO deployment_logs (deployment_id, stream, chunk, created_at) VALUES (?, 'stdout', ?, ?)")
@@ -139,13 +153,18 @@ export class DeploymentStore {
      * Marks a running deployment as succeeded or failed.
      */
     finish(projectName: string, deploymentId: string, status: Exclude<DeploymentStatus, "running">, details?: { error?: string; exitCode?: number | string }) {
+        const projectId = this.projectIdByRef(projectName);
+        if (!projectId) {
+            return;
+        }
+
         this.database
             .prepare(
                 `UPDATE deployments
                  SET status = ?, finished_at = ?, error = ?, exit_code = ?
-                 WHERE id = ? AND project_name = ?`
+                 WHERE id = ? AND project_id = ?`
             )
-            .run(status, new Date().toISOString(), details?.error ?? null, details?.exitCode ? String(details.exitCode) : null, deploymentId, projectName);
+            .run(status, new Date().toISOString(), details?.error ?? null, details?.exitCode ? String(details.exitCode) : null, deploymentId, projectId);
     }
 
     /**
@@ -154,6 +173,7 @@ export class DeploymentStore {
     private rowToRecord(row: DeploymentRow): DeploymentRecord {
         return {
             id: row.id,
+            projectId: row.projectId,
             projectName: row.projectName,
             serverId: row.serverId,
             trigger: row.trigger,
@@ -181,31 +201,43 @@ export class DeploymentStore {
      * Deletes older deployment rows after a new record is created.
      */
     private trimHistory(projectName: string) {
+        const projectId = this.projectIdByRef(projectName);
+        if (!projectId) {
+            return;
+        }
+
         this.database
             .prepare(
                 `DELETE FROM deployments
-                 WHERE project_name = ?
+                 WHERE project_id = ?
                    AND id NOT IN (
                        SELECT id FROM deployments
-                       WHERE project_name = ?
+                       WHERE project_id = ?
                        ORDER BY started_at DESC
                        LIMIT ?
                    )`
             )
-            .run(projectName, projectName, maxHistoryPerProject);
+            .run(projectId, projectId, maxHistoryPerProject);
     }
 
     /**
      * Guards log appends so stale worker callbacks cannot cross project names.
      */
     private deploymentBelongsToProject(projectName: string, deploymentId: string) {
-        const row = this.database.prepare("SELECT id FROM deployments WHERE id = ? AND project_name = ?").get(deploymentId, projectName);
+        const projectId = this.projectIdByRef(projectName);
+        const row = projectId ? this.database.prepare("SELECT id FROM deployments WHERE id = ? AND project_id = ?").get(deploymentId, projectId) : undefined;
         return Boolean(row);
+    }
+
+    private projectIdByRef(projectRef: string) {
+        const row = this.database.prepare("SELECT id FROM projects WHERE id = ? OR name = ?").get(projectRef, projectRef) as { id: string } | undefined;
+        return row?.id;
     }
 }
 
 interface DeploymentRow {
     id: string;
+    projectId: string;
     projectName: string;
     serverId: string;
     trigger: DeploymentTrigger;

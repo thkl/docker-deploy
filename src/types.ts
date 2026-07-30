@@ -19,6 +19,7 @@ export interface TraefikSettings {
 }
 
 export interface ProjectSettings {
+    id?: string;
     serverId?: string;
     token?: string;
     repositoryUrl?: string;

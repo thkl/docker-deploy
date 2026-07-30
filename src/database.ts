@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { GlobalSettings, GlobalSettingsPayload, ProjectConfig, ProjectSettings, ServerRecord } from "./types.js";
 import type { DeploymentRecord } from "./deploymentStore.js";
 
-const schemaVersion = 1;
+const schemaVersion = 2;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     defaultTraefikNetwork: "proxy",
@@ -78,7 +78,8 @@ export class AppDatabase {
             );
 
             CREATE TABLE IF NOT EXISTS projects (
-                name TEXT PRIMARY KEY,
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
                 server_id TEXT NOT NULL REFERENCES servers(id),
                 token TEXT,
                 repository_url TEXT,
@@ -90,7 +91,7 @@ export class AppDatabase {
             );
 
             CREATE TABLE IF NOT EXISTS project_traefik_settings (
-                project_name TEXT PRIMARY KEY REFERENCES projects(name) ON DELETE CASCADE,
+                project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
                 enabled INTEGER NOT NULL,
                 hostname TEXT,
                 service TEXT,
@@ -106,7 +107,7 @@ export class AppDatabase {
 
             CREATE TABLE IF NOT EXISTS deployments (
                 id TEXT PRIMARY KEY,
-                project_name TEXT NOT NULL REFERENCES projects(name) ON DELETE CASCADE,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 server_id TEXT NOT NULL REFERENCES servers(id),
                 trigger TEXT NOT NULL,
                 status TEXT NOT NULL,
@@ -133,6 +134,7 @@ export class AppDatabase {
         this.ensureColumn("servers", "status", "TEXT NOT NULL DEFAULT 'unpaired'");
         this.ensureColumn("servers", "last_seen_at", "TEXT");
         this.ensureColumn("servers", "paired_at", "TEXT");
+        this.migrateProjectsToStableIds();
         this.connection.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)").run(String(schemaVersion));
     }
 
@@ -143,6 +145,141 @@ export class AppDatabase {
         const columns = this.connection.prepare(`PRAGMA table_info(${tableName})`).all() as unknown as Array<{ name: string }>;
         if (!columns.some((column) => column.name === columnName)) {
             this.connection.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`);
+        }
+    }
+
+    /**
+     * Rebuilds the early SQLite schema that used project names as foreign keys.
+     */
+    private migrateProjectsToStableIds() {
+        const projectColumns = this.connection.prepare("PRAGMA table_info(projects)").all() as unknown as Array<{ name: string }>;
+        if (projectColumns.some((column) => column.name === "id")) {
+            return;
+        }
+
+        const projects = this.connection
+            .prepare(
+                `SELECT name, server_id AS serverId, token, repository_url AS repositoryUrl, deploy_token AS deployToken,
+                        path, compose_override AS composeOverride, created_at AS createdAt, updated_at AS updatedAt
+                 FROM projects`
+            )
+            .all() as unknown as LegacyProjectRow[];
+        const traefikRows = this.connection.prepare("SELECT * FROM project_traefik_settings").all() as unknown as LegacyTraefikRow[];
+        const deploymentRows = this.connection.prepare("SELECT * FROM deployments").all() as unknown as LegacyDeploymentRow[];
+        const projectIds = new Map(projects.map((project) => [project.name, randomUUID()]));
+
+        this.connection.exec("PRAGMA foreign_keys = OFF;");
+        try {
+            runDatabaseTransaction(this.connection, () => {
+                this.connection.exec(`
+                    CREATE TABLE projects_next (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        server_id TEXT NOT NULL REFERENCES servers(id),
+                        token TEXT,
+                        repository_url TEXT,
+                        deploy_token TEXT,
+                        path TEXT,
+                        compose_override TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE project_traefik_settings_next (
+                        project_id TEXT PRIMARY KEY REFERENCES projects_next(id) ON DELETE CASCADE,
+                        enabled INTEGER NOT NULL,
+                        hostname TEXT,
+                        service TEXT,
+                        port INTEGER,
+                        entry_points TEXT,
+                        cert_resolver TEXT,
+                        network TEXT,
+                        websocket INTEGER NOT NULL,
+                        wildcard_certificate INTEGER NOT NULL,
+                        wildcard_domain TEXT,
+                        remove_published_ports INTEGER NOT NULL
+                    );
+
+                    CREATE TABLE deployments_next (
+                        id TEXT PRIMARY KEY,
+                        project_id TEXT NOT NULL REFERENCES projects_next(id) ON DELETE CASCADE,
+                        server_id TEXT NOT NULL REFERENCES servers(id),
+                        trigger TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        started_at TEXT NOT NULL,
+                        finished_at TEXT,
+                        exit_code TEXT,
+                        error TEXT
+                    );
+                `);
+
+                for (const project of projects) {
+                    const projectId = projectIds.get(project.name);
+                    if (!projectId) {
+                        continue;
+                    }
+
+                    this.connection
+                        .prepare(
+                            `INSERT INTO projects_next
+                             (id, name, server_id, token, repository_url, deploy_token, path, compose_override, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                        )
+                        .run(
+                            projectId,
+                            project.name,
+                            project.serverId,
+                            project.token,
+                            project.repositoryUrl,
+                            project.deployToken,
+                            project.path,
+                            project.composeOverride,
+                            project.createdAt,
+                            project.updatedAt
+                        );
+                }
+
+                for (const row of traefikRows) {
+                    const projectId = projectIds.get(row.project_name);
+                    if (!projectId) {
+                        continue;
+                    }
+
+                    this.connection
+                        .prepare(
+                            `INSERT INTO project_traefik_settings_next
+                             (project_id, enabled, hostname, service, port, entry_points, cert_resolver, network, websocket, wildcard_certificate, wildcard_domain, remove_published_ports)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                        )
+                        .run(projectId, row.enabled, row.hostname, row.service, row.port, row.entry_points, row.cert_resolver, row.network, row.websocket, row.wildcard_certificate, row.wildcard_domain, row.remove_published_ports);
+                }
+
+                for (const row of deploymentRows) {
+                    const projectId = projectIds.get(row.project_name);
+                    if (!projectId) {
+                        continue;
+                    }
+
+                    this.connection
+                        .prepare(
+                            `INSERT INTO deployments_next
+                             (id, project_id, server_id, trigger, status, started_at, finished_at, exit_code, error)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                        )
+                        .run(row.id, projectId, row.server_id, row.trigger, row.status, row.started_at, row.finished_at, row.exit_code, row.error);
+                }
+
+                this.connection.exec(`
+                    DROP TABLE project_traefik_settings;
+                    DROP TABLE deployments;
+                    DROP TABLE projects;
+                    ALTER TABLE projects_next RENAME TO projects;
+                    ALTER TABLE project_traefik_settings_next RENAME TO project_traefik_settings;
+                    ALTER TABLE deployments_next RENAME TO deployments;
+                `);
+            });
+        } finally {
+            this.connection.exec("PRAGMA foreign_keys = ON;");
         }
     }
 
@@ -267,18 +404,30 @@ export function runDatabaseTransaction(database: DatabaseSync, work: () => void)
  */
 export function upsertProject(database: DatabaseSync, name: string, settings: ProjectSettings) {
     const now = new Date().toISOString();
-    const existing = database.prepare("SELECT created_at AS createdAt FROM projects WHERE name = ?").get(name) as { createdAt: string } | undefined;
+    const existing = settings.id
+        ? (database.prepare("SELECT id, created_at AS createdAt FROM projects WHERE id = ?").get(settings.id) as { id: string; createdAt: string } | undefined)
+        : (database.prepare("SELECT id, created_at AS createdAt FROM projects WHERE name = ?").get(name) as { id: string; createdAt: string } | undefined);
+    const projectId = existing?.id ?? settings.id ?? randomUUID();
     const serverId = settings.serverId ?? "local";
 
     database
         .prepare(
-            `INSERT OR REPLACE INTO projects
-             (name, server_id, token, repository_url, deploy_token, path, compose_override, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO projects
+             (id, name, server_id, token, repository_url, deploy_token, path, compose_override, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                server_id = excluded.server_id,
+                token = excluded.token,
+                repository_url = excluded.repository_url,
+                deploy_token = excluded.deploy_token,
+                path = excluded.path,
+                compose_override = excluded.compose_override,
+                updated_at = excluded.updated_at`
         )
-        .run(name, serverId, settings.token ?? null, settings.repositoryUrl ?? null, settings.deployToken ?? null, settings.path ?? null, settings.composeOverride ?? null, existing?.createdAt ?? now, now);
+        .run(projectId, name, serverId, settings.token ?? null, settings.repositoryUrl ?? null, settings.deployToken ?? null, settings.path ?? null, settings.composeOverride ?? null, existing?.createdAt ?? now, now);
 
-    database.prepare("DELETE FROM project_traefik_settings WHERE project_name = ?").run(name);
+    database.prepare("DELETE FROM project_traefik_settings WHERE project_id = ?").run(projectId);
     if (!settings.traefik) {
         return;
     }
@@ -286,11 +435,11 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
     database
         .prepare(
             `INSERT INTO project_traefik_settings
-             (project_name, enabled, hostname, service, port, entry_points, cert_resolver, network, websocket, wildcard_certificate, wildcard_domain, remove_published_ports)
+             (project_id, enabled, hostname, service, port, entry_points, cert_resolver, network, websocket, wildcard_certificate, wildcard_domain, remove_published_ports)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
-            name,
+            projectId,
             settings.traefik.enabled ? 1 : 0,
             settings.traefik.hostname ?? null,
             settings.traefik.service ?? null,
@@ -309,13 +458,18 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
  * Stores a deployment record and its current log content.
  */
 function upsertDeployment(database: DatabaseSync, record: DeploymentRecord, serverId: string) {
+    const projectId = projectIdByName(database, record.projectName);
+    if (!projectId) {
+        return;
+    }
+
     database
         .prepare(
             `INSERT OR REPLACE INTO deployments
-             (id, project_name, server_id, trigger, status, started_at, finished_at, exit_code, error)
+             (id, project_id, server_id, trigger, status, started_at, finished_at, exit_code, error)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(record.id, record.projectName, serverId, record.trigger, record.status, record.startedAt, record.finishedAt ?? null, record.exitCode ? String(record.exitCode) : null, record.error ?? null);
+        .run(record.id, projectId, serverId, record.trigger, record.status, record.startedAt, record.finishedAt ?? null, record.exitCode ? String(record.exitCode) : null, record.error ?? null);
 
     if (record.log) {
         database
@@ -354,7 +508,51 @@ function normalizeProjectForDatabase(settings: ProjectSettings): ProjectSettings
  * Checks whether a project exists before importing dependent records.
  */
 function projectExists(database: DatabaseSync, projectName: string) {
-    return Boolean(database.prepare("SELECT name FROM projects WHERE name = ?").get(projectName));
+    return Boolean(projectIdByName(database, projectName));
+}
+
+function projectIdByName(database: DatabaseSync, projectName: string) {
+    const row = database.prepare("SELECT id FROM projects WHERE name = ?").get(projectName) as { id: string } | undefined;
+    return row?.id;
+}
+
+interface LegacyProjectRow {
+    name: string;
+    serverId: string;
+    token: string | null;
+    repositoryUrl: string | null;
+    deployToken: string | null;
+    path: string | null;
+    composeOverride: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+interface LegacyTraefikRow {
+    project_name: string;
+    enabled: number;
+    hostname: string | null;
+    service: string | null;
+    port: number | null;
+    entry_points: string | null;
+    cert_resolver: string | null;
+    network: string | null;
+    websocket: number;
+    wildcard_certificate: number;
+    wildcard_domain: string | null;
+    remove_published_ports: number;
+}
+
+interface LegacyDeploymentRow {
+    id: string;
+    project_name: string;
+    server_id: string;
+    trigger: string;
+    status: string;
+    started_at: string;
+    finished_at: string | null;
+    exit_code: string | null;
+    error: string | null;
 }
 
 /**

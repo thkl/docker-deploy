@@ -15,6 +15,7 @@ Migrate the updater from a small Express-rendered admin page into a structured A
 - Treat checkout paths as target-server paths, not controller-local paths.
 - Run all project filesystem and Docker actions through an agent/worker on the target server.
 - Support one controller managing many agents: one local agent on the controller host and remote agents on other servers.
+- Keep runtime inspection event-driven or user-requested; do not add background polling loops.
 
 ## Target Architecture
 
@@ -44,7 +45,7 @@ controller
   -> remote agent 2
 ```
 
-For remote servers, agents should connect outbound to the controller over an authenticated WebSocket so no inbound agent port is required.
+For remote servers, the controller talks to the agent over HTTP for commands and short-lived WebSockets for log streams. Messages should stay encrypted and signed at the application layer so this can work on private HTTP networks without TLS certificate management.
 
 Hard rule:
 
@@ -127,6 +128,25 @@ Each project must include a target server reference:
 }
 ```
 
+## Phase 1.5: Stable Project Identity
+
+Move project identity from repository/project name to a stable UUID.
+
+Requirements:
+
+- Add `projects.id` as the primary stable project identifier.
+- Keep `projects.name` editable and unique, but never use it as a foreign key.
+- Migrate existing projects by generating UUIDs.
+- Migrate existing deployment rows from `project_name` references to `project_id` references.
+- Link all future project-owned data by `project_id`, including deployments, deployment logs, runtime status, runtime logs, compose inspection cache, cleanup metadata, and future settings tables.
+- Keep compatibility aliases during migration so existing URLs by project name can redirect or resolve to the UUID-backed project.
+- After migration, project rename must not break deployment history, logs, status, or agent routing.
+
+API direction:
+
+- Prefer UUID routes for new UI navigation, for example `/api/projects/:id`.
+- Keep name-based webhook and CI lookup as resolver logic that maps repository payloads or path names to the internal project UUID.
+
 ## Phase 2: Angular App Shell
 
 Add an Angular frontend under `frontend/` and serve its production build from Express.
@@ -143,6 +163,7 @@ Initial routes:
 Layout:
 
 - Left navigation: Projects, Activity, Settings.
+- Project list entries should show the selected target agent/server.
 - Top bar: selected project, deploy action, latest status.
 - Main area: dense operational views.
 - Browser-driven dark mode via `prefers-color-scheme`.
@@ -154,6 +175,7 @@ Replace the current HTML table with an Angular project dashboard.
 Show:
 
 - Project name
+- Target agent/server
 - Host path
 - Proxy hostname
 - Compose source
@@ -245,13 +267,55 @@ Server UI:
 
 Agent protocol:
 
-- Agent connects outbound to controller.
-- Agent authenticates with a server/agent token.
-- Controller sends jobs: import compose, deploy, stop, delete checkout, cleanup.
-- Agent streams logs, status, and final result.
-- Controller persists all job events in SQLite.
+- Agent exposes HTTP endpoints for health, pairing, and encrypted job commands.
+- Controller authenticates with signed and encrypted command envelopes.
+- Controller sends jobs: import compose, deploy, stop, delete checkout, cleanup, inspect status, and runtime logs.
+- Agent exposes short-lived WebSocket streams for deployment logs and runtime container logs.
+- Controller persists deployment job events in SQLite and may cache latest runtime status.
 
 Local execution should use the same protocol shape as remote execution, even if implemented in-process first.
+
+## Phase 6.6: Runtime Status And Logs
+
+Add agent-side runtime inspection for deployed Docker Compose projects.
+
+Service status:
+
+- Controller asks the selected target agent for project status on demand.
+- Agent inspects containers through Docker Compose or Docker inspect on the target server.
+- Return structured status:
+  - `running`
+  - `partial`
+  - `stopped`
+  - `unknown`
+  - `error`
+- Include service-level details: service name, container name/id, state, health, image, ports, and checked time.
+- UI shows status indicators in the project list and project overview.
+- Deploy success triggers one immediate status refresh.
+- Add a manual refresh button.
+- Do not poll in the background when the UI is not viewing the project.
+
+Runtime logs:
+
+- Keep deployment logs and runtime container logs separate.
+- Deployment logs remain the build/pull/up/down output for a deploy job.
+- Runtime logs come from running containers after deployment.
+- Runtime logs load only when the user opens the log panel or clicks live logs.
+- Agent should support tailing logs, for example `docker compose logs --tail <n> <service>`.
+- Agent should support short-lived live streams, for example `docker compose logs --follow`.
+- Stop runtime log streaming when the user leaves the page or stops live logs.
+- UI should support service selection, tail count, live toggle, and auto-scroll.
+
+Suggested API shape:
+
+- `GET /api/projects/:name/status`
+- `GET /api/projects/:name/runtime-logs?service=app&tail=200`
+- WebSocket stream for live runtime logs.
+
+Agent job additions:
+
+- `inspectStatus`
+- `runtimeLogs`
 
 ## Phase 7: Storage Cleanup And Data Mapping
 
@@ -283,6 +347,8 @@ Example target layout:
 4. Add a local agent abstraction and route compose import, deploy, stop, delete checkout, and cleanup through it.
 5. Add remote agent WebSocket connection support.
 6. Update project settings so each project selects a target server.
+7. Migrate projects to stable UUIDs and link deployments/logs by project ID.
+8. Show each project's target agent/server in the left project panel.
 
 ## Explicit Non-Goals For Now
 

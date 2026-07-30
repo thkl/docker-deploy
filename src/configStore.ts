@@ -18,6 +18,7 @@ export class ConfigStore {
             .prepare(
                 `SELECT
                     p.name,
+                    p.id,
                     p.server_id AS serverId,
                     p.token,
                     p.repository_url AS repositoryUrl,
@@ -36,7 +37,7 @@ export class ConfigStore {
                     t.wildcard_domain AS traefikWildcardDomain,
                     t.remove_published_ports AS traefikRemovePublishedPorts
                  FROM projects p
-                 LEFT JOIN project_traefik_settings t ON t.project_name = p.name
+                 LEFT JOIN project_traefik_settings t ON t.project_id = p.id
                  ORDER BY p.name`
             )
             .all() as unknown as ProjectRow[];
@@ -53,12 +54,13 @@ export class ConfigStore {
      */
     writeConfig(config: ProjectConfig) {
         runDatabaseTransaction(this.database, () => {
-            const existingNames = (this.database.prepare("SELECT name FROM projects").all() as Array<{ name: string }>).map((row) => row.name);
+            const existingProjects = this.database.prepare("SELECT id, name FROM projects").all() as Array<{ id: string; name: string }>;
             const nextNames = new Set(Object.keys(config));
+            const nextIds = new Set(Object.values(config).map((settings) => settings.id).filter(Boolean));
 
-            for (const existingName of existingNames) {
-                if (!nextNames.has(existingName)) {
-                    this.database.prepare("DELETE FROM projects WHERE name = ?").run(existingName);
+            for (const existingProject of existingProjects) {
+                if (!nextNames.has(existingProject.name) && !nextIds.has(existingProject.id)) {
+                    this.database.prepare("DELETE FROM projects WHERE id = ?").run(existingProject.id);
                 }
             }
 
@@ -73,15 +75,52 @@ export class ConfigStore {
      */
     fetchProfile(repoName: string): ProjectSettings | undefined {
         try {
-            return this.readConfig()[repoName];
+            return this.resolveProject(repoName)?.settings;
         } catch (error) {
             console.log("Error reading config");
             return undefined;
         }
     }
+
+    /**
+     * Resolves either the stable project UUID or the legacy unique name.
+     */
+    resolveProject(projectRef: string): { name: string; settings: ProjectSettings } | undefined {
+        const row = this.database
+            .prepare(
+                `SELECT
+                    p.id,
+                    p.name,
+                    p.server_id AS serverId,
+                    p.token,
+                    p.repository_url AS repositoryUrl,
+                    p.deploy_token AS deployToken,
+                    p.path,
+                    p.compose_override AS composeOverride,
+                    t.enabled AS traefikEnabled,
+                    t.hostname AS traefikHostname,
+                    t.service AS traefikService,
+                    t.port AS traefikPort,
+                    t.entry_points AS traefikEntryPoints,
+                    t.cert_resolver AS traefikCertResolver,
+                    t.network AS traefikNetwork,
+                    t.websocket AS traefikWebsocket,
+                    t.wildcard_certificate AS traefikWildcardCertificate,
+                    t.wildcard_domain AS traefikWildcardDomain,
+                    t.remove_published_ports AS traefikRemovePublishedPorts
+                 FROM projects p
+                 LEFT JOIN project_traefik_settings t ON t.project_id = p.id
+                 WHERE p.id = ? OR p.name = ?
+                 LIMIT 1`
+            )
+            .get(projectRef, projectRef) as ProjectRow | undefined;
+
+        return row ? { name: row.name, settings: rowToProjectSettings(row) } : undefined;
+    }
 }
 
 interface ProjectRow {
+    id: string;
     name: string;
     serverId: string;
     token: string | null;
@@ -107,6 +146,7 @@ interface ProjectRow {
  */
 function rowToProjectSettings(row: ProjectRow): ProjectSettings {
     return {
+        id: row.id,
         serverId: row.serverId || "local",
         ...(row.token ? { token: row.token } : {}),
         ...(row.repositoryUrl ? { repositoryUrl: row.repositoryUrl } : {}),
