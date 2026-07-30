@@ -810,11 +810,24 @@ function yamlKey(value: string) {
 }
 
 function yamlScalar(value: string) {
-  if (/^[a-zA-Z0-9_./:@-]+$/.test(value)) {
+  if (isPlainYamlScalar(value)) {
     return value;
   }
 
   return JSON.stringify(value);
+}
+
+function isPlainYamlScalar(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (!/^[a-zA-Z0-9_./@-]+$/.test(trimmed)) {
+    return false;
+  }
+
+  return !/^(?:y|yes|n|no|true|false|on|off|null|~)$/i.test(trimmed);
 }
 
 function traefikRouterName(value: string) {
