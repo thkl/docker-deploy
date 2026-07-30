@@ -39,10 +39,10 @@
       <p>Deploy manually, inspect the latest worker output, or adjust project configuration.</p>
     </div>
     <div class="panel-actions">
-      <button type="button" (click)="deploy(project.name)" [disabled]="deploying()">
+      <button type="button" (click)="deploy(project.id)" [disabled]="deploying()">
         {{ deploying() ? 'Starting...' : 'Deploy now' }}
       </button>
-      <a [routerLink]="['/projects', project.name, 'settings']">Project settings</a>
+      <a [routerLink]="['/projects', project.id, 'settings']">Project settings</a>
       <button type="button" class="danger-action" (click)="openDelete(project)">Delete project</button>
     </div>
   </section>
@@ -86,7 +86,7 @@
           <input type="checkbox" [checked]="autoScroll()" (change)="toggleAutoScroll($event)" />
           <span>Auto-scroll</span>
         </label>
-        <button type="button" class="secondary" (click)="refresh(project.name)" [disabled]="loadingDeployment()">
+        <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingDeployment()">
           Refresh
         </button>
       </div>

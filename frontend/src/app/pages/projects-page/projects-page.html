@@ -29,7 +29,7 @@
         </tr>
       </thead>
       <tbody>
-        @for (project of store.projects(); track project.name) {
+        @for (project of store.projects(); track project.id) {
           <tr>
             <td>
               <strong>{{ project.name }}</strong>
@@ -75,7 +75,7 @@
             </td>
             <td>
               <div class="actions">
-                <a [routerLink]="['/projects', project.name, 'overview']" (click)="store.selectProject(project.name)">
+                <a [routerLink]="['/projects', project.id, 'overview']" (click)="store.selectProject(project.id)">
                   Open
                 </a>
               </div>

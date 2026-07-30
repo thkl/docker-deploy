@@ -11,32 +11,32 @@ export class ProjectApi {
     return this.http.get<ProjectSummary[]>('/api/projects');
   }
 
-  createProject(payload: ProjectPayload): Observable<{ name: string }> {
-    return this.http.post<{ name: string }>('/api/projects', payload);
+  createProject(payload: ProjectPayload): Observable<{ id?: string; name: string }> {
+    return this.http.post<{ id?: string; name: string }>('/api/projects', payload);
   }
 
-  updateProject(currentName: string, payload: ProjectPayload): Observable<{ name: string }> {
-    return this.http.put<{ name: string }>(`/api/projects/${encodeURIComponent(currentName)}`, payload);
+  updateProject(projectRef: string, payload: ProjectPayload): Observable<{ id?: string; name: string }> {
+    return this.http.put<{ id?: string; name: string }>(`/api/projects/${encodeURIComponent(projectRef)}`, payload);
   }
 
-  deleteProject(name: string, payload: DeleteProjectPayload): Observable<DeleteProjectResult> {
-    return this.http.delete<DeleteProjectResult>(`/api/projects/${encodeURIComponent(name)}`, { body: payload });
+  deleteProject(projectRef: string, payload: DeleteProjectPayload): Observable<DeleteProjectResult> {
+    return this.http.delete<DeleteProjectResult>(`/api/projects/${encodeURIComponent(projectRef)}`, { body: payload });
   }
 
-  deployProject(name: string): Observable<{ status: string; deploymentId: string }> {
-    return this.http.post<{ status: string; deploymentId: string }>(`/api/projects/${encodeURIComponent(name)}/deploy`, {});
+  deployProject(projectRef: string): Observable<{ status: string; deploymentId: string }> {
+    return this.http.post<{ status: string; deploymentId: string }>(`/api/projects/${encodeURIComponent(projectRef)}/deploy`, {});
   }
 
-  importCompose(name: string): Observable<{ composeFile: string; compose: string }> {
-    return this.http.post<{ composeFile: string; compose: string }>(`/api/projects/${encodeURIComponent(name)}/compose/import`, {});
+  importCompose(projectRef: string): Observable<{ composeFile: string; compose: string }> {
+    return this.http.post<{ composeFile: string; compose: string }>(`/api/projects/${encodeURIComponent(projectRef)}/compose/import`, {});
   }
 
-  getLatestDeployment(name: string): Observable<DeploymentRecord | null> {
-    return this.http.get<DeploymentRecord | null>(`/api/projects/${encodeURIComponent(name)}/deployments/latest`);
+  getLatestDeployment(projectRef: string): Observable<DeploymentRecord | null> {
+    return this.http.get<DeploymentRecord | null>(`/api/projects/${encodeURIComponent(projectRef)}/deployments/latest`);
   }
 
-  listDeployments(name: string): Observable<DeploymentRecord[]> {
-    return this.http.get<DeploymentRecord[]>(`/api/projects/${encodeURIComponent(name)}/deployments`);
+  listDeployments(projectRef: string): Observable<DeploymentRecord[]> {
+    return this.http.get<DeploymentRecord[]>(`/api/projects/${encodeURIComponent(projectRef)}/deployments`);
   }
 
   getGlobalSettings(): Observable<GlobalSettings> {

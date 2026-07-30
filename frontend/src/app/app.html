@@ -25,11 +25,11 @@
         <div class="nav-state">No projects configured.</div>
       } @else {
         <nav class="project-list" aria-label="Projects">
-          @for (project of store.projects(); track project.name) {
+          @for (project of store.projects(); track project.id) {
             <a
-              [routerLink]="['/projects', project.name, 'overview']"
+              [routerLink]="['/projects', project.id, 'overview']"
               routerLinkActive="active"
-              (click)="store.selectProject(project.name)"
+              (click)="store.selectProject(project.id)"
             >
               <span class="project-name">{{ project.name }}</span>
               @if (project.traefik.enabled && project.traefik.hostname) {

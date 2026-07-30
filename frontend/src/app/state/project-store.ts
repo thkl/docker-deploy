@@ -7,15 +7,15 @@ const selectedProjectKey = 'updater.selectedProject';
 @Injectable({ providedIn: 'root' })
 export class ProjectStore {
   private readonly api = inject(ProjectApi);
-  private readonly selectedName = signal(localStorage.getItem(selectedProjectKey) ?? '');
+  private readonly selectedId = signal(localStorage.getItem(selectedProjectKey) ?? '');
 
   readonly projects = signal<ProjectSummary[]>([]);
   readonly servers = signal<ServerRecord[]>([]);
   readonly loading = signal(false);
   readonly error = signal('');
-  readonly selectedProjectName = this.selectedName.asReadonly();
+  readonly selectedProjectId = this.selectedId.asReadonly();
   readonly selectedProject = computed(() =>
-    this.projects().find((project) => project.name === this.selectedName()) ?? null,
+    this.projects().find((project) => project.id === this.selectedId()) ?? null,
   );
   readonly selectedProjectServer = computed(() => {
     const project = this.selectedProject();
@@ -24,9 +24,9 @@ export class ProjectStore {
 
   constructor() {
     effect(() => {
-      const name = this.selectedName();
-      if (name) {
-        localStorage.setItem(selectedProjectKey, name);
+      const id = this.selectedId();
+      if (id) {
+        localStorage.setItem(selectedProjectKey, id);
       } else {
         localStorage.removeItem(selectedProjectKey);
       }
@@ -40,8 +40,12 @@ export class ProjectStore {
     this.api.listProjects().subscribe({
       next: (projects) => {
         this.projects.set(projects);
-        if (!projects.some((project) => project.name === this.selectedName())) {
-          this.selectedName.set(projects[0]?.name ?? '');
+        const selected = this.selectedId();
+        const selectedProject = projects.find((project) => project.id === selected) ?? projects.find((project) => project.name === selected);
+        if (selectedProject) {
+          this.selectedId.set(selectedProject.id);
+        } else {
+          this.selectedId.set(projects[0]?.id ?? '');
         }
         this.loading.set(false);
       },
@@ -63,7 +67,8 @@ export class ProjectStore {
     });
   }
 
-  selectProject(name: string) {
-    this.selectedName.set(name);
+  selectProject(projectRef: string) {
+    const project = this.projects().find((candidate) => candidate.id === projectRef || candidate.name === projectRef);
+    this.selectedId.set(project?.id ?? projectRef);
   }
 }

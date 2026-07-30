@@ -12,9 +12,9 @@ interface DeploymentStreamMessage {
 export class DeploymentStreamService {
   private readonly auth = inject(AuthService);
 
-  streamLatest(projectName: string) {
+  streamLatest(projectRef: string) {
     return new Observable<DeploymentRecord | null>((subscriber) => {
-      const websocket = new WebSocket(this.streamUrl(projectName));
+      const websocket = new WebSocket(this.streamUrl(projectRef));
 
       websocket.onmessage = (event) => {
         try {
@@ -39,9 +39,9 @@ export class DeploymentStreamService {
     });
   }
 
-  private streamUrl(projectName: string) {
+  private streamUrl(projectRef: string) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = new URL(`${protocol}//${window.location.host}/api/projects/${encodeURIComponent(projectName)}/deployments/stream`);
+    const url = new URL(`${protocol}//${window.location.host}/api/projects/${encodeURIComponent(projectRef)}/deployments/stream`);
     const token = this.auth.currentToken();
 
     if (token) {

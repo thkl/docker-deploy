@@ -41,10 +41,10 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.route.paramMap.subscribe((params) => {
-      const name = params.get('name');
-      if (name) {
-        this.store.selectProject(name);
-        this.connectDeploymentStream(name);
+      const projectRef = params.get('name');
+      if (projectRef) {
+        this.store.selectProject(projectRef);
+        this.connectDeploymentStream(projectRef);
       }
     });
   }
@@ -53,27 +53,31 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.disconnectDeploymentStream();
   }
 
-  protected deploy(name: string) {
+  protected deploy(projectRef: string) {
+    const project = this.projectByRef(projectRef);
+    const projectName = project?.name ?? projectRef;
+
     this.deploying.set(true);
-    this.deployMessage.set(`Starting deployment for ${name}...`);
+    this.deployMessage.set(`Starting deployment for ${projectName}...`);
     this.deployError.set('');
 
-    this.api.deployProject(name).subscribe({
+    this.api.deployProject(project?.id ?? projectRef).subscribe({
       next: () => {
         this.deploying.set(false);
-        this.deployMessage.set(`Deployment started for ${name}.`);
+        this.deployMessage.set(`Deployment started for ${projectName}.`);
         this.store.loadProjects();
-        this.loadLatestDeployment(name);
+        this.loadLatestDeployment(project?.id ?? projectRef, projectName);
       },
       error: () => {
         this.deploying.set(false);
-        this.deployError.set(`Could not start deployment for ${name}.`);
+        this.deployError.set(`Could not start deployment for ${projectName}.`);
       },
     });
   }
 
-  protected refresh(name: string) {
-    this.loadLatestDeployment(name);
+  protected refresh(projectRef: string) {
+    const project = this.projectByRef(projectRef);
+    this.loadLatestDeployment(project?.id ?? projectRef, project?.name ?? projectRef);
   }
 
   protected openDelete(project: ProjectSummary) {
@@ -123,7 +127,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.deleting.set(true);
     this.deleteError.set('');
 
-    this.api.deleteProject(project.name, {
+    this.api.deleteProject(project.id, {
       confirmationName: this.deleteConfirmation(),
       stopContainers: this.deleteStopContainers(),
       deleteCheckout: this.deleteCheckout(),
@@ -195,10 +199,10 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
           : 'Offline';
   }
 
-  private loadLatestDeployment(name: string) {
+  private loadLatestDeployment(projectRef: string, projectName = projectRef) {
     this.loadingDeployment.set(true);
 
-    this.api.getLatestDeployment(name).subscribe({
+    this.api.getLatestDeployment(projectRef).subscribe({
       next: (deployment) => {
         this.setLatestDeployment(deployment);
         this.loadingDeployment.set(false);
@@ -206,17 +210,17 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
       },
       error: () => {
         this.loadingDeployment.set(false);
-        this.deployError.set(`Could not load deployment status for ${name}.`);
+        this.deployError.set(`Could not load deployment status for ${projectName}.`);
       },
     });
   }
 
-  private connectDeploymentStream(name: string) {
+  private connectDeploymentStream(projectRef: string) {
     this.disconnectDeploymentStream();
     this.loadingDeployment.set(true);
     this.streamState.set('connecting');
 
-    this.streamSubscription = this.deploymentStream.streamLatest(name).subscribe({
+    this.streamSubscription = this.deploymentStream.streamLatest(projectRef).subscribe({
       next: (deployment) => {
         this.setLatestDeployment(deployment);
         this.loadingDeployment.set(false);
@@ -264,5 +268,9 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     if (element) {
       element.scrollTop = element.scrollHeight;
     }
+  }
+
+  private projectByRef(projectRef: string) {
+    return this.store.projects().find((project) => project.id === projectRef || project.name === projectRef) ?? null;
   }
 }

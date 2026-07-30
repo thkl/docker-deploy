@@ -62,6 +62,7 @@ export class ProjectSettingsPage implements OnInit {
   });
 
   private patchedProjectName = '';
+  private currentProjectRef = '';
 
   constructor() {
     this.form.controls.traefikEnabled.valueChanges.pipe(takeUntilDestroyed()).subscribe((enabled) => {
@@ -96,22 +97,24 @@ export class ProjectSettingsPage implements OnInit {
     });
 
     this.route.paramMap.subscribe((params) => {
-      const name = params.get('name');
+      const projectRef = params.get('name');
 
       this.message.set('');
       this.error.set('');
 
-      if (!name) {
+      if (!projectRef) {
         this.isNew.set(true);
         this.currentName.set('');
+        this.currentProjectRef = '';
         this.store.selectProject('');
         this.resetForNewProject();
         return;
       }
 
       this.isNew.set(false);
-      this.currentName.set(name);
-      this.store.selectProject(name);
+      this.currentProjectRef = projectRef;
+      this.store.selectProject(projectRef);
+      this.currentName.set(this.currentProject()?.name ?? projectRef);
       this.patchedProjectName = '';
     });
   }
@@ -132,18 +135,20 @@ export class ProjectSettingsPage implements OnInit {
       const payload = this.toPayload();
       const result = this.isNew()
         ? await firstValueFrom(this.api.createProject(payload))
-        : await firstValueFrom(this.api.updateProject(this.currentName(), payload));
+        : await firstValueFrom(this.api.updateProject(this.currentProjectRef || this.currentName(), payload));
+      const savedId = result.id || this.currentProjectRef;
       const savedName = result.name || payload.name;
 
-      this.store.selectProject(savedName);
+      this.currentProjectRef = savedId;
+      this.store.selectProject(savedId);
       this.store.loadProjects();
 
       if (mode === 'deploy') {
         this.message.set(`Saving ${savedName} and starting deployment...`);
-        await firstValueFrom(this.api.deployProject(savedName));
+        await firstValueFrom(this.api.deployProject(savedId));
       }
 
-      await this.router.navigate(['/projects', savedName, 'overview']);
+      await this.router.navigate(['/projects', savedId, 'overview']);
     } catch (error) {
       this.error.set(this.readApiError(error));
     } finally {
@@ -152,8 +157,8 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   protected cancel() {
-    const name = this.currentName();
-    void this.router.navigate(name ? ['/projects', name, 'overview'] : ['/projects']);
+    const projectRef = this.currentProjectRef || this.currentProject()?.id;
+    void this.router.navigate(projectRef ? ['/projects', projectRef, 'overview'] : ['/projects']);
   }
 
   protected importCompose() {
@@ -166,7 +171,7 @@ export class ProjectSettingsPage implements OnInit {
     }
 
     this.importingCompose.set(true);
-    this.api.importCompose(this.currentName()).subscribe({
+    this.api.importCompose(this.currentProjectRef).subscribe({
       next: (result) => {
         this.form.controls.composeOverride.setValue(result.compose);
         this.message.set(`Imported ${result.composeFile}. Review the override and save the project.`);
@@ -230,6 +235,11 @@ export class ProjectSettingsPage implements OnInit {
       traefikWebsocket: Boolean(traefik.websocket),
       traefikRemovePublishedPorts: traefik.removePublishedPorts !== false,
     });
+  }
+
+  private currentProject() {
+    const projectRef = this.currentProjectRef || this.currentName();
+    return this.store.projects().find((project) => project.id === projectRef || project.name === projectRef) ?? null;
   }
 
   private toPayload(): ProjectPayload {
