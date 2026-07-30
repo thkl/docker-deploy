@@ -69,6 +69,78 @@
   <section class="deploy-panel">
     <div class="deploy-head">
       <div>
+        <h2>Compose settings</h2>
+        @if (composeInspection(); as compose) {
+          <p>{{ composeSourceLabel(compose) }} from {{ compose.composeFile }} checked {{ formatDate(compose.checkedAt) }}.</p>
+        } @else {
+          <p>Inspect services, ports, networks, volumes, and data mounts from the effective Compose file.</p>
+        }
+      </div>
+      <button type="button" class="secondary" (click)="inspectCompose(project.id)" [disabled]="loadingComposeInspection()">
+        {{ loadingComposeInspection() ? 'Inspecting...' : 'Inspect compose' }}
+      </button>
+    </div>
+
+    @if (composeInspectionError()) {
+      <p class="notice error">{{ composeInspectionError() }}</p>
+    }
+
+    @if (loadingComposeInspection()) {
+      <div class="status-skeleton" aria-label="Loading Compose settings">
+        <div class="deploy-meta">
+          <span class="skeleton-line"></span>
+          <span class="skeleton-line"></span>
+        </div>
+        @for (row of [1, 2, 3]; track row) {
+          <div class="service-row">
+            <div>
+              <strong class="skeleton-line"></strong>
+              <small class="skeleton-line short"></small>
+            </div>
+            <span class="skeleton-line"></span>
+            <code class="skeleton-line"></code>
+            <small class="skeleton-line"></small>
+          </div>
+        }
+      </div>
+    } @else if (composeInspection(); as compose) {
+      <div class="deploy-meta">
+        <span>{{ compose.services.length }} services</span>
+        <span>{{ compose.networks.length }} networks</span>
+        <span>{{ compose.volumes.length }} volumes</span>
+        @if (compose.unsafeRelativeBindMounts > 0) {
+          <span class="error-text">{{ compose.unsafeRelativeBindMounts }} relative data mounts need mapping before cleanup</span>
+        } @else {
+          <span>Cleanup-safe mounts</span>
+        }
+      </div>
+
+      @if (compose.services.length > 0) {
+        <div class="service-list">
+          @for (service of compose.services; track service.name) {
+            <div class="service-row">
+              <div>
+                <strong>{{ service.name }}</strong>
+                <small>{{ serviceSummary(service) }}</small>
+              </div>
+              <span>{{ service.networks.length ? service.networks.join(', ') : 'default network' }}</span>
+              <code>{{ portsLabel(service) }}</code>
+              <small [class.error-text]="hasUnsafeMount(service)">{{ mountsLabel(service) }}</small>
+              <small>{{ service.dependsOn.length ? 'depends on ' + service.dependsOn.join(', ') : 'no dependencies' }}</small>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="empty-log">No services were found in the Compose file.</div>
+      }
+    } @else {
+      <div class="empty-log">Inspect the Compose file to see setup details.</div>
+    }
+  </section>
+
+  <section class="deploy-panel">
+    <div class="deploy-head">
+      <div>
         <h2>Runtime status</h2>
         @if (loadingRuntimeStatus()) {
           <p>Checking Compose containers on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>

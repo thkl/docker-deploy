@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -47,6 +47,17 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: ImportedCompose }>({
             jobType: "importCompose",
             payload: { projectName, appSettings, globalSettings } satisfies DeployJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
+     * Inspects normalized Compose configuration through a remote agent.
+     */
+    async inspectCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["inspectCompose"]>> }>({
+            jobType: "inspectCompose",
+            payload: { projectName, appSettings, globalSettings } satisfies InspectComposeJobPayload
         });
         return accepted.result;
     }

@@ -388,7 +388,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(nextRepositoryUrl ? { repositoryUrl: nextRepositoryUrl } : {}),
                 ...(nextDeployToken || existing.deployToken ? { deployToken: nextDeployToken || existing.deployToken } : {}),
                 ...(nextPath ? { path: nextPath } : {}),
-                ...(composeOverride ? { composeOverride } : {}),
+                composeOverride: composeOverride || undefined,
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
@@ -483,6 +483,26 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             res.json(importedCompose);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not import Docker Compose file." });
+        }
+    });
+
+    app.get("/api/projects/:name/compose/inspect", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            const inspection = await agentManager.getClient(appSettings.serverId ?? "local").inspectCompose(projectName, appSettings, globalSettingsStore.readSettings());
+            res.json(inspection);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not inspect Docker Compose file." });
         }
     });
 

@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { GlobalSettings, ProjectPayload, ProjectSummary } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, GlobalSettings, ProjectPayload, ProjectSummary } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -24,6 +24,8 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly currentName = signal('');
   protected readonly saving = signal<'save' | 'deploy' | ''>('');
   protected readonly importingCompose = signal(false);
+  protected readonly inspectingCompose = signal(false);
+  protected readonly composeInspection = signal<ComposeInspection | null>(null);
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly traefikEnabled = signal(false);
@@ -115,6 +117,7 @@ export class ProjectSettingsPage implements OnInit {
 
       this.message.set('');
       this.error.set('');
+      this.composeInspection.set(null);
 
       if (!projectRef) {
         this.isNew.set(true);
@@ -197,6 +200,58 @@ export class ProjectSettingsPage implements OnInit {
         this.importingCompose.set(false);
       },
     });
+  }
+
+  protected inspectCompose() {
+    this.message.set('');
+    this.error.set('');
+
+    if (this.isNew()) {
+      this.error.set('Save the project before inspecting compose settings.');
+      return;
+    }
+
+    this.inspectingCompose.set(true);
+    this.composeInspection.set(null);
+    this.api.inspectCompose(this.currentProjectRef).subscribe({
+      next: (inspection) => {
+        this.composeInspection.set(inspection);
+        this.message.set(`Inspected ${inspection.composeFile}. Use a detected service for Traefik or review storage mounts.`);
+        this.inspectingCompose.set(false);
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not inspect Docker Compose file.');
+        this.inspectingCompose.set(false);
+      },
+    });
+  }
+
+  protected applyTraefikTarget(service: ComposeServiceInspection) {
+    const port = this.primaryServicePort(service);
+    this.form.controls.traefikService.setValue(service.name);
+    if (port) {
+      this.form.controls.traefikPort.setValue(port);
+    }
+    this.form.controls.traefikEnabled.setValue(true);
+    this.message.set(`Traefik target set to ${service.name}${port ? ` on port ${port}` : ''}.`);
+  }
+
+  protected primaryServicePort(service: ComposeServiceInspection) {
+    return service.ports[0]?.target || service.expose[0] || '';
+  }
+
+  protected servicePortsLabel(service: ComposeServiceInspection) {
+    if (service.ports.length) {
+      return service.ports.map((port) => port.raw).join(', ');
+    }
+
+    return service.expose.length ? `expose ${service.expose.join(', ')}` : 'no ports';
+  }
+
+  protected serviceMountsLabel(service: ComposeServiceInspection) {
+    return service.mounts.length
+      ? service.mounts.map((mount) => `${mount.source || '(anonymous)'} -> ${mount.target || '(no target)'}`).join(', ')
+      : 'no mounts';
   }
 
   private resetForNewProject() {

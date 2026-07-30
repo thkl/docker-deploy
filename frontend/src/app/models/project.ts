@@ -150,3 +150,50 @@ export interface RuntimeLogs {
   checkedAt: string;
   output: string;
 }
+
+export interface ComposeInspection {
+  composeFile: string;
+  source: 'repository' | 'storedOverride';
+  checkedAt: string;
+  services: ComposeServiceInspection[];
+  networks: ComposeResourceInspection[];
+  volumes: ComposeResourceInspection[];
+  unsafeRelativeBindMounts: number;
+}
+
+export interface ComposeServiceInspection {
+  name: string;
+  image?: string;
+  build?: string;
+  command?: string;
+  restart?: string;
+  ports: ComposePortInspection[];
+  expose: string[];
+  mounts: ComposeMountInspection[];
+  networks: string[];
+  dependsOn: string[];
+  environmentKeys: string[];
+}
+
+export interface ComposePortInspection {
+  target?: string;
+  published?: string;
+  protocol?: string;
+  mode?: string;
+  raw: string;
+}
+
+export interface ComposeMountInspection {
+  type: string;
+  source?: string;
+  target?: string;
+  readOnly: boolean;
+  relative: boolean;
+  safeForCleanup: boolean;
+  raw: string;
+}
+
+export interface ComposeResourceInspection {
+  name: string;
+  external: boolean;
+}

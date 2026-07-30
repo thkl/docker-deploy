@@ -1,9 +1,9 @@
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
-import { GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeStatus, ServerCapabilities } from "./types.js";
+import { ComposeInspection, GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeStatus, ServerCapabilities } from "./types.js";
 
-export type AgentJobType = "deploy" | "importCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow";
+export type AgentJobType = "deploy" | "importCompose" | "inspectCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow";
 
 export interface DeployJobPayload {
     projectName: string;
@@ -12,6 +12,8 @@ export interface DeployJobPayload {
 }
 
 export interface ImportComposeJobPayload extends DeployJobPayload {}
+
+export interface InspectComposeJobPayload extends DeployJobPayload {}
 
 export interface StopJobPayload extends DeployJobPayload {}
 
@@ -32,7 +34,7 @@ export interface DetectTraefikJobPayload {
 
 export interface AgentJobRequest {
     jobType: AgentJobType;
-    payload: DeployJobPayload | ImportComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload;
+    payload: DeployJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload;
 }
 
 export interface AgentJobAccepted {
@@ -53,6 +55,7 @@ export interface AgentClient {
     deployProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks?: DeploymentHooks): void | Promise<void>;
     stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<string>;
     importCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ImportedCompose>;
+    inspectCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ComposeInspection>;
     deleteCheckout(checkoutPath: string): Promise<CheckoutCleanupResult>;
     detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]>;
     inspectStatus(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<RuntimeStatus>;

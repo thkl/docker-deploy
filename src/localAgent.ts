@@ -1,4 +1,5 @@
 import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js";
+import { inspectCompose } from "./composeInspection.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
 import { deleteCheckoutPath, detectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectProjectStatus, readRuntimeLogs, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
@@ -31,6 +32,13 @@ export class LocalAgent implements AgentClient {
      */
     importCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ImportedCompose> {
         return importProjectCompose(projectName, appSettings, globalSettings);
+    }
+
+    /**
+     * Inspects normalized Docker Compose services and resources on the target server.
+     */
+    inspectCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        return inspectCompose(projectName, appSettings, globalSettings);
     }
 
     /**

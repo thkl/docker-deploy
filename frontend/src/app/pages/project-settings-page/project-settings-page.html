@@ -85,6 +85,9 @@
       <button type="button" class="secondary" (click)="importCompose()" [disabled]="saving() !== '' || importingCompose()">
         {{ importingCompose() ? 'Importing...' : 'Import from repo' }}
       </button>
+      <button type="button" class="secondary" (click)="inspectCompose()" [disabled]="saving() !== '' || inspectingCompose()">
+        {{ inspectingCompose() ? 'Inspecting...' : 'Inspect settings' }}
+      </button>
     </div>
 
     <label class="compose-field">
@@ -95,6 +98,30 @@
         placeholder="services:&#10;  app:&#10;    image: registry.example.com/service-a:latest"
       ></textarea>
     </label>
+
+    @if (composeInspection(); as compose) {
+      <div class="compose-inspection">
+        <div>
+          <strong>{{ compose.services.length }} services</strong>
+          <span>{{ compose.composeFile }} · {{ compose.source === 'storedOverride' ? 'stored override' : 'repository compose' }}</span>
+        </div>
+        @if (compose.unsafeRelativeBindMounts > 0) {
+          <p class="notice error">{{ compose.unsafeRelativeBindMounts }} relative bind mounts need data mapping before cleanup is safe.</p>
+        }
+        @for (service of compose.services; track service.name) {
+          <div class="compose-service">
+            <div>
+              <strong>{{ service.name }}</strong>
+              <span>{{ service.image || service.build || 'no image or build' }}</span>
+              <small>{{ servicePortsLabel(service) }} · {{ serviceMountsLabel(service) }}</small>
+            </div>
+            <button type="button" class="secondary" (click)="applyTraefikTarget(service)" [disabled]="!traefikAvailable()">
+              Use for Traefik
+            </button>
+          </div>
+        }
+      </div>
+    }
   </section>
 
   @if (traefikAvailable()) {
