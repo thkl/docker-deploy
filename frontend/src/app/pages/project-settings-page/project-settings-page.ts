@@ -725,11 +725,51 @@ function renderTraefikLabels(traefik: ComposeTraefikSettings) {
 }
 
 function replaceGeneratedTraefikBlock(extra: string, labels: string) {
-  const withoutGenerated = extra
-    .replace(/\n?# updater-traefik-start[\s\S]*?# updater-traefik-end\n?/g, '\n')
-    .trim();
+  const withoutGenerated = removeTraefikLabelBlocks(extra);
   const block = `# updater-traefik-start\n${labels}\n# updater-traefik-end`;
   return withoutGenerated ? `${withoutGenerated}\n${block}` : block;
+}
+
+function removeTraefikLabelBlocks(extra: string) {
+  const withoutManagedBlock = extra
+    .replace(/\n?# updater-traefik-start[\s\S]*?# updater-traefik-end\n?/g, '\n')
+    .trim();
+  const lines = withoutManagedBlock.split(/\r?\n/);
+  const kept: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() !== 'labels:') {
+      kept.push(line);
+      continue;
+    }
+
+    const block: string[] = [];
+    let cursor = index + 1;
+    while (cursor < lines.length && (/^(\s+|#|$)/.test(lines[cursor]))) {
+      block.push(lines[cursor]);
+      cursor += 1;
+    }
+
+    if (isTraefikOnlyLabelsBlock(block)) {
+      index = cursor - 1;
+      continue;
+    }
+
+    kept.push(line, ...block.filter((entry) => !isTraefikLabelLine(entry)));
+    index = cursor - 1;
+  }
+
+  return kept.join('\n').trim();
+}
+
+function isTraefikOnlyLabelsBlock(lines: string[]) {
+  const labelLines = lines.filter((line) => line.trim() && !line.trim().startsWith('#'));
+  return labelLines.length > 0 && labelLines.every(isTraefikLabelLine);
+}
+
+function isTraefikLabelLine(line: string) {
+  return /^\s*-\s*["']?traefik\./.test(line) || /^\s*["']?traefik\./.test(line);
 }
 
 function addListValue(value: string, item: string) {
