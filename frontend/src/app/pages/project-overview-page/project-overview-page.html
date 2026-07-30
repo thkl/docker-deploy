@@ -33,8 +33,12 @@
     </article>
     <article class="summary">
       <span>Runtime</span>
-      <strong>{{ runtimeStatusLabel(runtimeStatus()) }}</strong>
-      @if (runtimeStatus()?.checkedAt) {
+      @if (loadingRuntimeStatus()) {
+        <strong class="skeleton-line short" aria-label="Loading runtime status"></strong>
+      } @else {
+        <strong>{{ runtimeStatusLabel(runtimeStatus()) }}</strong>
+      }
+      @if (!loadingRuntimeStatus() && runtimeStatus()?.checkedAt) {
         <small>{{ formatDate(runtimeStatus()?.checkedAt) }}</small>
       }
     </article>
@@ -62,11 +66,13 @@
     <p class="notice error">{{ deployError() }}</p>
   }
 
-  <section class="deploy-panel runtime-panel">
+  <section class="deploy-panel">
     <div class="deploy-head">
       <div>
         <h2>Runtime status</h2>
-        @if (runtimeStatus(); as status) {
+        @if (loadingRuntimeStatus()) {
+          <p>Checking Compose containers on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
+        } @else if (runtimeStatus(); as status) {
           <p>Checked {{ formatDate(status.checkedAt) }} on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
         } @else {
           <p>Inspect Compose containers on the target server.</p>
@@ -81,7 +87,26 @@
       <p class="notice error">{{ runtimeStatusError() }}</p>
     }
 
-    @if (runtimeStatus(); as status) {
+    @if (loadingRuntimeStatus()) {
+      <div class="status-skeleton" aria-label="Loading runtime service status">
+        <div class="deploy-meta">
+          <span class="skeleton-line"></span>
+          <span class="skeleton-line"></span>
+        </div>
+        @for (row of [1, 2, 3]; track row) {
+          <div class="service-row">
+            <div>
+              <strong class="skeleton-line"></strong>
+              <small class="skeleton-line short"></small>
+            </div>
+            <span class="skeleton-line short"></span>
+            <span class="skeleton-line"></span>
+            <code class="skeleton-line"></code>
+            <small class="skeleton-line"></small>
+          </div>
+        }
+      </div>
+    } @else if (runtimeStatus(); as status) {
       <div class="deploy-meta">
         <span
           class="status-chip"

@@ -39,6 +39,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
   private readonly deploymentStream = inject(DeploymentStreamService);
   private streamSubscription: Subscription | undefined;
+  private activeProjectRef = '';
 
   @ViewChild('deployLog') private deployLog?: ElementRef<HTMLElement>;
 
@@ -46,6 +47,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.route.paramMap.subscribe((params) => {
       const projectRef = params.get('name');
       if (projectRef) {
+        this.resetProjectState(projectRef);
         this.store.selectProject(projectRef);
         this.connectDeploymentStream(projectRef);
         this.loadRuntimeStatus(projectRef);
@@ -235,11 +237,19 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
     this.api.getLatestDeployment(projectRef).subscribe({
       next: (deployment) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
         this.setLatestDeployment(deployment);
         this.loadingDeployment.set(false);
         this.deployError.set('');
       },
       error: () => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
         this.loadingDeployment.set(false);
         this.deployError.set(`Could not load deployment status for ${projectName}.`);
       },
@@ -249,13 +259,22 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   private loadRuntimeStatus(projectRef: string) {
     this.loadingRuntimeStatus.set(true);
     this.runtimeStatusError.set('');
+    this.runtimeStatus.set(null);
 
     this.api.getProjectStatus(projectRef).subscribe({
       next: (status) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
         this.runtimeStatus.set(status);
         this.loadingRuntimeStatus.set(false);
       },
       error: () => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
         this.loadingRuntimeStatus.set(false);
         this.runtimeStatusError.set('Could not inspect runtime status.');
       },
@@ -269,6 +288,10 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
     this.streamSubscription = this.deploymentStream.streamLatest(projectRef).subscribe({
       next: (deployment) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
         this.setLatestDeployment(deployment);
         this.loadingDeployment.set(false);
         this.streamState.set('live');
@@ -279,11 +302,19 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         }
       },
       error: () => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
         this.loadingDeployment.set(false);
         this.streamState.set('error');
         this.deployError.set('Live log stream disconnected. Use Refresh to load the latest deployment state.');
       },
       complete: () => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
         this.loadingDeployment.set(false);
         if (this.streamState() !== 'error') {
           this.streamState.set('closed');
@@ -296,6 +327,17 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.streamSubscription?.unsubscribe();
     this.streamSubscription = undefined;
     this.streamState.set('closed');
+  }
+
+  private resetProjectState(projectRef: string) {
+    this.activeProjectRef = projectRef;
+    this.latestDeployment.set(null);
+    this.runtimeStatus.set(null);
+    this.runtimeStatusError.set('');
+    this.deployError.set('');
+    this.deployMessage.set('');
+    this.loadingDeployment.set(true);
+    this.loadingRuntimeStatus.set(true);
   }
 
   private setLatestDeployment(deployment: DeploymentRecord | null) {
