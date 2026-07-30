@@ -34,6 +34,8 @@ interface ComposeBuilderVolume {
   external: boolean;
 }
 
+type ComposeBuilderListField = 'ports' | 'expose' | 'volumes' | 'networks' | 'dependsOn';
+
 @Component({
   selector: 'app-project-settings-page',
   imports: [ReactiveFormsModule],
@@ -223,6 +225,7 @@ export class ProjectSettingsPage implements OnInit {
     this.api.importCompose(this.currentProjectRef).subscribe({
       next: (result) => {
         this.form.controls.composeOverride.setValue(result.compose);
+        this.loadBuilderFromComposeOverride();
         this.message.set(`Imported ${result.composeFile}. Review the override and save the project.`);
         this.importingCompose.set(false);
       },
@@ -370,6 +373,42 @@ export class ProjectSettingsPage implements OnInit {
     this.addBuilderVolume();
   }
 
+  protected loadBuilderFromComposeOverride() {
+    const parsed = parseComposeBuilder(this.form.controls.composeOverride.value);
+    if (!parsed) {
+      this.message.set('The current override uses Compose options the builder cannot safely edit. The raw YAML is unchanged.');
+      return;
+    }
+
+    this.nextBuilderId = 1;
+    this.builderServices.set(parsed.services.map((service) => ({ ...service, id: this.nextBuilderId++ })));
+    this.builderNetworks.set(parsed.networks.map((network) => ({ ...network, id: this.nextBuilderId++ })));
+    this.builderVolumes.set(parsed.volumes.map((volume) => ({ ...volume, id: this.nextBuilderId++ })));
+    if (this.builderServices().length === 0) {
+      this.addBuilderService();
+    }
+    this.message.set('Compose builder loaded from the current override.');
+  }
+
+  private loadBuilderFromCompose(compose: string) {
+    const parsed = parseComposeBuilder(compose);
+    if (!parsed) {
+      this.resetComposeBuilder();
+      return;
+    }
+
+    this.nextBuilderId = 1;
+    this.builderServices.set(parsed.services.map((service) => ({ ...service, id: this.nextBuilderId++ })));
+    this.builderNetworks.set(parsed.networks.map((network) => ({ ...network, id: this.nextBuilderId++ })));
+    this.builderVolumes.set(parsed.volumes.map((volume) => ({ ...volume, id: this.nextBuilderId++ })));
+    if (this.builderServices().length === 0) {
+      this.addBuilderService();
+    }
+    if (this.builderNetworks().length === 0) {
+      this.addBuilderNetwork('app');
+    }
+  }
+
   private resetForNewProject() {
     this.patchedProjectName = '';
     this.traefikEnabled.set(false);
@@ -424,6 +463,7 @@ export class ProjectSettingsPage implements OnInit {
       traefikRemovePublishedPorts: traefik.removePublishedPorts !== false,
     });
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
+    this.loadBuilderFromCompose(project.composeOverride ?? '');
   }
 
   private currentProject() {
@@ -567,4 +607,152 @@ function uniqueBuilderName(baseName: string, usedNames: string[]) {
     index += 1;
   }
   return `${baseName}-${index}`;
+}
+
+function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderService, 'id'>[]; networks: Omit<ComposeBuilderNetwork, 'id'>[]; volumes: Omit<ComposeBuilderVolume, 'id'>[] } | null {
+  if (!compose.trim()) {
+    return {
+      services: [blankBuilderService('app', '.', 'app')],
+      networks: [{ name: 'app', external: false }],
+      volumes: [{ name: 'data', external: false }]
+    };
+  }
+
+  const lines = compose
+    .split(/\r?\n/)
+    .map((raw) => raw.replace(/\s+#.*$/, ''))
+    .filter((raw) => raw.trim());
+  const services: Omit<ComposeBuilderService, 'id'>[] = [];
+  const networks: Omit<ComposeBuilderNetwork, 'id'>[] = [];
+  const volumes: Omit<ComposeBuilderVolume, 'id'>[] = [];
+  let section: 'services' | 'networks' | 'volumes' | '' = '';
+  let service: Omit<ComposeBuilderService, 'id'> | undefined;
+  let listKey: ComposeBuilderListField | 'environment' | '' = '';
+  let resource: Omit<ComposeBuilderNetwork, 'id'> | Omit<ComposeBuilderVolume, 'id'> | undefined;
+
+  for (const raw of lines) {
+    const indent = raw.match(/^ */)?.[0].length ?? 0;
+    const text = raw.trim();
+
+    if (indent === 0) {
+      if (text === 'services:') {
+        section = 'services';
+      } else if (text === 'networks:') {
+        section = 'networks';
+      } else if (text === 'volumes:') {
+        section = 'volumes';
+      } else {
+        section = '';
+      }
+      service = undefined;
+      listKey = '';
+      resource = undefined;
+      continue;
+    }
+
+    if (section === 'services') {
+      if (indent === 2 && text.endsWith(':')) {
+        service = blankBuilderService(unquoteYaml(text.slice(0, -1)), '', '');
+        services.push(service);
+        listKey = '';
+        continue;
+      }
+
+      if (!service || indent !== 4) {
+        if (service && indent === 6 && text.startsWith('- ') && listKey) {
+          appendParsedServiceListValue(service, listKey, unquoteYaml(text.slice(2)));
+          continue;
+        }
+        if (service && indent === 6 && listKey === 'environment') {
+          const [key, ...rest] = text.split(':');
+          if (key.trim()) {
+            appendParsedEnvironmentValue(service, unquoteYaml(key.trim()), unquoteYaml(rest.join(':').trim()));
+            continue;
+          }
+        }
+        return null;
+      }
+
+      const [key, ...rest] = text.split(':');
+      const value = rest.join(':').trim();
+      listKey = '';
+      if (['ports', 'expose', 'volumes', 'networks', 'depends_on', 'environment'].includes(key)) {
+        listKey = key === 'depends_on' ? 'dependsOn' : key as ComposeBuilderListField | 'environment';
+        if (value && value !== '[]') {
+          return null;
+        }
+        continue;
+      }
+
+      applyParsedServiceScalar(service, key, unquoteYaml(value));
+      continue;
+    }
+
+    if ((section === 'networks' || section === 'volumes') && indent === 2) {
+      const name = unquoteYaml(text.replace(/:\s*\{\}\s*$/, '').replace(/:\s*$/, ''));
+      resource = { name, external: false };
+      (section === 'networks' ? networks : volumes).push(resource);
+      continue;
+    }
+
+    if ((section === 'networks' || section === 'volumes') && indent === 4 && resource && text === 'external: true') {
+      resource.external = true;
+      continue;
+    }
+  }
+
+  return { services, networks, volumes };
+}
+
+function blankBuilderService(name: string, build: string, networks: string): Omit<ComposeBuilderService, 'id'> {
+  return {
+    name,
+    image: '',
+    build,
+    command: '',
+    restart: 'unless-stopped',
+    ports: '',
+    expose: '',
+    environment: '',
+    volumes: '',
+    networks,
+    dependsOn: ''
+  };
+}
+
+function applyParsedServiceScalar(service: Omit<ComposeBuilderService, 'id'>, key: string, value: string) {
+  if (key === 'image' || key === 'build' || key === 'command' || key === 'restart') {
+    service[key] = value;
+  }
+}
+
+function appendParsedServiceListValue(service: Omit<ComposeBuilderService, 'id'>, key: ComposeBuilderListField | 'environment', value: string) {
+  if (key === 'environment') {
+    return;
+  }
+
+  const current = String(service[key] || '');
+  service[key] = current ? `${current}\n${value}` : value;
+}
+
+function appendParsedEnvironmentValue(service: Omit<ComposeBuilderService, 'id'>, key: string, value: string) {
+  const entry = `${key}=${value}`;
+  service.environment = service.environment ? `${service.environment}\n${entry}` : entry;
+}
+
+function unquoteYaml(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    try {
+      return trimmed.startsWith('"') ? JSON.parse(trimmed) as string : trimmed.slice(1, -1).replace(/''/g, "'");
+    } catch {
+      return trimmed.slice(1, -1);
+    }
+  }
+
+  return trimmed;
 }
