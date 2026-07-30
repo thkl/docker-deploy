@@ -1,6 +1,6 @@
 import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { deleteCheckoutPath, dispatchBuildWorker, DeploymentHooks, stopProjectContainers } from "./deploy.js";
+import { deleteCheckoutPath, detectTraefik, dispatchBuildWorker, DeploymentHooks, stopProjectContainers } from "./deploy.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
@@ -38,5 +38,12 @@ export class LocalAgent implements AgentClient {
      */
     deleteCheckout(checkoutPath: string): Promise<CheckoutCleanupResult> {
         return removeCheckoutPath(checkoutPath, (path) => deleteCheckoutPath(path));
+    }
+
+    /**
+     * Detects whether Traefik is available on the target Docker server.
+     */
+    detectTraefik(globalSettings: GlobalSettings) {
+        return detectTraefik(globalSettings);
     }
 }

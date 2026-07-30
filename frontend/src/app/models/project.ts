@@ -111,3 +111,12 @@ export interface ServerPayload {
   agentPublicSigningKey?: string;
   pairingToken?: string;
 }
+
+export interface ServerCapabilities {
+  traefik: {
+    available: boolean;
+    containerCount: number;
+    networkPresent: boolean;
+    checkedAt: string;
+  };
+}

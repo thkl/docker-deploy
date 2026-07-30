@@ -59,7 +59,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/servers", adminAuth.requireAuth);
 
     registerSettingsRoutes(app, globalSettingsStore);
-    registerServerRoutes(app, serverStore, controllerKeys);
+    registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore });
     registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, globalSettingsStore, agentManager });
     registerWebhookRoute(app, { configStore, deploymentService });
     registerCiDeployRoute(app, { configStore, deploymentService });
@@ -87,9 +87,26 @@ function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSetting
 /**
  * Registers target-server read endpoints.
  */
-function registerServerRoutes(app: Express, serverStore: ServerStore, controllerKeys: ControllerKeyState) {
+function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "controllerKeys" | "agentManager" | "globalSettingsStore">) {
+    const { serverStore, controllerKeys, agentManager, globalSettingsStore } = dependencies;
+
     app.get("/api/servers", (req: Request, res: Response) => {
         res.json(serverStore.list());
+    });
+
+    app.get("/api/servers/:id/capabilities", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            if (!serverStore.get(serverId)) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+
+            const traefik = await agentManager.getClient(serverId).detectTraefik(globalSettingsStore.readSettings());
+            res.json({ traefik });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not inspect server capabilities." });
+        }
     });
 
     app.post("/api/servers", (req: Request, res: Response) => {

@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -58,6 +58,17 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: CheckoutCleanupResult }>({
             jobType: "deleteCheckout",
             payload: { checkoutPath } satisfies DeleteCheckoutJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
+     * Detects Traefik on a remote target server.
+     */
+    async detectTraefik(globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["detectTraefik"]>> }>({
+            jobType: "detectTraefik",
+            payload: { globalSettings } satisfies DetectTraefikJobPayload
         });
         return accepted.result;
     }

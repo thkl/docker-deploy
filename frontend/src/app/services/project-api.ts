@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, ServerPayload, ServerRecord } from '../models/project';
+import { DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, ServerCapabilities, ServerPayload, ServerRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -49,6 +49,10 @@ export class ProjectApi {
 
   listServers(): Observable<ServerRecord[]> {
     return this.http.get<ServerRecord[]>('/api/servers');
+  }
+
+  getServerCapabilities(serverId: string): Observable<ServerCapabilities> {
+    return this.http.get<ServerCapabilities>(`/api/servers/${encodeURIComponent(serverId)}/capabilities`);
   }
 
   createServer(payload: ServerPayload): Observable<ServerRecord> {

@@ -1,7 +1,7 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { GlobalSettings, ProjectSettings } from "./types.js";
+import { GlobalSettings, ProjectSettings, ServerCapabilities } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 
 const execAsync = promisify(exec);
@@ -180,6 +180,42 @@ EOF`;
 
     const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
     return `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
+}
+
+/**
+ * Checks whether the target Docker server appears to have Traefik available.
+ */
+export async function detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]> {
+    const networkName = globalSettings.defaultTraefikNetwork || "proxy";
+    const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli > /dev/null 2>&1
+                CONTAINERS="$(docker ps -a --format '{{.Image}} {{.Names}} {{.Labels}}' | grep -Ei '(^|[ /])traefik(:| |,|$)|org.opencontainers.image.title=Traefik' | wc -l | tr -d ' ')"
+                NETWORK_PRESENT="$(docker network inspect ${shellQuote(networkName)} > /dev/null 2>&1 && echo true || echo false)"
+                printf '{"containerCount":%s,"networkPresent":%s}\\n' "$CONTAINERS" "$NETWORK_PRESENT"
+EOF`;
+
+    try {
+        const { stdout } = await execAsync(dockerRunCommand, { maxBuffer: 1024 * 1024 });
+        const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) || "{}") as { containerCount?: number; networkPresent?: boolean };
+        const containerCount = Number(result.containerCount || 0);
+        const networkPresent = Boolean(result.networkPresent);
+
+        return {
+            available: containerCount > 0 || networkPresent,
+            containerCount,
+            networkPresent,
+            checkedAt: new Date().toISOString()
+        };
+    } catch (error) {
+        return {
+            available: false,
+            containerCount: 0,
+            networkPresent: false,
+            checkedAt: new Date().toISOString()
+        };
+    }
 }
 
 /**
