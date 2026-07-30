@@ -320,6 +320,29 @@ fieldset small {
   text-align: right;
 }
 
+.host-mounts {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem;
+}
+
+.host-mounts div {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.host-mounts span {
+  color: var(--muted);
+}
+
+.host-mounts code {
+  overflow-wrap: anywhere;
+}
+
 .switch,
 .check-row {
   align-items: center;

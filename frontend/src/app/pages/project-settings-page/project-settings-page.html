@@ -312,10 +312,22 @@
               <div class="section-toolbar">
                 <div>
                   <strong>Volumes</strong>
-                  <span>Named storage resources for service mounts</span>
+                  <span>Named storage resources and host bind mappings</span>
                 </div>
                 <button type="button" class="secondary" (click)="addBuilderVolume()">Add volume</button>
               </div>
+
+              @if (builderHostVolumeMounts().length) {
+                <section class="host-mounts">
+                  <strong>Host mappings</strong>
+                  @for (mount of builderHostVolumeMounts(); track mount.service + mount.mount) {
+                    <div>
+                      <span>{{ mount.service }}</span>
+                      <code>{{ mount.mount }}</code>
+                    </div>
+                  }
+                </section>
+              }
 
               @for (volume of builderVolumes(); track volume.id) {
                 <div class="resource-row">

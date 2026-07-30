@@ -146,7 +146,7 @@ export class ProjectSettingsPage implements OnInit {
     for (const service of this.builderServices()) {
       const serviceName = service.name.trim() || 'Unnamed service';
       for (const mount of splitLines(service.volumes)) {
-        const source = mount.split(':')[0]?.trim();
+        const source = volumeMountSource(mount);
         if (source && volumeNames.includes(source)) {
           refs.set(source, [...(refs.get(source) ?? []), `${serviceName} volume`]);
         }
@@ -154,6 +154,20 @@ export class ProjectSettingsPage implements OnInit {
     }
 
     return refs;
+  });
+  protected readonly builderHostVolumeMounts = computed(() => {
+    const mounts: Array<{ service: string; mount: string }> = [];
+    for (const service of this.builderServices()) {
+      const serviceName = service.name.trim() || 'Unnamed service';
+      for (const mount of splitLines(service.volumes)) {
+        const source = volumeMountSource(mount);
+        if (source && isHostVolumeSource(source)) {
+          mounts.push({ service: serviceName, mount });
+        }
+      }
+    }
+
+    return mounts;
   });
   protected readonly builderDiagnostics = computed(() => this.buildBuilderDiagnostics());
   private readonly globalDefaults = signal<GlobalSettings>({
@@ -756,6 +770,13 @@ export class ProjectSettingsPage implements OnInit {
           diagnostics.push(`${serviceName} depends on missing service ${dependency}.`);
         }
       }
+
+      for (const mount of splitLines(service.volumes)) {
+        const source = volumeMountSource(mount);
+        if (source && !isHostVolumeSource(source) && !volumeNames.includes(source)) {
+          diagnostics.push(`${serviceName} references undeclared named volume ${source}.`);
+        }
+      }
     }
 
     const traefik = this.currentTraefikComposeSettings();
@@ -1057,6 +1078,37 @@ function appendDuplicateNameDiagnostics(diagnostics: string[], label: string, na
     }
     seen.add(name);
   }
+}
+
+function volumeMountSource(mount: string) {
+  const trimmed = mount.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const windowsDrive = trimmed.match(/^[a-zA-Z]:[\\/]/);
+  if (windowsDrive) {
+    const remainder = trimmed.slice(2);
+    const separator = remainder.search(/:/);
+    return separator === -1 ? trimmed : trimmed.slice(0, separator + 2);
+  }
+
+  const separator = trimmed.indexOf(':');
+  if (separator === -1) {
+    return '';
+  }
+
+  return trimmed.slice(0, separator).trim().replace(/^["']|["']$/g, '');
+}
+
+function isHostVolumeSource(source: string) {
+  return source === '.'
+    || source === '..'
+    || source.startsWith('./')
+    || source.startsWith('../')
+    || source.startsWith('/')
+    || source.startsWith('~/')
+    || /^[a-zA-Z]:[\\/]/.test(source);
 }
 
 function yamlKey(value: string) {
