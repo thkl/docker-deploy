@@ -90,16 +90,17 @@
       </button>
     </div>
 
-    <label class="compose-field">
-      <span>docker-compose.yaml override</span>
-      <textarea
-        formControlName="composeOverride"
-        spellcheck="false"
-        placeholder="services:&#10;  app:&#10;    image: registry.example.com/service-a:latest"
-      ></textarea>
-    </label>
+    <div class="compose-tabs" role="tablist" aria-label="Compose editor mode">
+      <button type="button" role="tab" [attr.aria-selected]="composeMode() === 'builder'" [class.active]="composeMode() === 'builder'" (click)="setComposeMode('builder')">
+        Builder
+      </button>
+      <button type="button" role="tab" [attr.aria-selected]="composeMode() === 'yaml'" [class.active]="composeMode() === 'yaml'" (click)="setComposeMode('yaml')">
+        YAML
+      </button>
+    </div>
 
-    <div class="compose-builder">
+    @if (composeMode() === 'builder') {
+      <div class="compose-builder">
       <div class="builder-head">
         <div>
           <strong>Compose builder</strong>
@@ -245,7 +246,17 @@
           }
         </section>
       </div>
-    </div>
+      </div>
+    } @else {
+      <label class="compose-field">
+        <span>docker-compose.yaml override</span>
+        <textarea
+          formControlName="composeOverride"
+          spellcheck="false"
+          placeholder="services:&#10;  app:&#10;    image: registry.example.com/service-a:latest"
+        ></textarea>
+      </label>
+    }
 
     @if (composeInspection(); as compose) {
       <div class="compose-inspection">

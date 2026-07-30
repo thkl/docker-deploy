@@ -106,6 +106,32 @@ textarea {
   display: grid;
 }
 
+.compose-tabs {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-bottom: 0.9rem;
+  padding: 0.25rem;
+  width: fit-content;
+}
+
+.compose-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  font-weight: 750;
+  min-height: 32px;
+  padding: 0 0.85rem;
+}
+
+.compose-tabs button.active {
+  background: var(--panel);
+  color: var(--ink);
+}
+
 .compose-inspection {
   border-top: 1px solid var(--line);
   display: grid;

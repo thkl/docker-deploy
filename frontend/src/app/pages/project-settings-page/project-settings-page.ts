@@ -66,6 +66,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly importingCompose = signal(false);
   protected readonly inspectingCompose = signal(false);
   protected readonly composeInspection = signal<ComposeInspection | null>(null);
+  protected readonly composeMode = signal<'builder' | 'yaml'>('builder');
   protected readonly builderServices = signal<ComposeBuilderService[]>([]);
   protected readonly builderNetworks = signal<ComposeBuilderNetwork[]>([]);
   protected readonly builderVolumes = signal<ComposeBuilderVolume[]>([]);
@@ -237,6 +238,7 @@ export class ProjectSettingsPage implements OnInit {
       next: (result) => {
         this.form.controls.composeOverride.setValue(result.compose);
         this.loadBuilderFromComposeOverride();
+        this.composeMode.set('yaml');
         this.message.set(`Imported ${result.composeFile}. Review the override and save the project.`);
         this.importingCompose.set(false);
       },
@@ -297,6 +299,10 @@ export class ProjectSettingsPage implements OnInit {
     return service.mounts.length
       ? service.mounts.map((mount) => `${mount.source || '(anonymous)'} -> ${mount.target || '(no target)'}`).join(', ')
       : 'no mounts';
+  }
+
+  protected setComposeMode(mode: 'builder' | 'yaml') {
+    this.composeMode.set(mode);
   }
 
   protected addBuilderService() {
@@ -381,6 +387,7 @@ export class ProjectSettingsPage implements OnInit {
     }
 
     this.form.controls.composeOverride.setValue(renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes()));
+    this.composeMode.set('yaml');
     this.message.set('Compose override generated. Review it, then save the project.');
   }
 
@@ -407,6 +414,7 @@ export class ProjectSettingsPage implements OnInit {
       this.addBuilderService();
     }
     this.message.set('Compose builder loaded from the current override.');
+    this.composeMode.set('builder');
   }
 
   private loadBuilderFromCompose(compose: string) {
