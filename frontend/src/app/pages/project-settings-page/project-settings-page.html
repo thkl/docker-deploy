@@ -99,6 +99,123 @@
       ></textarea>
     </label>
 
+    <div class="compose-builder">
+      <div class="builder-head">
+        <div>
+          <strong>Compose builder</strong>
+          <span>Create a stored override when the repository does not provide a Compose file.</span>
+        </div>
+        <div class="builder-actions">
+          <button type="button" class="secondary" (click)="addBuilderService()">Add service</button>
+          <button type="button" class="secondary" (click)="generateComposeOverride()">Generate override</button>
+        </div>
+      </div>
+
+      @for (service of builderServices(); track service.id) {
+        <section class="builder-service">
+          <div class="builder-service-head">
+            <strong>{{ service.name || 'Unnamed service' }}</strong>
+            <button type="button" class="secondary" (click)="removeBuilderService(service.id)" [disabled]="builderServices().length === 1">Remove</button>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>Service name</span>
+              <input [value]="service.name" (input)="updateBuilderService(service.id, 'name', $event)" placeholder="app" />
+            </label>
+            <label>
+              <span>Image</span>
+              <input [value]="service.image" (input)="updateBuilderService(service.id, 'image', $event)" placeholder="ghcr.io/team/app:latest" />
+            </label>
+            <label>
+              <span>Build context</span>
+              <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)" placeholder="." />
+            </label>
+            <label>
+              <span>Restart policy</span>
+              <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)">
+                <option value="">none</option>
+                <option value="unless-stopped">unless-stopped</option>
+                <option value="always">always</option>
+                <option value="on-failure">on-failure</option>
+                <option value="no">no</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="builder-textareas">
+            <label>
+              <span>Ports</span>
+              <textarea [value]="service.ports" (input)="updateBuilderService(service.id, 'ports', $event)" placeholder="8080:80"></textarea>
+            </label>
+            <label>
+              <span>Environment</span>
+              <textarea [value]="service.environment" (input)="updateBuilderService(service.id, 'environment', $event)" placeholder="NODE_ENV=production"></textarea>
+            </label>
+            <label>
+              <span>Volumes</span>
+              <textarea [value]="service.volumes" (input)="updateBuilderService(service.id, 'volumes', $event)" placeholder="app-data:/app/data"></textarea>
+            </label>
+            <label>
+              <span>Networks</span>
+              <textarea [value]="service.networks" (input)="updateBuilderService(service.id, 'networks', $event)" placeholder="app"></textarea>
+            </label>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              <span>Expose container ports</span>
+              <input [value]="service.expose" (input)="updateBuilderService(service.id, 'expose', $event)" placeholder="3000" />
+            </label>
+            <label>
+              <span>Depends on</span>
+              <input [value]="service.dependsOn" (input)="updateBuilderService(service.id, 'dependsOn', $event)" placeholder="db, redis" />
+            </label>
+            <label>
+              <span>Command</span>
+              <input [value]="service.command" (input)="updateBuilderService(service.id, 'command', $event)" placeholder="npm start" />
+            </label>
+          </div>
+        </section>
+      }
+
+      <div class="resource-grid">
+        <section>
+          <div class="builder-service-head">
+            <strong>Networks</strong>
+            <button type="button" class="secondary" (click)="addBuilderNetwork()">Add network</button>
+          </div>
+          @for (network of builderNetworks(); track network.id) {
+            <div class="resource-row">
+              <input [value]="network.name" (input)="updateBuilderNetwork(network.id, 'name', $event)" placeholder="app" />
+              <label class="check-row">
+                <input type="checkbox" [checked]="network.external" (change)="updateBuilderNetwork(network.id, 'external', $event)" />
+                <span>External</span>
+              </label>
+              <button type="button" class="secondary" (click)="removeBuilderNetwork(network.id)">Remove</button>
+            </div>
+          }
+        </section>
+
+        <section>
+          <div class="builder-service-head">
+            <strong>Volumes</strong>
+            <button type="button" class="secondary" (click)="addBuilderVolume()">Add volume</button>
+          </div>
+          @for (volume of builderVolumes(); track volume.id) {
+            <div class="resource-row">
+              <input [value]="volume.name" (input)="updateBuilderVolume(volume.id, 'name', $event)" placeholder="app-data" />
+              <label class="check-row">
+                <input type="checkbox" [checked]="volume.external" (change)="updateBuilderVolume(volume.id, 'external', $event)" />
+                <span>External</span>
+              </label>
+              <button type="button" class="secondary" (click)="removeBuilderVolume(volume.id)">Remove</button>
+            </div>
+          }
+        </section>
+      </div>
+    </div>
+
     @if (composeInspection(); as compose) {
       <div class="compose-inspection">
         <div>

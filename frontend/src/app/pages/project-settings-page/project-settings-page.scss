@@ -139,6 +139,61 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.compose-builder {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+}
+
+.builder-head,
+.builder-service-head,
+.resource-row {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.builder-head span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.84rem;
+  margin-top: 0.2rem;
+}
+
+.builder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.builder-service,
+.resource-grid section {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.builder-textareas,
+.resource-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.builder-textareas textarea {
+  min-height: 88px;
+}
+
+.resource-row input {
+  min-width: 0;
+}
+
 .switch,
 .check-row {
   align-items: center;
@@ -201,13 +256,18 @@ button.secondary:hover {
 
 @media (max-width: 900px) {
   .field-grid,
-  .toggle-grid {
+  .toggle-grid,
+  .builder-textareas,
+  .resource-grid {
     grid-template-columns: 1fr;
   }
 
   .panel-head,
   .panel-head.split,
-  .form-actions {
+  .form-actions,
+  .builder-head,
+  .builder-service-head,
+  .resource-row {
     align-items: stretch;
     flex-direction: column;
   }

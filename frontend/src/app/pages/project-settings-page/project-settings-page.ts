@@ -7,6 +7,33 @@ import { ComposeInspection, ComposeServiceInspection, GlobalSettings, ProjectPay
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
+interface ComposeBuilderService {
+  id: number;
+  name: string;
+  image: string;
+  build: string;
+  command: string;
+  restart: string;
+  ports: string;
+  expose: string;
+  environment: string;
+  volumes: string;
+  networks: string;
+  dependsOn: string;
+}
+
+interface ComposeBuilderNetwork {
+  id: number;
+  name: string;
+  external: boolean;
+}
+
+interface ComposeBuilderVolume {
+  id: number;
+  name: string;
+  external: boolean;
+}
+
 @Component({
   selector: 'app-project-settings-page',
   imports: [ReactiveFormsModule],
@@ -26,6 +53,9 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly importingCompose = signal(false);
   protected readonly inspectingCompose = signal(false);
   protected readonly composeInspection = signal<ComposeInspection | null>(null);
+  protected readonly builderServices = signal<ComposeBuilderService[]>([]);
+  protected readonly builderNetworks = signal<ComposeBuilderNetwork[]>([]);
+  protected readonly builderVolumes = signal<ComposeBuilderVolume[]>([]);
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly traefikEnabled = signal(false);
@@ -70,6 +100,7 @@ export class ProjectSettingsPage implements OnInit {
 
   private patchedProjectName = '';
   private currentProjectRef = '';
+  private nextBuilderId = 1;
 
   constructor() {
     this.form.controls.traefikEnabled.valueChanges.pipe(takeUntilDestroyed()).subscribe((enabled) => {
@@ -254,6 +285,91 @@ export class ProjectSettingsPage implements OnInit {
       : 'no mounts';
   }
 
+  protected addBuilderService() {
+    const index = this.builderServices().length + 1;
+    this.builderServices.update((services) => [
+      ...services,
+      {
+        id: this.nextBuilderId++,
+        name: index === 1 ? 'app' : `service-${index}`,
+        image: '',
+        build: index === 1 ? '.' : '',
+        command: '',
+        restart: 'unless-stopped',
+        ports: '',
+        expose: '',
+        environment: '',
+        volumes: '',
+        networks: this.builderNetworks()[0]?.name || 'app',
+        dependsOn: ''
+      }
+    ]);
+
+    if (this.builderNetworks().length === 0) {
+      this.addBuilderNetwork('app');
+    }
+  }
+
+  protected removeBuilderService(id: number) {
+    this.builderServices.update((services) => services.filter((service) => service.id !== id));
+  }
+
+  protected updateBuilderService(id: number, field: keyof ComposeBuilderService, event: Event) {
+    const value = (event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
+    this.builderServices.update((services) => services.map((service) => service.id === id ? { ...service, [field]: value } : service));
+  }
+
+  protected addBuilderNetwork(name = 'app') {
+    this.builderNetworks.update((networks) => [
+      ...networks,
+      { id: this.nextBuilderId++, name: uniqueBuilderName(name, networks.map((network) => network.name)), external: false }
+    ]);
+  }
+
+  protected removeBuilderNetwork(id: number) {
+    this.builderNetworks.update((networks) => networks.filter((network) => network.id !== id));
+  }
+
+  protected updateBuilderNetwork(id: number, field: keyof ComposeBuilderNetwork, event: Event) {
+    const target = event.target as HTMLInputElement;
+    const value = field === 'external' ? target.checked : target.value;
+    this.builderNetworks.update((networks) => networks.map((network) => network.id === id ? { ...network, [field]: value } : network));
+  }
+
+  protected addBuilderVolume(name = 'data') {
+    this.builderVolumes.update((volumes) => [
+      ...volumes,
+      { id: this.nextBuilderId++, name: uniqueBuilderName(name, volumes.map((volume) => volume.name)), external: false }
+    ]);
+  }
+
+  protected removeBuilderVolume(id: number) {
+    this.builderVolumes.update((volumes) => volumes.filter((volume) => volume.id !== id));
+  }
+
+  protected updateBuilderVolume(id: number, field: keyof ComposeBuilderVolume, event: Event) {
+    const target = event.target as HTMLInputElement;
+    const value = field === 'external' ? target.checked : target.value;
+    this.builderVolumes.update((volumes) => volumes.map((volume) => volume.id === id ? { ...volume, [field]: value } : volume));
+  }
+
+  protected generateComposeOverride() {
+    if (this.builderServices().length === 0) {
+      this.addBuilderService();
+    }
+
+    this.form.controls.composeOverride.setValue(renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes()));
+    this.message.set('Compose override generated. Review it, then save the project.');
+  }
+
+  protected resetComposeBuilder() {
+    this.builderServices.set([]);
+    this.builderNetworks.set([]);
+    this.builderVolumes.set([]);
+    this.addBuilderService();
+    this.addBuilderVolume();
+  }
+
   private resetForNewProject() {
     this.patchedProjectName = '';
     this.traefikEnabled.set(false);
@@ -279,6 +395,7 @@ export class ProjectSettingsPage implements OnInit {
       traefikRemovePublishedPorts: true,
     });
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
+    this.resetComposeBuilder();
   }
 
   private patchFromProject(project: ProjectSummary) {
@@ -343,4 +460,111 @@ export class ProjectSettingsPage implements OnInit {
     const apiError = (error as { error?: { error?: string } }).error?.error;
     return apiError || 'Could not save project.';
   }
+}
+
+function renderComposeBuilder(services: ComposeBuilderService[], networks: ComposeBuilderNetwork[], volumes: ComposeBuilderVolume[]) {
+  const lines = ['services:'];
+  const validServices = services.filter((service) => service.name.trim());
+
+  for (const service of validServices) {
+    lines.push(`  ${yamlKey(service.name)}:`);
+    if (service.image.trim()) {
+      lines.push(`    image: ${yamlScalar(service.image.trim())}`);
+    }
+    if (service.build.trim()) {
+      lines.push(`    build: ${yamlScalar(service.build.trim())}`);
+    }
+    if (service.command.trim()) {
+      lines.push(`    command: ${yamlScalar(service.command.trim())}`);
+    }
+    if (service.restart.trim()) {
+      lines.push(`    restart: ${yamlScalar(service.restart.trim())}`);
+    }
+    appendList(lines, 'ports', service.ports);
+    appendList(lines, 'expose', service.expose);
+    appendEnvironment(lines, service.environment);
+    appendList(lines, 'volumes', service.volumes);
+    appendList(lines, 'networks', service.networks);
+    appendList(lines, 'depends_on', service.dependsOn);
+  }
+
+  appendTopLevelResources(lines, 'networks', networks);
+  appendTopLevelResources(lines, 'volumes', volumes);
+  return `${lines.join('\n')}\n`;
+}
+
+function appendList(lines: string[], key: string, value: string) {
+  const items = splitLines(value);
+  if (!items.length) {
+    return;
+  }
+
+  lines.push(`    ${key}:`);
+  for (const item of items) {
+    lines.push(`      - ${yamlScalar(item)}`);
+  }
+}
+
+function appendEnvironment(lines: string[], value: string) {
+  const entries = splitLines(value)
+    .map((entry) => entry.split('='))
+    .map(([key, ...rest]) => ({ key: key.trim(), value: rest.join('=').trim() }))
+    .filter((entry) => entry.key);
+
+  if (!entries.length) {
+    return;
+  }
+
+  lines.push('    environment:');
+  for (const entry of entries) {
+    lines.push(`      ${yamlKey(entry.key)}: ${yamlScalar(entry.value)}`);
+  }
+}
+
+function appendTopLevelResources(lines: string[], key: 'networks' | 'volumes', resources: Array<ComposeBuilderNetwork | ComposeBuilderVolume>) {
+  const valid = resources.filter((resource) => resource.name.trim());
+  if (!valid.length) {
+    return;
+  }
+
+  lines.push(key + ':');
+  for (const resource of valid) {
+    if (resource.external) {
+      lines.push(`  ${yamlKey(resource.name)}:`);
+      lines.push('    external: true');
+    } else {
+      lines.push(`  ${yamlKey(resource.name)}: {}`);
+    }
+  }
+}
+
+function splitLines(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function yamlKey(value: string) {
+  return /^[a-zA-Z0-9._-]+$/.test(value.trim()) ? value.trim() : yamlScalar(value.trim());
+}
+
+function yamlScalar(value: string) {
+  if (/^[a-zA-Z0-9_./:@-]+$/.test(value)) {
+    return value;
+  }
+
+  return JSON.stringify(value);
+}
+
+function uniqueBuilderName(baseName: string, usedNames: string[]) {
+  if (!usedNames.includes(baseName)) {
+    return baseName;
+  }
+
+  let index = 2;
+  while (usedNames.includes(`${baseName}-${index}`)) {
+    index += 1;
+  }
+  return `${baseName}-${index}`;
 }
