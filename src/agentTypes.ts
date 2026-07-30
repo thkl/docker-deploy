@@ -1,9 +1,9 @@
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks } from "./deploy.js";
-import { GlobalSettings, ProjectSettings, ServerCapabilities } from "./types.js";
+import { GlobalSettings, ProjectSettings, RuntimeStatus, ServerCapabilities } from "./types.js";
 
-export type AgentJobType = "deploy" | "importCompose" | "stop" | "deleteCheckout" | "detectTraefik";
+export type AgentJobType = "deploy" | "importCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "inspectStatus";
 
 export interface DeployJobPayload {
     projectName: string;
@@ -15,6 +15,8 @@ export interface ImportComposeJobPayload extends DeployJobPayload {}
 
 export interface StopJobPayload extends DeployJobPayload {}
 
+export interface InspectStatusJobPayload extends DeployJobPayload {}
+
 export interface DeleteCheckoutJobPayload {
     checkoutPath: string;
 }
@@ -25,7 +27,7 @@ export interface DetectTraefikJobPayload {
 
 export interface AgentJobRequest {
     jobType: AgentJobType;
-    payload: DeployJobPayload | ImportComposeJobPayload | StopJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload;
+    payload: DeployJobPayload | ImportComposeJobPayload | StopJobPayload | InspectStatusJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload;
 }
 
 export interface AgentJobAccepted {
@@ -48,4 +50,5 @@ export interface AgentClient {
     importCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ImportedCompose>;
     deleteCheckout(checkoutPath: string): Promise<CheckoutCleanupResult>;
     detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]>;
+    inspectStatus(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<RuntimeStatus>;
 }

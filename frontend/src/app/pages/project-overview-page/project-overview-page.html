@@ -31,6 +31,13 @@
       <span>Last deployment</span>
       <strong>{{ statusLabel(latestDeployment()) }}</strong>
     </article>
+    <article class="summary">
+      <span>Runtime</span>
+      <strong>{{ runtimeStatusLabel(runtimeStatus()) }}</strong>
+      @if (runtimeStatus()?.checkedAt) {
+        <small>{{ formatDate(runtimeStatus()?.checkedAt) }}</small>
+      }
+    </article>
   </section>
 
   <section class="panel">
@@ -54,6 +61,63 @@
   @if (deployError()) {
     <p class="notice error">{{ deployError() }}</p>
   }
+
+  <section class="deploy-panel runtime-panel">
+    <div class="deploy-head">
+      <div>
+        <h2>Runtime status</h2>
+        @if (runtimeStatus(); as status) {
+          <p>Checked {{ formatDate(status.checkedAt) }} on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
+        } @else {
+          <p>Inspect Compose containers on the target server.</p>
+        }
+      </div>
+      <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingRuntimeStatus()">
+        {{ loadingRuntimeStatus() ? 'Checking...' : 'Refresh status' }}
+      </button>
+    </div>
+
+    @if (runtimeStatusError()) {
+      <p class="notice error">{{ runtimeStatusError() }}</p>
+    }
+
+    @if (runtimeStatus(); as status) {
+      <div class="deploy-meta">
+        <span
+          class="status-chip"
+          [class.running]="status.status === 'partial'"
+          [class.failed]="status.status === 'error'"
+        >
+          {{ runtimeStatusLabel(status) }}
+        </span>
+        <span>{{ status.services.length }} services</span>
+        @if (status.error) {
+          <span class="error-text">{{ status.error }}</span>
+        }
+      </div>
+
+      @if (status.services.length > 0) {
+        <div class="service-list">
+          @for (service of status.services; track service.containerId || service.containerName || service.service) {
+            <div class="service-row">
+              <div>
+                <strong>{{ service.service }}</strong>
+                <small>{{ service.containerName || service.containerId || 'container unavailable' }}</small>
+              </div>
+              <span class="service-state">{{ service.state }}</span>
+              <span>{{ service.health || 'no healthcheck' }}</span>
+              <code>{{ service.image || 'image unknown' }}</code>
+              <small>{{ service.ports || 'no published ports' }}</small>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="empty-log">No Compose containers were found for this project.</div>
+      }
+    } @else {
+      <div class="empty-log">Status has not been checked yet.</div>
+    }
+  </section>
 
   <section class="deploy-panel">
     <div class="deploy-head">

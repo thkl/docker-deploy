@@ -1,7 +1,8 @@
 import { exec } from "node:child_process";
+import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { GlobalSettings, ProjectSettings, ServerCapabilities } from "./types.js";
+import { GlobalSettings, ProjectSettings, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 
 const execAsync = promisify(exec);
@@ -219,6 +220,41 @@ EOF`;
 }
 
 /**
+ * Inspects containers that Docker Compose created for one deployed project.
+ */
+export async function inspectProjectStatus(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<RuntimeStatus> {
+    const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli > /dev/null 2>&1
+                docker ps -a --filter ${shellQuote(`label=com.docker.compose.project=${composeProjectName}`)} --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}\t{{.Ports}}\t{{.Label "com.docker.compose.service"}}'
+EOF`;
+
+    try {
+        const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 2 * 1024 * 1024 });
+        if (stderr.trim()) {
+            return runtimeError(stderr.trim());
+        }
+
+        const services = stdout
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map(parseRuntimeService);
+
+        return {
+            status: summarizeRuntimeStatus(services),
+            checkedAt: new Date().toISOString(),
+            services
+        };
+    } catch (error) {
+        return runtimeError(error instanceof Error ? error.message : "Could not inspect runtime status.");
+    }
+}
+
+/**
  * Builds the shell block that writes a stored Docker Compose override into the
  * project checkout before compose commands run.
  */
@@ -294,4 +330,45 @@ function resolveHostPath(value: string) {
     }
 
     return value;
+}
+
+function parseRuntimeService(line: string): RuntimeServiceStatus {
+    const [containerId, containerName, image, state, statusText, ports, service] = line.split("\t");
+    const health = statusText?.match(/\((healthy|unhealthy|starting)\)/i)?.[1]?.toLowerCase();
+
+    return {
+        service: service || containerName || containerId || "unknown",
+        ...(containerName ? { containerName } : {}),
+        ...(containerId ? { containerId } : {}),
+        state: state || "unknown",
+        ...(health ? { health } : {}),
+        ...(image ? { image } : {}),
+        ...(ports ? { ports } : {})
+    };
+}
+
+function summarizeRuntimeStatus(services: RuntimeServiceStatus[]) {
+    if (services.length === 0) {
+        return "unknown";
+    }
+
+    const running = services.filter((service) => service.state.toLowerCase() === "running").length;
+    if (running === services.length) {
+        return "running";
+    }
+
+    if (running === 0) {
+        return "stopped";
+    }
+
+    return "partial";
+}
+
+function runtimeError(error: string): RuntimeStatus {
+    return {
+        status: "error",
+        checkedAt: new Date().toISOString(),
+        services: [],
+        error
+    };
 }

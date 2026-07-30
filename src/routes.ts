@@ -472,6 +472,26 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
         }
     });
 
+    app.get("/api/projects/:name/status", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            const status = await agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettingsStore.readSettings());
+            res.json(status);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not inspect project status." });
+        }
+    });
+
     app.get("/api/projects/:name/deployments", (req: Request, res: Response) => {
         const rawProjectName = req.params.name;
         const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);

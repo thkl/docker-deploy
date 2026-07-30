@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, InspectStatusJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -69,6 +69,17 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["detectTraefik"]>> }>({
             jobType: "detectTraefik",
             payload: { globalSettings } satisfies DetectTraefikJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
+     * Inspects runtime status through a remote target server.
+     */
+    async inspectStatus(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["inspectStatus"]>> }>({
+            jobType: "inspectStatus",
+            payload: { projectName, appSettings, globalSettings } satisfies InspectStatusJobPayload
         });
         return accepted.result;
     }

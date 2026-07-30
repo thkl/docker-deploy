@@ -1,7 +1,7 @@
 import { Component, computed, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord, ProjectSummary } from '../../models/project';
+import { DeploymentRecord, ProjectSummary, RuntimeStatus } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
@@ -19,10 +19,13 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
 
   protected readonly latestDeployment = signal<DeploymentRecord | null>(null);
+  protected readonly runtimeStatus = signal<RuntimeStatus | null>(null);
   protected readonly loadingDeployment = signal(false);
+  protected readonly loadingRuntimeStatus = signal(false);
   protected readonly deploying = signal(false);
   protected readonly deployMessage = signal('');
   protected readonly deployError = signal('');
+  protected readonly runtimeStatusError = signal('');
   protected readonly streamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
   protected readonly autoScroll = signal(true);
   protected readonly deleteProjectTarget = signal<ProjectSummary | null>(null);
@@ -45,6 +48,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
       if (projectRef) {
         this.store.selectProject(projectRef);
         this.connectDeploymentStream(projectRef);
+        this.loadRuntimeStatus(projectRef);
       }
     });
   }
@@ -78,6 +82,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected refresh(projectRef: string) {
     const project = this.projectByRef(projectRef);
     this.loadLatestDeployment(project?.id ?? projectRef, project?.name ?? projectRef);
+    this.loadRuntimeStatus(project?.id ?? projectRef);
   }
 
   protected openDelete(project: ProjectSummary) {
@@ -199,6 +204,22 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
           : 'Offline';
   }
 
+  protected runtimeStatusLabel(status: RuntimeStatus | null) {
+    if (!status) {
+      return 'Unknown';
+    }
+
+    return status.status === 'running'
+      ? 'Running'
+      : status.status === 'partial'
+        ? 'Partial'
+        : status.status === 'stopped'
+          ? 'Stopped'
+          : status.status === 'error'
+            ? 'Error'
+            : 'Unknown';
+  }
+
   private loadLatestDeployment(projectRef: string, projectName = projectRef) {
     this.loadingDeployment.set(true);
 
@@ -211,6 +232,22 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
       error: () => {
         this.loadingDeployment.set(false);
         this.deployError.set(`Could not load deployment status for ${projectName}.`);
+      },
+    });
+  }
+
+  private loadRuntimeStatus(projectRef: string) {
+    this.loadingRuntimeStatus.set(true);
+    this.runtimeStatusError.set('');
+
+    this.api.getProjectStatus(projectRef).subscribe({
+      next: (status) => {
+        this.runtimeStatus.set(status);
+        this.loadingRuntimeStatus.set(false);
+      },
+      error: () => {
+        this.loadingRuntimeStatus.set(false);
+        this.runtimeStatusError.set('Could not inspect runtime status.');
       },
     });
   }
@@ -228,6 +265,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
         if (deployment?.status !== 'running') {
           this.store.loadProjects();
+          this.loadRuntimeStatus(projectRef);
         }
       },
       error: () => {

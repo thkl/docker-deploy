@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, ServerCapabilities, ServerPayload, ServerRecord } from '../models/project';
+import { DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -33,6 +33,10 @@ export class ProjectApi {
 
   getLatestDeployment(projectRef: string): Observable<DeploymentRecord | null> {
     return this.http.get<DeploymentRecord | null>(`/api/projects/${encodeURIComponent(projectRef)}/deployments/latest`);
+  }
+
+  getProjectStatus(projectRef: string): Observable<RuntimeStatus> {
+    return this.http.get<RuntimeStatus>(`/api/projects/${encodeURIComponent(projectRef)}/status`);
   }
 
   listDeployments(projectRef: string): Observable<DeploymentRecord[]> {

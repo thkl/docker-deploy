@@ -1,6 +1,6 @@
 import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { deleteCheckoutPath, detectTraefik, dispatchBuildWorker, DeploymentHooks, stopProjectContainers } from "./deploy.js";
+import { deleteCheckoutPath, detectTraefik, dispatchBuildWorker, inspectProjectStatus, DeploymentHooks, stopProjectContainers } from "./deploy.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
@@ -45,5 +45,12 @@ export class LocalAgent implements AgentClient {
      */
     detectTraefik(globalSettings: GlobalSettings) {
         return detectTraefik(globalSettings);
+    }
+
+    /**
+     * Inspects deployed Compose containers on the local target server.
+     */
+    inspectStatus(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        return inspectProjectStatus(projectName, appSettings, globalSettings);
     }
 }

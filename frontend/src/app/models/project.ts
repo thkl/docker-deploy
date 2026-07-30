@@ -120,3 +120,22 @@ export interface ServerCapabilities {
     checkedAt: string;
   };
 }
+
+export type RuntimeProjectStatus = 'running' | 'partial' | 'stopped' | 'unknown' | 'error';
+
+export interface RuntimeServiceStatus {
+  service: string;
+  containerName?: string;
+  containerId?: string;
+  state: string;
+  health?: string;
+  image?: string;
+  ports?: string;
+}
+
+export interface RuntimeStatus {
+  status: RuntimeProjectStatus;
+  checkedAt: string;
+  services: RuntimeServiceStatus[];
+  error?: string;
+}

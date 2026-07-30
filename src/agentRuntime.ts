@@ -2,7 +2,7 @@ import { createServer, Server } from "node:http";
 import express, { Express, Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
-import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload } from "./agentTypes.js";
+import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, InspectStatusJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
@@ -166,6 +166,11 @@ export class AgentRuntime {
         if (request.jobType === "detectTraefik") {
             const payload = request.payload as DetectTraefikJobPayload;
             return { result: await this.localAgent.detectTraefik(payload.globalSettings) };
+        }
+
+        if (request.jobType === "inspectStatus") {
+            const payload = request.payload as InspectStatusJobPayload;
+            return { result: await this.localAgent.inspectStatus(payload.projectName, payload.appSettings, payload.globalSettings) };
         }
 
         const payload = request.payload as DeleteCheckoutJobPayload;
