@@ -101,151 +101,297 @@
 
     @if (composeMode() === 'builder') {
       <div class="compose-builder">
-      <div class="builder-head">
-        <div>
-          <strong>Compose builder</strong>
-          <span>Create a stored override when the repository does not provide a Compose file.</span>
+        <div class="builder-head">
+          <div>
+            <strong>Compose builder</strong>
+            <span>Create a stored override when the repository does not provide a Compose file.</span>
+          </div>
+          <div class="builder-actions">
+            <button type="button" class="secondary" (click)="loadBuilderFromComposeOverride()">Load from override</button>
+            <button type="button" class="secondary" (click)="generateComposeOverride()">Generate override</button>
+          </div>
         </div>
-        <div class="builder-actions">
-          <button type="button" class="secondary" (click)="addBuilderService()">Add service</button>
-          <button type="button" class="secondary" (click)="loadBuilderFromComposeOverride()">Load from override</button>
-          <button type="button" class="secondary" (click)="generateComposeOverride()">Generate override</button>
-        </div>
-      </div>
 
-      @for (service of builderServices(); track service.id) {
-        <section class="builder-service">
-          <div class="builder-service-head">
-            <strong>{{ service.name || 'Unnamed service' }}</strong>
-            <button type="button" class="secondary" (click)="removeBuilderService(service.id)" [disabled]="builderServices().length === 1">Remove</button>
-          </div>
+        <div class="builder-shell">
+          <nav class="builder-rail" aria-label="Compose builder sections">
+            <button type="button" [class.active]="builderSection() === 'services'" (click)="setBuilderSection('services')">
+              <strong>Services</strong>
+              <span>{{ builderServices().length }}</span>
+            </button>
+            <button type="button" [class.active]="builderSection() === 'networks'" (click)="setBuilderSection('networks')">
+              <strong>Networks</strong>
+              <span>{{ builderNetworks().length }}</span>
+            </button>
+            <button type="button" [class.active]="builderSection() === 'volumes'" (click)="setBuilderSection('volumes')">
+              <strong>Volumes</strong>
+              <span>{{ builderVolumes().length }}</span>
+            </button>
+            <button type="button" [class.active]="builderSection() === 'traefik'" (click)="setBuilderSection('traefik')">
+              <strong>Traefik</strong>
+              <span>{{ traefikEnabled() ? 'on' : 'off' }}</span>
+            </button>
+          </nav>
 
-          <div class="field-grid">
-            <label>
-              <span>Service name</span>
-              <input [value]="service.name" (input)="updateBuilderService(service.id, 'name', $event)" placeholder="app" />
-            </label>
-            <label>
-              <span>Image</span>
-              <input [value]="service.image" (input)="updateBuilderService(service.id, 'image', $event)" placeholder="ghcr.io/team/app:latest" />
-            </label>
-            <label>
-              <span>Build context</span>
-              <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)" placeholder="." />
-            </label>
-            <label>
-              <span>Dockerfile</span>
-              <input [value]="service.dockerfile" (input)="updateBuilderService(service.id, 'dockerfile', $event)" placeholder="Dockerfile" />
-            </label>
-            <label>
-              <span>Container name</span>
-              <input [value]="service.containerName" (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay" />
-            </label>
-            <label>
-              <span>Restart policy</span>
-              <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)">
-                <option value="">none</option>
-                <option value="unless-stopped">unless-stopped</option>
-                <option value="always">always</option>
-                <option value="on-failure">on-failure</option>
-                <option value="no">no</option>
-              </select>
-            </label>
-            <label>
-              <span>Network mode</span>
-              <input [value]="service.networkMode" (input)="updateBuilderService(service.id, 'networkMode', $event)" placeholder="host" />
-            </label>
-            <label class="check-row inline-check">
-              <input type="checkbox" [checked]="service.init" (change)="updateBuilderService(service.id, 'init', $event)" />
-              <span>Init process</span>
-            </label>
-          </div>
+          <div class="builder-workspace">
+            @if (builderSection() === 'services') {
+              <div class="section-toolbar">
+                <div>
+                  <strong>Services</strong>
+                  <span>Container definitions and service relationships</span>
+                </div>
+                <button type="button" class="secondary" (click)="addBuilderService()">Add service</button>
+              </div>
 
-          <div class="builder-textareas">
-            <label>
-              <span>Ports</span>
-              <textarea [value]="service.ports" (input)="updateBuilderService(service.id, 'ports', $event)" placeholder="8080:80"></textarea>
-            </label>
-            <label>
-              <span>Environment</span>
-              <textarea [value]="service.environment" (input)="updateBuilderService(service.id, 'environment', $event)" placeholder="NODE_ENV=production"></textarea>
-            </label>
-            <label>
-              <span>Volumes</span>
-              <textarea [value]="service.volumes" (input)="updateBuilderService(service.id, 'volumes', $event)" placeholder="app-data:/app/data"></textarea>
-            </label>
-            <label>
-              <span>Networks</span>
-              <textarea [value]="service.networks" (input)="updateBuilderService(service.id, 'networks', $event)" placeholder="app"></textarea>
-            </label>
-          </div>
+              @for (service of builderServices(); track service.id) {
+                <section class="builder-service">
+                  <div class="builder-service-head">
+                    <strong>{{ service.name || 'Unnamed service' }}</strong>
+                    <button type="button" class="secondary" (click)="removeBuilderService(service.id)" [disabled]="builderServices().length === 1">Remove</button>
+                  </div>
 
-          <div class="field-grid">
-            <label>
-              <span>Expose container ports</span>
-              <input [value]="service.expose" (input)="updateBuilderService(service.id, 'expose', $event)" placeholder="3000" />
-            </label>
-            <label>
-              <span>Depends on</span>
-              <input [value]="service.dependsOn" (input)="updateBuilderService(service.id, 'dependsOn', $event)" placeholder="db, redis" />
-              @if (service.dependsOnAdvanced) {
-                <small>Advanced dependency options are preserved.</small>
+                  <div class="field-grid">
+                    <label>
+                      <span>Service name</span>
+                      <input [value]="service.name" (input)="updateBuilderService(service.id, 'name', $event)" placeholder="app" />
+                    </label>
+                    <label>
+                      <span>Image</span>
+                      <input [value]="service.image" (input)="updateBuilderService(service.id, 'image', $event)" placeholder="ghcr.io/team/app:latest" />
+                    </label>
+                    <label>
+                      <span>Build context</span>
+                      <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)" placeholder="." />
+                    </label>
+                    <label>
+                      <span>Dockerfile</span>
+                      <input [value]="service.dockerfile" (input)="updateBuilderService(service.id, 'dockerfile', $event)" placeholder="Dockerfile" />
+                    </label>
+                    <label>
+                      <span>Container name</span>
+                      <input [value]="service.containerName" (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay" />
+                    </label>
+                    <label>
+                      <span>Restart policy</span>
+                      <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)">
+                        <option value="">none</option>
+                        <option value="unless-stopped">unless-stopped</option>
+                        <option value="always">always</option>
+                        <option value="on-failure">on-failure</option>
+                        <option value="no">no</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Network mode</span>
+                      <input [value]="service.networkMode" (input)="updateBuilderService(service.id, 'networkMode', $event)" placeholder="host" />
+                    </label>
+                    <label class="check-row inline-check">
+                      <input type="checkbox" [checked]="service.init" (change)="updateBuilderService(service.id, 'init', $event)" />
+                      <span>Init process</span>
+                    </label>
+                  </div>
+
+                  <div class="choice-grid">
+                    <fieldset>
+                      <legend>Networks</legend>
+                      @for (networkName of builderNetworkNames(); track networkName) {
+                        <label class="check-row">
+                          <input
+                            type="checkbox"
+                            [checked]="isBuilderServiceListValueSelected(service, 'networks', networkName)"
+                            (change)="toggleBuilderServiceListValue(service.id, 'networks', networkName, $event)"
+                          />
+                          <span>{{ networkName }}</span>
+                        </label>
+                      } @empty {
+                        <small>Add networks before assigning them to services.</small>
+                      }
+                    </fieldset>
+
+                    <fieldset>
+                      <legend>Depends on</legend>
+                      @for (serviceName of builderServiceNames(); track serviceName) {
+                        @if (serviceName !== service.name) {
+                          <label class="check-row">
+                            <input
+                              type="checkbox"
+                              [checked]="isBuilderServiceListValueSelected(service, 'dependsOn', serviceName)"
+                              [disabled]="service.dependsOnAdvanced !== ''"
+                              (change)="toggleBuilderServiceListValue(service.id, 'dependsOn', serviceName, $event)"
+                            />
+                            <span>{{ serviceName }}</span>
+                          </label>
+                        }
+                      } @empty {
+                        <small>Add another service before setting dependencies.</small>
+                      }
+                      @if (service.dependsOnAdvanced) {
+                        <small>Advanced dependency options are preserved in YAML.</small>
+                      }
+                    </fieldset>
+                  </div>
+
+                  <div class="builder-textareas">
+                    <label>
+                      <span>Ports</span>
+                      <textarea [value]="service.ports" (input)="updateBuilderService(service.id, 'ports', $event)" placeholder="8080:80"></textarea>
+                    </label>
+                    <label>
+                      <span>Environment</span>
+                      <textarea [value]="service.environment" (input)="updateBuilderService(service.id, 'environment', $event)" placeholder="NODE_ENV=production"></textarea>
+                    </label>
+                    <label>
+                      <span>Volumes</span>
+                      <textarea [value]="service.volumes" (input)="updateBuilderService(service.id, 'volumes', $event)" placeholder="app-data:/app/data"></textarea>
+                    </label>
+                    <label>
+                      <span>Expose container ports</span>
+                      <textarea [value]="service.expose" (input)="updateBuilderService(service.id, 'expose', $event)" placeholder="3000"></textarea>
+                    </label>
+                  </div>
+
+                  <div class="field-grid">
+                    <label>
+                      <span>Profiles</span>
+                      <input [value]="service.profiles" (input)="updateBuilderService(service.id, 'profiles', $event)" placeholder="dev" />
+                    </label>
+                    <label>
+                      <span>Command</span>
+                      <input [value]="service.command" (input)="updateBuilderService(service.id, 'command', $event)" placeholder="npm start" />
+                    </label>
+                  </div>
+
+                  <label class="compose-field">
+                    <span>Advanced service YAML</span>
+                    <textarea [value]="service.extra" (input)="updateBuilderService(service.id, 'extra', $event)" placeholder="healthcheck:&#10;  test: ['CMD', 'curl', '-f', 'http://localhost']"></textarea>
+                  </label>
+                </section>
               }
-            </label>
-            <label>
-              <span>Profiles</span>
-              <input [value]="service.profiles" (input)="updateBuilderService(service.id, 'profiles', $event)" placeholder="dev" />
-            </label>
-            <label>
-              <span>Command</span>
-              <input [value]="service.command" (input)="updateBuilderService(service.id, 'command', $event)" placeholder="npm start" />
-            </label>
-          </div>
+            }
 
-          <label class="compose-field">
-            <span>Advanced service YAML</span>
-            <textarea [value]="service.extra" (input)="updateBuilderService(service.id, 'extra', $event)" placeholder="healthcheck:&#10;  test: ['CMD', 'curl', '-f', 'http://localhost']"></textarea>
-          </label>
-        </section>
-      }
+            @if (builderSection() === 'networks') {
+              <div class="section-toolbar">
+                <div>
+                  <strong>Networks</strong>
+                  <span>Named Docker networks services can join</span>
+                </div>
+                <button type="button" class="secondary" (click)="addBuilderNetwork()">Add network</button>
+              </div>
 
-      <div class="resource-grid">
-        <section>
-          <div class="builder-service-head">
-            <strong>Networks</strong>
-            <button type="button" class="secondary" (click)="addBuilderNetwork()">Add network</button>
-          </div>
-          @for (network of builderNetworks(); track network.id) {
-            <div class="resource-row">
-              <input [value]="network.name" (input)="updateBuilderNetwork(network.id, 'name', $event)" placeholder="app" />
-              <input [value]="network.driver" (input)="updateBuilderNetwork(network.id, 'driver', $event)" placeholder="driver" />
-              <label class="check-row">
-                <input type="checkbox" [checked]="network.external" (change)="updateBuilderNetwork(network.id, 'external', $event)" />
-                <span>External</span>
-              </label>
-              <button type="button" class="secondary" (click)="removeBuilderNetwork(network.id)">Remove</button>
-            </div>
-          }
-        </section>
+              @for (network of builderNetworks(); track network.id) {
+                <div class="resource-row">
+                  <input [value]="network.name" (input)="updateBuilderNetwork(network.id, 'name', $event)" placeholder="app" />
+                  <input [value]="network.driver" (input)="updateBuilderNetwork(network.id, 'driver', $event)" placeholder="driver" />
+                  <label class="check-row">
+                    <input type="checkbox" [checked]="network.external" (change)="updateBuilderNetwork(network.id, 'external', $event)" />
+                    <span>External</span>
+                  </label>
+                  <button type="button" class="secondary" (click)="removeBuilderNetwork(network.id)">Remove</button>
+                </div>
+              }
+            }
 
-        <section>
-          <div class="builder-service-head">
-            <strong>Volumes</strong>
-            <button type="button" class="secondary" (click)="addBuilderVolume()">Add volume</button>
+            @if (builderSection() === 'volumes') {
+              <div class="section-toolbar">
+                <div>
+                  <strong>Volumes</strong>
+                  <span>Named storage resources for service mounts</span>
+                </div>
+                <button type="button" class="secondary" (click)="addBuilderVolume()">Add volume</button>
+              </div>
+
+              @for (volume of builderVolumes(); track volume.id) {
+                <div class="resource-row">
+                  <input [value]="volume.name" (input)="updateBuilderVolume(volume.id, 'name', $event)" placeholder="app-data" />
+                  <input [value]="volume.driver" (input)="updateBuilderVolume(volume.id, 'driver', $event)" placeholder="driver" />
+                  <label class="check-row">
+                    <input type="checkbox" [checked]="volume.external" (change)="updateBuilderVolume(volume.id, 'external', $event)" />
+                    <span>External</span>
+                  </label>
+                  <button type="button" class="secondary" (click)="removeBuilderVolume(volume.id)">Remove</button>
+                </div>
+              }
+            }
+
+            @if (builderSection() === 'traefik') {
+              @if (traefikAvailable()) {
+                <div class="section-toolbar">
+                  <div>
+                    <strong>Traefik</strong>
+                    <span>Labels and proxy network for one service</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" formControlName="traefikEnabled" />
+                    <span>Enabled</span>
+                  </label>
+                </div>
+
+                <div class="field-grid" [class.is-disabled]="!traefikEnabled()">
+                  <label>
+                    <span>Hostname</span>
+                    <input formControlName="traefikHostname" placeholder="service-a.example.com" />
+                  </label>
+
+                  <label>
+                    <span>Service name</span>
+                    <select formControlName="traefikService" [disabled]="builderServiceNames().length === 0">
+                      @for (serviceName of builderServiceNames(); track serviceName) {
+                        <option [value]="serviceName">{{ serviceName }}</option>
+                      }
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Container port</span>
+                    <input formControlName="traefikPort" inputmode="numeric" placeholder="3000" />
+                  </label>
+
+                  <label>
+                    <span>Entry points</span>
+                    <input formControlName="traefikEntryPoints" placeholder="websecure" />
+                  </label>
+
+                  <label>
+                    <span>Certificate resolver</span>
+                    <input formControlName="traefikCertResolver" placeholder="letsencrypt" />
+                  </label>
+
+                  <label>
+                    <span>Docker network</span>
+                    <select formControlName="traefikNetwork" [disabled]="builderNetworkNames().length === 0">
+                      @for (networkName of builderNetworkNames(); track networkName) {
+                        <option [value]="networkName">{{ networkName }}</option>
+                      }
+                    </select>
+                  </label>
+                </div>
+
+                <div class="toggle-grid">
+                  <label class="check-row">
+                    <input type="checkbox" formControlName="traefikRemovePublishedPorts" />
+                    <span>Remove published ports when Traefik is enabled</span>
+                  </label>
+
+                  <label class="check-row">
+                    <input type="checkbox" formControlName="traefikWebsocket" />
+                    <span>Add explicit WebSocket middleware labels</span>
+                  </label>
+
+                  <label class="check-row">
+                    <input type="checkbox" formControlName="traefikWildcardCertificate" />
+                    <span>Use wildcard certificate labels</span>
+                  </label>
+                </div>
+
+                @if (wildcardCertificate()) {
+                  <label class="wildcard-field">
+                    <span>Wildcard base domain</span>
+                    <input formControlName="traefikWildcardDomain" placeholder="bla.network" />
+                  </label>
+                }
+              }
+            }
           </div>
-          @for (volume of builderVolumes(); track volume.id) {
-            <div class="resource-row">
-              <input [value]="volume.name" (input)="updateBuilderVolume(volume.id, 'name', $event)" placeholder="app-data" />
-              <input [value]="volume.driver" (input)="updateBuilderVolume(volume.id, 'driver', $event)" placeholder="driver" />
-              <label class="check-row">
-                <input type="checkbox" [checked]="volume.external" (change)="updateBuilderVolume(volume.id, 'external', $event)" />
-                <span>External</span>
-              </label>
-              <button type="button" class="secondary" (click)="removeBuilderVolume(volume.id)">Remove</button>
-            </div>
-          }
-        </section>
-      </div>
+        </div>
       </div>
     } @else {
       <label class="compose-field">
@@ -282,78 +428,6 @@
       </div>
     }
   </section>
-
-  @if (traefikAvailable()) {
-    <section class="form-panel">
-      <div class="panel-head split">
-        <div>
-          <h3>Traefik</h3>
-          <span>Docker labels and network behavior generated by the updater</span>
-        </div>
-
-        <label class="switch">
-          <input type="checkbox" formControlName="traefikEnabled" />
-          <span>Enabled</span>
-        </label>
-      </div>
-
-      <div class="field-grid" [class.is-disabled]="!traefikEnabled()">
-        <label>
-          <span>Hostname</span>
-          <input formControlName="traefikHostname" placeholder="service-a.example.com" />
-        </label>
-
-        <label>
-          <span>Service name</span>
-          <input formControlName="traefikService" placeholder="app" />
-        </label>
-
-        <label>
-          <span>Container port</span>
-          <input formControlName="traefikPort" inputmode="numeric" placeholder="3000" />
-        </label>
-
-        <label>
-          <span>Entry points</span>
-          <input formControlName="traefikEntryPoints" placeholder="websecure" />
-        </label>
-
-        <label>
-          <span>Certificate resolver</span>
-          <input formControlName="traefikCertResolver" placeholder="letsencrypt" />
-        </label>
-
-        <label>
-          <span>Docker network</span>
-          <input formControlName="traefikNetwork" placeholder="proxy" />
-        </label>
-      </div>
-
-      <div class="toggle-grid">
-        <label class="check-row">
-          <input type="checkbox" formControlName="traefikRemovePublishedPorts" />
-          <span>Remove published ports when Traefik is enabled</span>
-        </label>
-
-        <label class="check-row">
-          <input type="checkbox" formControlName="traefikWebsocket" />
-          <span>Add explicit WebSocket middleware labels</span>
-        </label>
-
-        <label class="check-row">
-          <input type="checkbox" formControlName="traefikWildcardCertificate" />
-          <span>Use wildcard certificate labels</span>
-        </label>
-      </div>
-
-      @if (wildcardCertificate()) {
-        <label class="wildcard-field">
-          <span>Wildcard base domain</span>
-          <input formControlName="traefikWildcardDomain" placeholder="bla.network" />
-        </label>
-      }
-    </section>
-  }
 
   <footer class="form-actions">
     <button type="button" class="secondary" (click)="cancel()" [disabled]="saving() !== ''">Cancel</button>

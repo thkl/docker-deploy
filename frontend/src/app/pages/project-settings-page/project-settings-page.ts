@@ -85,6 +85,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly inspectingCompose = signal(false);
   protected readonly composeInspection = signal<ComposeInspection | null>(null);
   protected readonly composeMode = signal<'builder' | 'yaml'>('builder');
+  protected readonly builderSection = signal<'services' | 'networks' | 'volumes' | 'traefik'>('services');
   protected readonly builderServices = signal<ComposeBuilderService[]>([]);
   protected readonly builderNetworks = signal<ComposeBuilderNetwork[]>([]);
   protected readonly builderVolumes = signal<ComposeBuilderVolume[]>([]);
@@ -100,6 +101,8 @@ export class ProjectSettingsPage implements OnInit {
   });
   protected readonly title = computed(() => (this.isNew() ? 'New project' : `Settings for ${this.currentName()}`));
   protected readonly submitLabel = computed(() => (this.isNew() ? 'Create project' : 'Save'));
+  protected readonly builderServiceNames = computed(() => this.builderServices().map((service) => service.name.trim()).filter(Boolean));
+  protected readonly builderNetworkNames = computed(() => this.builderNetworks().map((network) => network.name.trim()).filter(Boolean));
   private readonly globalDefaults = signal<GlobalSettings>({
     dataRoot: '/root/docker-apps',
     defaultTraefikNetwork: 'proxy',
@@ -326,6 +329,10 @@ export class ProjectSettingsPage implements OnInit {
     this.composeMode.set(mode);
   }
 
+  protected setBuilderSection(section: 'services' | 'networks' | 'volumes' | 'traefik') {
+    this.builderSection.set(section);
+  }
+
   protected addBuilderService() {
     const index = this.builderServices().length + 1;
     this.builderServices.update((services) => [
@@ -368,6 +375,25 @@ export class ProjectSettingsPage implements OnInit {
     this.builderServices.update((services) => services.map((service) => service.id === id ? { ...service, [field]: value } : service));
   }
 
+  protected toggleBuilderServiceListValue(id: number, field: 'networks' | 'dependsOn', item: string, event: Event) {
+    const target = event.target as HTMLInputElement;
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      const items = splitLines(service[field]).filter((value) => value !== item);
+      return {
+        ...service,
+        [field]: target.checked ? [...items, item].join('\n') : items.join('\n')
+      };
+    }));
+  }
+
+  protected isBuilderServiceListValueSelected(service: ComposeBuilderService, field: 'networks' | 'dependsOn', item: string) {
+    return splitLines(service[field]).includes(item);
+  }
+
   protected addBuilderNetwork(name = 'app') {
     this.builderNetworks.update((networks) => [
       ...networks,
@@ -406,6 +432,7 @@ export class ProjectSettingsPage implements OnInit {
     if (this.builderServices().length === 0) {
       this.addBuilderService();
     }
+    this.normalizeBuilderTraefikRefs();
 
     this.form.controls.composeOverride.setValue(renderComposeBuilder(
       this.builderServices(),
@@ -525,6 +552,9 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   private toPayload(): ProjectPayload | null {
+    if (this.composeMode() === 'builder') {
+      this.normalizeBuilderTraefikRefs();
+    }
     const value = this.form.getRawValue();
     const traefikSettings = this.currentTraefikComposeSettings();
     const composeOverride = this.composeMode() === 'builder'
@@ -576,6 +606,20 @@ export class ProjectSettingsPage implements OnInit {
       websocket: value.traefikWebsocket,
       removePublishedPorts: value.traefikRemovePublishedPorts,
     };
+  }
+
+  private normalizeBuilderTraefikRefs() {
+    const serviceNames = this.builderServiceNames();
+    const networkNames = this.builderNetworkNames();
+    const value = this.form.getRawValue();
+
+    if (serviceNames.length && !serviceNames.includes(value.traefikService.trim())) {
+      this.form.controls.traefikService.setValue(serviceNames[0], { emitEvent: false });
+    }
+
+    if (networkNames.length && !networkNames.includes(value.traefikNetwork.trim())) {
+      this.form.controls.traefikNetwork.setValue(networkNames[0], { emitEvent: false });
+    }
   }
 
   private readApiError(error: unknown) {
