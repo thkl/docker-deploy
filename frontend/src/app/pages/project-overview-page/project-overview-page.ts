@@ -1,7 +1,7 @@
 import { Component, computed, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord, ProjectSummary, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
+import { DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
@@ -20,12 +20,17 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
   protected readonly latestDeployment = signal<DeploymentRecord | null>(null);
   protected readonly runtimeStatus = signal<RuntimeStatus | null>(null);
+  protected readonly runtimeLogs = signal<RuntimeLogs | null>(null);
   protected readonly loadingDeployment = signal(false);
   protected readonly loadingRuntimeStatus = signal(false);
+  protected readonly loadingRuntimeLogs = signal(false);
   protected readonly deploying = signal(false);
   protected readonly deployMessage = signal('');
   protected readonly deployError = signal('');
   protected readonly runtimeStatusError = signal('');
+  protected readonly runtimeLogsError = signal('');
+  protected readonly selectedRuntimeService = signal('');
+  protected readonly runtimeLogTail = signal(200);
   protected readonly streamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
   protected readonly autoScroll = signal(true);
   protected readonly deleteProjectTarget = signal<ProjectSummary | null>(null);
@@ -232,6 +237,46 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     return service.ports || 'no published ports';
   }
 
+  protected updateRuntimeService(event: Event) {
+    this.selectedRuntimeService.set((event.target as HTMLSelectElement).value);
+    this.runtimeLogs.set(null);
+    this.runtimeLogsError.set('');
+  }
+
+  protected updateRuntimeTail(event: Event) {
+    this.runtimeLogTail.set(Number((event.target as HTMLSelectElement).value) || 200);
+  }
+
+  protected loadRuntimeLogs(projectRef: string) {
+    const service = this.selectedRuntimeService() || this.runtimeStatus()?.services[0]?.service || '';
+    if (!service) {
+      this.runtimeLogsError.set('Select a running service first.');
+      return;
+    }
+
+    this.loadingRuntimeLogs.set(true);
+    this.runtimeLogsError.set('');
+
+    this.api.getRuntimeLogs(projectRef, service, this.runtimeLogTail()).subscribe({
+      next: (logs) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.runtimeLogs.set(logs);
+        this.loadingRuntimeLogs.set(false);
+      },
+      error: (error) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.loadingRuntimeLogs.set(false);
+        this.runtimeLogsError.set(error?.error?.error || 'Could not load runtime logs.');
+      },
+    });
+  }
+
   private loadLatestDeployment(projectRef: string, projectName = projectRef) {
     this.loadingDeployment.set(true);
 
@@ -268,6 +313,9 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         }
 
         this.runtimeStatus.set(status);
+        if (!this.selectedRuntimeService() && status.services[0]?.service) {
+          this.selectedRuntimeService.set(status.services[0].service);
+        }
         this.loadingRuntimeStatus.set(false);
       },
       error: () => {
@@ -333,11 +381,16 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.activeProjectRef = projectRef;
     this.latestDeployment.set(null);
     this.runtimeStatus.set(null);
+    this.runtimeLogs.set(null);
     this.runtimeStatusError.set('');
+    this.runtimeLogsError.set('');
     this.deployError.set('');
     this.deployMessage.set('');
+    this.selectedRuntimeService.set('');
+    this.runtimeLogTail.set(200);
     this.loadingDeployment.set(true);
     this.loadingRuntimeStatus.set(true);
+    this.loadingRuntimeLogs.set(false);
   }
 
   private setLatestDeployment(deployment: DeploymentRecord | null) {

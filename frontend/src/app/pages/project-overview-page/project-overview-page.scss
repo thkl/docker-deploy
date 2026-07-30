@@ -67,7 +67,7 @@
 }
 
 .panel-actions a,
-button.secondary {
+.secondary {
   align-items: center;
   background: transparent;
   border: 1px solid color-mix(in srgb, var(--accent), transparent 28%);
@@ -80,7 +80,7 @@ button.secondary {
 }
 
 .panel-actions a:hover,
-button.secondary:hover {
+.secondary:hover {
   background: transparent;
   border-color: var(--accent);
   color: var(--accent);

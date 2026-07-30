@@ -2,7 +2,7 @@ import { exec } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { GlobalSettings, ProjectSettings, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities } from "./types.js";
+import { GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 
 const execAsync = promisify(exec);
@@ -250,6 +250,34 @@ EOF`;
     } catch (error) {
         return runtimeError(error instanceof Error ? error.message : "Could not inspect runtime status.");
     }
+}
+
+/**
+ * Reads recent runtime logs for one Compose service/container.
+ */
+export async function readRuntimeLogs(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number): Promise<RuntimeLogs> {
+    const safeTail = Math.min(Math.max(Math.trunc(tail) || 200, 10), 2000);
+    const status = await inspectProjectStatus(repoName, appSettings, globalSettings);
+    const match = status.services.find((candidate) => candidate.service === service || candidate.containerId === service || candidate.containerName === service);
+    if (!match?.containerId) {
+        throw new Error("Service container was not found.");
+    }
+
+    const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli > /dev/null 2>&1
+                docker logs --tail ${safeTail} ${shellQuote(match.containerId)}
+EOF`;
+    const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 4 * 1024 * 1024 });
+
+    return {
+        service: match.service,
+        containerId: match.containerId,
+        tail: safeTail,
+        checkedAt: new Date().toISOString(),
+        output: `${stdout}${stderr ? `\n${stderr}` : ""}`
+    };
 }
 
 /**

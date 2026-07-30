@@ -506,6 +506,33 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
         }
     });
 
+    app.get("/api/projects/:name/runtime-logs", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+            const service = String(req.query.service || "").trim();
+            const tail = Number(req.query.tail || 200);
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            if (!service) {
+                res.status(400).json({ error: "Service is required." });
+                return;
+            }
+
+            const logs = await agentManager.getClient(appSettings.serverId ?? "local").runtimeLogs(projectName, appSettings, globalSettingsStore.readSettings(), service, tail);
+            res.json(logs);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not read runtime logs." });
+        }
+    });
+
     app.get("/api/projects/:name/deployments", (req: Request, res: Response) => {
         const rawProjectName = req.params.name;
         const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);

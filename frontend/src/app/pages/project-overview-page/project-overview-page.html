@@ -147,6 +147,50 @@
   <section class="deploy-panel">
     <div class="deploy-head">
       <div>
+        <h2>Runtime logs</h2>
+        @if (runtimeLogs(); as logs) {
+          <p>Loaded {{ logs.tail }} lines from {{ logs.service }} at {{ formatDate(logs.checkedAt) }}.</p>
+        } @else {
+          <p>Read recent container output from a deployed service.</p>
+        }
+      </div>
+
+      <div class="deploy-head-actions">
+        <select class="secondary" [value]="selectedRuntimeService()" (change)="updateRuntimeService($event)" [disabled]="loadingRuntimeStatus() || loadingRuntimeLogs() || !runtimeStatus()?.services?.length">
+          @for (service of runtimeStatus()?.services || []; track service.containerId || service.containerName || service.service) {
+            <option [value]="service.service">{{ service.service }}</option>
+          } @empty {
+            <option value="">No services</option>
+          }
+        </select>
+        <select class="secondary" [value]="runtimeLogTail()" (change)="updateRuntimeTail($event)" [disabled]="loadingRuntimeLogs()">
+          <option value="100">100 lines</option>
+          <option value="200">200 lines</option>
+          <option value="500">500 lines</option>
+          <option value="1000">1000 lines</option>
+        </select>
+        <button type="button" class="secondary" (click)="loadRuntimeLogs(project.id)" [disabled]="loadingRuntimeLogs() || !runtimeStatus()?.services?.length">
+          {{ loadingRuntimeLogs() ? 'Loading...' : 'Load logs' }}
+        </button>
+      </div>
+    </div>
+
+    @if (runtimeLogsError()) {
+      <p class="notice error">{{ runtimeLogsError() }}</p>
+    }
+
+    @if (loadingRuntimeLogs()) {
+      <div class="empty-log">Loading runtime logs...</div>
+    } @else if (runtimeLogs(); as logs) {
+      <pre class="deploy-log">{{ logs.output || 'No runtime log output returned.' }}</pre>
+    } @else {
+      <div class="empty-log">Select a service and load recent runtime logs.</div>
+    }
+  </section>
+
+  <section class="deploy-panel">
+    <div class="deploy-head">
+      <div>
         <h2>Latest deployment</h2>
         @if (latestDeployment(); as deployment) {
           <p>

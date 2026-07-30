@@ -1,6 +1,6 @@
 import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { deleteCheckoutPath, detectTraefik, dispatchBuildWorker, inspectProjectStatus, DeploymentHooks, stopProjectContainers } from "./deploy.js";
+import { deleteCheckoutPath, detectTraefik, dispatchBuildWorker, inspectProjectStatus, readRuntimeLogs, DeploymentHooks, stopProjectContainers } from "./deploy.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
@@ -52,5 +52,12 @@ export class LocalAgent implements AgentClient {
      */
     inspectStatus(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
         return inspectProjectStatus(projectName, appSettings, globalSettings);
+    }
+
+    /**
+     * Reads recent runtime logs for a deployed Compose service.
+     */
+    runtimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number) {
+        return readRuntimeLogs(projectName, appSettings, globalSettings, service, tail);
     }
 }

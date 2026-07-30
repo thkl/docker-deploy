@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, InspectStatusJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -80,6 +80,17 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["inspectStatus"]>> }>({
             jobType: "inspectStatus",
             payload: { projectName, appSettings, globalSettings } satisfies InspectStatusJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
+     * Reads recent runtime logs through a remote target server.
+     */
+    async runtimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["runtimeLogs"]>> }>({
+            jobType: "runtimeLogs",
+            payload: { projectName, appSettings, globalSettings, service, tail } satisfies RuntimeLogsJobPayload
         });
         return accepted.result;
     }

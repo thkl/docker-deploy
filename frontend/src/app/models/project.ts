@@ -142,3 +142,11 @@ export interface RuntimeStatus {
   services: RuntimeServiceStatus[];
   error?: string;
 }
+
+export interface RuntimeLogs {
+  service: string;
+  containerId: string;
+  tail: number;
+  checkedAt: string;
+  output: string;
+}
