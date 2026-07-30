@@ -12,6 +12,7 @@ interface ComposeBuilderService {
   name: string;
   image: string;
   build: string;
+  dockerfile: string;
   containerName: string;
   command: string;
   restart: string;
@@ -23,6 +24,8 @@ interface ComposeBuilderService {
   volumes: string;
   networks: string;
   dependsOn: string;
+  dependsOnAdvanced: string;
+  profiles: string;
   extra: string;
 }
 
@@ -30,15 +33,19 @@ interface ComposeBuilderNetwork {
   id: number;
   name: string;
   external: boolean;
+  driver: string;
+  extra: string;
 }
 
 interface ComposeBuilderVolume {
   id: number;
   name: string;
   external: boolean;
+  driver: string;
+  extra: string;
 }
 
-type ComposeBuilderListField = 'ports' | 'expose' | 'volumes' | 'networks' | 'dependsOn';
+type ComposeBuilderListField = 'ports' | 'expose' | 'volumes' | 'networks' | 'dependsOn' | 'profiles';
 
 @Component({
   selector: 'app-project-settings-page',
@@ -301,6 +308,7 @@ export class ProjectSettingsPage implements OnInit {
         name: index === 1 ? 'app' : `service-${index}`,
         image: '',
         build: index === 1 ? '.' : '',
+        dockerfile: '',
         containerName: '',
         command: '',
         restart: 'unless-stopped',
@@ -312,6 +320,8 @@ export class ProjectSettingsPage implements OnInit {
         volumes: '',
         networks: this.builderNetworks()[0]?.name || 'app',
         dependsOn: '',
+        dependsOnAdvanced: '',
+        profiles: '',
         extra: ''
       }
     ]);
@@ -334,7 +344,7 @@ export class ProjectSettingsPage implements OnInit {
   protected addBuilderNetwork(name = 'app') {
     this.builderNetworks.update((networks) => [
       ...networks,
-      { id: this.nextBuilderId++, name: uniqueBuilderName(name, networks.map((network) => network.name)), external: false }
+      { id: this.nextBuilderId++, name: uniqueBuilderName(name, networks.map((network) => network.name)), external: false, driver: '', extra: '' }
     ]);
   }
 
@@ -351,7 +361,7 @@ export class ProjectSettingsPage implements OnInit {
   protected addBuilderVolume(name = 'data') {
     this.builderVolumes.update((volumes) => [
       ...volumes,
-      { id: this.nextBuilderId++, name: uniqueBuilderName(name, volumes.map((volume) => volume.name)), external: false }
+      { id: this.nextBuilderId++, name: uniqueBuilderName(name, volumes.map((volume) => volume.name)), external: false, driver: '', extra: '' }
     ]);
   }
 
@@ -520,7 +530,11 @@ function renderComposeBuilder(services: ComposeBuilderService[], networks: Compo
     if (service.image.trim()) {
       lines.push(`    image: ${yamlScalar(service.image.trim())}`);
     }
-    if (service.build.trim()) {
+    if (service.build.trim() && service.dockerfile.trim()) {
+      lines.push('    build:');
+      lines.push(`      context: ${yamlScalar(service.build.trim())}`);
+      lines.push(`      dockerfile: ${yamlScalar(service.dockerfile.trim())}`);
+    } else if (service.build.trim()) {
       lines.push(`    build: ${yamlScalar(service.build.trim())}`);
     }
     if (service.containerName.trim()) {
@@ -543,7 +557,12 @@ function renderComposeBuilder(services: ComposeBuilderService[], networks: Compo
     appendEnvironment(lines, service.environment);
     appendList(lines, 'volumes', service.volumes);
     appendList(lines, 'networks', service.networks);
-    appendList(lines, 'depends_on', service.dependsOn);
+    if (service.dependsOnAdvanced.trim()) {
+      appendExtraYaml(lines, service.dependsOnAdvanced);
+    } else {
+      appendList(lines, 'depends_on', service.dependsOn);
+    }
+    appendList(lines, 'profiles', service.profiles);
     appendExtraYaml(lines, service.extra);
   }
 
@@ -592,8 +611,14 @@ function appendTopLevelResources(lines: string[], key: 'networks' | 'volumes', r
       lines.push(`  ${yamlKey(resource.name)}:`);
       lines.push('    external: true');
     } else {
-      lines.push(`  ${yamlKey(resource.name)}: {}`);
+      lines.push(`  ${yamlKey(resource.name)}:`);
+      if (resource.driver.trim()) {
+        lines.push(`    driver: ${yamlScalar(resource.driver.trim())}`);
+      } else if (!resource.extra.trim()) {
+        lines[lines.length - 1] += ' {}';
+      }
     }
+    appendExtraYaml(lines, resource.extra);
   }
 }
 
@@ -638,21 +663,22 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
   if (!compose.trim()) {
     return {
       services: [blankBuilderService('app', '.', 'app')],
-      networks: [{ name: 'app', external: false }],
-      volumes: [{ name: 'data', external: false }]
+      networks: [{ name: 'app', external: false, driver: '', extra: '' }],
+      volumes: [{ name: 'data', external: false, driver: '', extra: '' }]
     };
   }
 
   const lines = compose
     .split(/\r?\n/)
     .map((raw) => raw.replace(/\s+#.*$/, ''))
-    .filter((raw) => raw.trim());
+    .filter((raw) => raw.trim() && !raw.trim().startsWith('#'));
   const services: Omit<ComposeBuilderService, 'id'>[] = [];
   const networks: Omit<ComposeBuilderNetwork, 'id'>[] = [];
   const volumes: Omit<ComposeBuilderVolume, 'id'>[] = [];
   let section: 'services' | 'networks' | 'volumes' | '' = '';
   let service: Omit<ComposeBuilderService, 'id'> | undefined;
   let listKey: ComposeBuilderListField | 'environment' | '' = '';
+  let objectKey: 'build' | 'dependsOn' | '' = '';
   let extraKey = '';
   let resource: Omit<ComposeBuilderNetwork, 'id'> | Omit<ComposeBuilderVolume, 'id'> | undefined;
 
@@ -672,6 +698,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
       }
       service = undefined;
       listKey = '';
+      objectKey = '';
       extraKey = '';
       resource = undefined;
       continue;
@@ -682,11 +709,34 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
         service = blankBuilderService(unquoteYaml(text.slice(0, -1)), '', '');
         services.push(service);
         listKey = '';
+        objectKey = '';
         extraKey = '';
         continue;
       }
 
       if (!service || indent !== 4) {
+        if (service && objectKey === 'build' && indent === 6) {
+          const [key, ...rest] = text.split(':');
+          const value = unquoteYaml(rest.join(':').trim());
+          if (key === 'context') {
+            service.build = value;
+          } else if (key === 'dockerfile') {
+            service.dockerfile = value;
+          } else {
+            service.extra = appendRawLine(service.extra, raw.slice(4));
+          }
+          continue;
+        }
+        if (service && objectKey === 'dependsOn' && indent === 6 && text.endsWith(':')) {
+          appendParsedServiceListValue(service, 'dependsOn', unquoteYaml(text.slice(0, -1)));
+          service.dependsOnAdvanced = appendRawLine(service.dependsOnAdvanced, 'depends_on:');
+          service.dependsOnAdvanced = appendRawLine(service.dependsOnAdvanced, raw.slice(4));
+          continue;
+        }
+        if (service && objectKey === 'dependsOn' && indent > 6) {
+          service.dependsOnAdvanced = appendRawLine(service.dependsOnAdvanced, raw.slice(4));
+          continue;
+        }
         if (service && extraKey && indent > 4) {
           service.extra = appendRawLine(service.extra, raw.slice(4));
           continue;
@@ -708,12 +758,21 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
       const [key, ...rest] = text.split(':');
       const value = rest.join(':').trim();
       listKey = '';
+      objectKey = '';
       extraKey = '';
-      if (['ports', 'expose', 'volumes', 'networks', 'depends_on', 'environment'].includes(key)) {
+      if (['ports', 'expose', 'volumes', 'networks', 'depends_on', 'environment', 'profiles'].includes(key)) {
         listKey = key === 'depends_on' ? 'dependsOn' : key as ComposeBuilderListField | 'environment';
         if (value && value !== '[]') {
           return null;
         }
+        if (key === 'depends_on') {
+          objectKey = 'dependsOn';
+        }
+        continue;
+      }
+
+      if (key === 'build' && !value) {
+        objectKey = 'build';
         continue;
       }
 
@@ -731,13 +790,21 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
 
     if ((section === 'networks' || section === 'volumes') && indent === 2) {
       const name = unquoteYaml(text.replace(/:\s*\{\}\s*$/, '').replace(/:\s*$/, ''));
-      resource = { name, external: false };
+      resource = { name, external: false, driver: '', extra: '' };
       (section === 'networks' ? networks : volumes).push(resource);
       continue;
     }
 
-    if ((section === 'networks' || section === 'volumes') && indent === 4 && resource && text === 'external: true') {
-      resource.external = true;
+    if ((section === 'networks' || section === 'volumes') && indent === 4 && resource) {
+      const [key, ...rest] = text.split(':');
+      const value = unquoteYaml(rest.join(':').trim());
+      if (key === 'external') {
+        resource.external = value === 'true';
+      } else if (key === 'driver') {
+        resource.driver = value;
+      } else {
+        resource.extra = appendRawLine(resource.extra, text);
+      }
       continue;
     }
   }
@@ -750,6 +817,7 @@ function blankBuilderService(name: string, build: string, networks: string): Omi
     name,
     image: '',
     build,
+    dockerfile: '',
     containerName: '',
     command: '',
     restart: 'unless-stopped',
@@ -761,12 +829,14 @@ function blankBuilderService(name: string, build: string, networks: string): Omi
     volumes: '',
     networks,
     dependsOn: '',
+    dependsOnAdvanced: '',
+    profiles: '',
     extra: ''
   };
 }
 
 function applyParsedServiceScalar(service: Omit<ComposeBuilderService, 'id'>, key: string, value: string) {
-  if (key === 'image' || key === 'build' || key === 'command' || key === 'restart' || key === 'networkMode' || key === 'containerName') {
+  if (key === 'image' || key === 'build' || key === 'dockerfile' || key === 'command' || key === 'restart' || key === 'networkMode' || key === 'containerName') {
     service[key] = value;
   } else if (key === 'network_mode') {
     service.networkMode = value;

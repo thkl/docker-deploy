@@ -133,6 +133,10 @@
               <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)" placeholder="." />
             </label>
             <label>
+              <span>Dockerfile</span>
+              <input [value]="service.dockerfile" (input)="updateBuilderService(service.id, 'dockerfile', $event)" placeholder="Dockerfile" />
+            </label>
+            <label>
               <span>Container name</span>
               <input [value]="service.containerName" (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay" />
             </label>
@@ -183,6 +187,13 @@
             <label>
               <span>Depends on</span>
               <input [value]="service.dependsOn" (input)="updateBuilderService(service.id, 'dependsOn', $event)" placeholder="db, redis" />
+              @if (service.dependsOnAdvanced) {
+                <small>Advanced dependency options are preserved.</small>
+              }
+            </label>
+            <label>
+              <span>Profiles</span>
+              <input [value]="service.profiles" (input)="updateBuilderService(service.id, 'profiles', $event)" placeholder="dev" />
             </label>
             <label>
               <span>Command</span>
@@ -206,6 +217,7 @@
           @for (network of builderNetworks(); track network.id) {
             <div class="resource-row">
               <input [value]="network.name" (input)="updateBuilderNetwork(network.id, 'name', $event)" placeholder="app" />
+              <input [value]="network.driver" (input)="updateBuilderNetwork(network.id, 'driver', $event)" placeholder="driver" />
               <label class="check-row">
                 <input type="checkbox" [checked]="network.external" (change)="updateBuilderNetwork(network.id, 'external', $event)" />
                 <span>External</span>
@@ -223,6 +235,7 @@
           @for (volume of builderVolumes(); track volume.id) {
             <div class="resource-row">
               <input [value]="volume.name" (input)="updateBuilderVolume(volume.id, 'name', $event)" placeholder="app-data" />
+              <input [value]="volume.driver" (input)="updateBuilderVolume(volume.id, 'driver', $event)" placeholder="driver" />
               <label class="check-row">
                 <input type="checkbox" [checked]="volume.external" (change)="updateBuilderVolume(volume.id, 'external', $event)" />
                 <span>External</span>
