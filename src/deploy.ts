@@ -327,9 +327,10 @@ function renderComposeOverrideScript(composeOverride: string | undefined) {
 
     return `
                 echo "--> Writing stored Docker Compose file..."
-                cat > docker-compose.updater.yml << 'UPDATER_COMPOSE_EOF'
+                cat > docker-compose.updater.source.yml << 'UPDATER_COMPOSE_EOF'
 ${composeOverride}
-UPDATER_COMPOSE_EOF`;
+UPDATER_COMPOSE_EOF
+                cp docker-compose.updater.source.yml docker-compose.updater.yml`;
 }
 
 /**

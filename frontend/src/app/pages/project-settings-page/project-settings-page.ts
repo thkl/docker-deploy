@@ -46,6 +46,24 @@ interface ComposeBuilderVolume {
 }
 
 type ComposeBuilderListField = 'ports' | 'expose' | 'volumes' | 'networks' | 'dependsOn' | 'profiles';
+type ComposeBuilderRenderableService = Omit<ComposeBuilderService, 'id'> & { id?: number };
+type ComposeBuilderRenderableNetwork = Omit<ComposeBuilderNetwork, 'id'> & { id?: number };
+type ComposeBuilderRenderableVolume = Omit<ComposeBuilderVolume, 'id'> & { id?: number };
+
+interface ComposeTraefikSettings {
+  enabled: boolean;
+  projectName: string;
+  hostname: string;
+  service: string;
+  port: string;
+  entryPoints: string;
+  certResolver: string;
+  network: string;
+  wildcardCertificate: boolean;
+  wildcardDomain: string;
+  websocket: boolean;
+  removePublishedPorts: boolean;
+}
 
 @Component({
   selector: 'app-project-settings-page',
@@ -196,6 +214,9 @@ export class ProjectSettingsPage implements OnInit {
 
     try {
       const payload = this.toPayload();
+      if (!payload) {
+        return;
+      }
       const result = this.isNew()
         ? await firstValueFrom(this.api.createProject(payload))
         : await firstValueFrom(this.api.updateProject(this.currentProjectRef || this.currentName(), payload));
@@ -386,7 +407,12 @@ export class ProjectSettingsPage implements OnInit {
       this.addBuilderService();
     }
 
-    this.form.controls.composeOverride.setValue(renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes()));
+    this.form.controls.composeOverride.setValue(renderComposeBuilder(
+      this.builderServices(),
+      this.builderNetworks(),
+      this.builderVolumes(),
+      this.currentTraefikComposeSettings()
+    ));
     this.composeMode.set('yaml');
     this.message.set('Compose override generated. Review it, then save the project.');
   }
@@ -498,8 +524,19 @@ export class ProjectSettingsPage implements OnInit {
     return this.store.projects().find((project) => project.id === projectRef || project.name === projectRef) ?? null;
   }
 
-  private toPayload(): ProjectPayload {
+  private toPayload(): ProjectPayload | null {
     const value = this.form.getRawValue();
+    const traefikSettings = this.currentTraefikComposeSettings();
+    const composeOverride = this.composeMode() === 'builder'
+      ? renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes(), traefikSettings)
+      : mergeTraefikIntoCompose(value.composeOverride.trim(), traefikSettings);
+
+    if (composeOverride === null) {
+      this.error.set('The current YAML uses Compose options the UI cannot safely update with Traefik settings. Load it into the builder or add the Traefik labels manually.');
+      return null;
+    }
+
+    this.form.controls.composeOverride.setValue(composeOverride, { emitEvent: false });
 
     return {
       name: value.name.trim(),
@@ -508,7 +545,7 @@ export class ProjectSettingsPage implements OnInit {
       token: value.token.trim(),
       deployToken: value.deployToken.trim(),
       path: value.path.trim(),
-      composeOverride: value.composeOverride.trim(),
+      composeOverride: composeOverride.trim(),
       traefikEnabled: this.traefikAvailable() && value.traefikEnabled,
       traefikHostname: value.traefikHostname.trim(),
       traefikService: value.traefikService.trim(),
@@ -523,15 +560,39 @@ export class ProjectSettingsPage implements OnInit {
     };
   }
 
+  private currentTraefikComposeSettings(): ComposeTraefikSettings {
+    const value = this.form.getRawValue();
+    return {
+      enabled: this.traefikAvailable() && value.traefikEnabled,
+      projectName: value.name.trim(),
+      hostname: value.traefikHostname.trim(),
+      service: value.traefikService.trim() || value.name.trim(),
+      port: value.traefikPort.trim(),
+      entryPoints: value.traefikEntryPoints.trim(),
+      certResolver: value.traefikCertResolver.trim(),
+      network: value.traefikNetwork.trim(),
+      wildcardCertificate: value.traefikWildcardCertificate,
+      wildcardDomain: value.traefikWildcardDomain.trim(),
+      websocket: value.traefikWebsocket,
+      removePublishedPorts: value.traefikRemovePublishedPorts,
+    };
+  }
+
   private readApiError(error: unknown) {
     const apiError = (error as { error?: { error?: string } }).error?.error;
     return apiError || 'Could not save project.';
   }
 }
 
-function renderComposeBuilder(services: ComposeBuilderService[], networks: ComposeBuilderNetwork[], volumes: ComposeBuilderVolume[]) {
+function renderComposeBuilder(
+  services: ComposeBuilderRenderableService[],
+  networks: ComposeBuilderRenderableNetwork[],
+  volumes: ComposeBuilderRenderableVolume[],
+  traefik?: ComposeTraefikSettings
+) {
   const lines = ['services:'];
-  const validServices = services.filter((service) => service.name.trim());
+  const prepared = prepareComposeBuilderForTraefik(services, networks, traefik);
+  const validServices = prepared.services.filter((service) => service.name.trim());
 
   for (const service of validServices) {
     lines.push(`  ${yamlKey(service.name)}:`);
@@ -574,9 +635,106 @@ function renderComposeBuilder(services: ComposeBuilderService[], networks: Compo
     appendExtraYaml(lines, service.extra);
   }
 
-  appendTopLevelResources(lines, 'networks', networks);
+  appendTopLevelResources(lines, 'networks', prepared.networks);
   appendTopLevelResources(lines, 'volumes', volumes);
   return `${lines.join('\n')}\n`;
+}
+
+function mergeTraefikIntoCompose(compose: string, traefik: ComposeTraefikSettings) {
+  if (!compose || !traefik.enabled) {
+    return compose;
+  }
+
+  const parsed = parseComposeBuilder(compose);
+  if (!parsed) {
+    return null;
+  }
+
+  return renderComposeBuilder(parsed.services, parsed.networks, parsed.volumes, traefik);
+}
+
+function prepareComposeBuilderForTraefik(
+  services: ComposeBuilderRenderableService[],
+  networks: ComposeBuilderRenderableNetwork[],
+  traefik?: ComposeTraefikSettings
+) {
+  if (!traefik?.enabled || !traefik.hostname || !traefik.service || !traefik.network) {
+    return { services, networks };
+  }
+
+  const serviceExists = services.some((service) => service.name.trim() === traefik.service);
+  const targetServiceName = serviceExists ? traefik.service : services.find((service) => service.name.trim())?.name.trim();
+
+  if (!targetServiceName) {
+    return { services, networks };
+  }
+
+  const labels = renderTraefikLabels({ ...traefik, service: targetServiceName });
+  const preparedServices = services.map((service) => {
+    if (service.name.trim() !== targetServiceName) {
+      return service;
+    }
+
+    const networkMode = service.networkMode.trim();
+    const canAttachNetwork = networkMode !== 'host';
+    const serviceNetworks = canAttachNetwork ? addListValue(service.networks, traefik.network) : service.networks;
+
+    return {
+      ...service,
+      ports: traefik.removePublishedPorts ? '' : service.ports,
+      networks: serviceNetworks,
+      extra: replaceGeneratedTraefikBlock(service.extra, labels),
+    };
+  });
+
+  const hasNetwork = networks.some((network) => network.name.trim() === traefik.network);
+  const preparedNetworks = hasNetwork
+    ? networks.map((network) => network.name.trim() === traefik.network ? { ...network, external: true, driver: '' } : network)
+    : [...networks, { id: -1, name: traefik.network, external: true, driver: '', extra: '' }];
+
+  return { services: preparedServices, networks: preparedNetworks };
+}
+
+function renderTraefikLabels(traefik: ComposeTraefikSettings) {
+  const routerName = traefikRouterName(traefik.projectName || traefik.service);
+  const labels = [
+    `traefik.enable=true`,
+    `traefik.providers.docker.network=${traefik.network}`,
+    `traefik.http.routers.${routerName}.rule=Host(\`${traefik.hostname}\`)`,
+    `traefik.http.routers.${routerName}.entrypoints=${traefik.entryPoints}`,
+    `traefik.http.routers.${routerName}.tls=true`,
+    `traefik.http.routers.${routerName}.tls.certresolver=${traefik.certResolver}`,
+    `traefik.http.services.${routerName}.loadbalancer.server.port=${traefik.port || '80'}`,
+  ];
+
+  if (traefik.wildcardCertificate && traefik.wildcardDomain) {
+    labels.push(`traefik.http.routers.${routerName}.tls.domains[0].main=${traefik.wildcardDomain}`);
+    labels.push(`traefik.http.routers.${routerName}.tls.domains[0].sans=*.${traefik.wildcardDomain}`);
+  }
+
+  if (traefik.websocket) {
+    labels.push(`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection=Upgrade`);
+    labels.push(`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Upgrade=websocket`);
+    labels.push(`traefik.http.routers.${routerName}.middlewares=${routerName}-websocket@docker`);
+  }
+
+  return [
+    'labels:',
+    ...labels.map((label) => `  - ${yamlScalar(label)}`)
+  ].join('\n');
+}
+
+function replaceGeneratedTraefikBlock(extra: string, labels: string) {
+  const withoutGenerated = extra
+    .replace(/\n?# updater-traefik-start[\s\S]*?# updater-traefik-end\n?/g, '\n')
+    .trim();
+  const block = `# updater-traefik-start\n${labels}\n# updater-traefik-end`;
+  return withoutGenerated ? `${withoutGenerated}\n${block}` : block;
+}
+
+function addListValue(value: string, item: string) {
+  const items = splitLines(value);
+  return items.includes(item) ? value : [...items, item].join('\n');
 }
 
 function appendList(lines: string[], key: string, value: string) {
@@ -607,7 +765,11 @@ function appendEnvironment(lines: string[], value: string) {
   }
 }
 
-function appendTopLevelResources(lines: string[], key: 'networks' | 'volumes', resources: Array<ComposeBuilderNetwork | ComposeBuilderVolume>) {
+function appendTopLevelResources(
+  lines: string[],
+  key: 'networks' | 'volumes',
+  resources: Array<ComposeBuilderRenderableNetwork | ComposeBuilderRenderableVolume>
+) {
   const valid = resources.filter((resource) => resource.name.trim());
   if (!valid.length) {
     return;
@@ -653,6 +815,10 @@ function yamlScalar(value: string) {
   }
 
   return JSON.stringify(value);
+}
+
+function traefikRouterName(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
 
 function uniqueBuilderName(baseName: string, usedNames: string[]) {
