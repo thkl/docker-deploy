@@ -6,12 +6,14 @@ import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayl
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
+import { RuntimeLogStream } from "./deploy.js";
 
 interface AgentJobState {
     id: string;
     streamToken: string;
     frames: AgentLogFrame[];
     sockets: Set<WebSocket>;
+    cancel?: () => void;
 }
 
 /**
@@ -148,7 +150,12 @@ export class AgentRuntime {
                 for (const frame of job.frames) {
                     ws.send(JSON.stringify(this.sealControllerEnvelope(frame, "job.log")));
                 }
-                ws.on("close", () => job.sockets.delete(ws));
+                ws.on("close", () => {
+                    job.sockets.delete(ws);
+                    if (job.cancel && job.sockets.size === 0) {
+                        job.cancel();
+                    }
+                });
             });
         });
     }
@@ -190,6 +197,20 @@ export class AgentRuntime {
         if (request.jobType === "runtimeLogs") {
             const payload = request.payload as RuntimeLogsJobPayload;
             return { result: await this.localAgent.runtimeLogs(payload.projectName, payload.appSettings, payload.globalSettings, payload.service, payload.tail) };
+        }
+
+        if (request.jobType === "runtimeLogsFollow") {
+            const payload = request.payload as RuntimeLogsJobPayload;
+            const stream = await this.localAgent.followRuntimeLogs(payload.projectName, payload.appSettings, payload.globalSettings, payload.service, payload.tail, {
+                onOutput: (stream, chunk) => this.emitFrame(accepted.jobId, { stream, chunk }),
+                onClose: () => this.emitFrame(accepted.jobId, { stream: "status", chunk: "Runtime log stream closed.", done: true, success: true }),
+                onFailure: (error) => this.emitFrame(accepted.jobId, { stream: "status", chunk: error.message, done: true, success: false, error: error.message })
+            }) as RuntimeLogStream;
+            const job = this.jobs.get(accepted.jobId);
+            if (job) {
+                job.cancel = () => stream.stop();
+            }
+            return {};
         }
 
         const payload = request.payload as DeleteCheckoutJobPayload;

@@ -4,6 +4,7 @@ import { Subscription } from 'rxjs';
 import { DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
+import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
 import { ProjectStore } from '../../state/project-store';
 
 @Component({
@@ -31,8 +32,10 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeLogsError = signal('');
   protected readonly selectedRuntimeService = signal('');
   protected readonly runtimeLogTail = signal(200);
+  protected readonly runtimeLogStreamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
   protected readonly streamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
   protected readonly autoScroll = signal(true);
+  protected readonly runtimeLogAutoScroll = signal(true);
   protected readonly deleteProjectTarget = signal<ProjectSummary | null>(null);
   protected readonly deleting = signal(false);
   protected readonly deleteError = signal('');
@@ -43,10 +46,13 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly selectedServer = computed(() => this.store.selectedProjectServer());
 
   private readonly deploymentStream = inject(DeploymentStreamService);
+  private readonly runtimeLogStream = inject(RuntimeLogStreamService);
   private streamSubscription: Subscription | undefined;
+  private runtimeLogSubscription: Subscription | undefined;
   private activeProjectRef = '';
 
   @ViewChild('deployLog') private deployLog?: ElementRef<HTMLElement>;
+  @ViewChild('runtimeLog') private runtimeLog?: ElementRef<HTMLElement>;
 
   ngOnInit() {
     this.route.paramMap.subscribe((params) => {
@@ -62,6 +68,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.disconnectDeploymentStream();
+    this.disconnectRuntimeLogStream();
   }
 
   protected deploy(projectRef: string) {
@@ -238,16 +245,20 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   }
 
   protected updateRuntimeService(event: Event) {
+    this.disconnectRuntimeLogStream();
     this.selectedRuntimeService.set((event.target as HTMLSelectElement).value);
     this.runtimeLogs.set(null);
     this.runtimeLogsError.set('');
   }
 
   protected updateRuntimeTail(event: Event) {
+    this.disconnectRuntimeLogStream();
     this.runtimeLogTail.set(Number((event.target as HTMLSelectElement).value) || 200);
+    this.runtimeLogs.set(null);
   }
 
   protected loadRuntimeLogs(projectRef: string) {
+    this.disconnectRuntimeLogStream();
     const service = this.selectedRuntimeService() || this.runtimeStatus()?.services[0]?.service || '';
     if (!service) {
       this.runtimeLogsError.set('Select a running service first.');
@@ -264,6 +275,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         }
 
         this.runtimeLogs.set(logs);
+        this.queueRuntimeLogScroll();
         this.loadingRuntimeLogs.set(false);
       },
       error: (error) => {
@@ -275,6 +287,44 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.runtimeLogsError.set(error?.error?.error || 'Could not load runtime logs.');
       },
     });
+  }
+
+  protected toggleRuntimeLogStream(projectRef: string) {
+    if (this.runtimeLogStreamState() === 'live' || this.runtimeLogStreamState() === 'connecting') {
+      this.disconnectRuntimeLogStream();
+      return;
+    }
+
+    this.connectRuntimeLogStream(projectRef);
+  }
+
+  protected runtimeLogStreamLabel() {
+    return this.runtimeLogStreamState() === 'live'
+      ? 'Live'
+      : this.runtimeLogStreamState() === 'connecting'
+        ? 'Connecting'
+        : this.runtimeLogStreamState() === 'error'
+          ? 'Stream lost'
+          : 'Offline';
+  }
+
+  protected toggleRuntimeLogAutoScroll(event: Event) {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.runtimeLogAutoScroll.set(checked);
+
+    if (checked) {
+      this.scrollRuntimeLogToBottom();
+    }
+  }
+
+  protected onRuntimeLogScroll() {
+    const element = this.runtimeLog?.nativeElement;
+    if (!element) {
+      return;
+    }
+
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    this.runtimeLogAutoScroll.set(distanceFromBottom < 48);
   }
 
   private loadLatestDeployment(projectRef: string, projectName = projectRef) {
@@ -377,7 +427,78 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.streamState.set('closed');
   }
 
+  private connectRuntimeLogStream(projectRef: string) {
+    const service = this.selectedRuntimeService() || this.runtimeStatus()?.services[0]?.service || '';
+    if (!service) {
+      this.runtimeLogsError.set('Select a running service first.');
+      return;
+    }
+
+    this.disconnectRuntimeLogStream();
+    this.runtimeLogsError.set('');
+    this.loadingRuntimeLogs.set(false);
+    this.runtimeLogStreamState.set('connecting');
+    this.runtimeLogs.set({
+      service,
+      containerId: 'live',
+      tail: this.runtimeLogTail(),
+      checkedAt: new Date().toISOString(),
+      output: ''
+    });
+
+    this.runtimeLogSubscription = this.runtimeLogStream.follow(projectRef, service, this.runtimeLogTail()).subscribe({
+      next: (event) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        if (event.type === 'status') {
+          this.runtimeLogStreamState.set(event.status);
+          return;
+        }
+
+        if (event.type === 'error') {
+          this.runtimeLogsError.set(event.error);
+          this.runtimeLogStreamState.set('error');
+          return;
+        }
+
+        const current = this.runtimeLogs();
+        this.runtimeLogs.set({
+          service,
+          containerId: current?.containerId || 'live',
+          tail: this.runtimeLogTail(),
+          checkedAt: current?.checkedAt || new Date().toISOString(),
+          output: `${current?.output || ''}${event.stream === 'stderr' ? '[stderr] ' : ''}${event.chunk}`
+        });
+        this.queueRuntimeLogScroll();
+      },
+      error: () => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.runtimeLogStreamState.set('error');
+        this.runtimeLogsError.set('Live runtime log stream disconnected.');
+      },
+      complete: () => {
+        if (this.activeProjectRef !== projectRef || this.runtimeLogStreamState() === 'error') {
+          return;
+        }
+
+        this.runtimeLogStreamState.set('closed');
+      },
+    });
+  }
+
+  private disconnectRuntimeLogStream() {
+    this.runtimeLogSubscription?.unsubscribe();
+    this.runtimeLogSubscription = undefined;
+    this.runtimeLogStreamState.set('closed');
+  }
+
   private resetProjectState(projectRef: string) {
+    this.disconnectRuntimeLogStream();
     this.activeProjectRef = projectRef;
     this.latestDeployment.set(null);
     this.runtimeStatus.set(null);
@@ -406,8 +527,23 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     window.setTimeout(() => this.scrollLogToBottom());
   }
 
+  private queueRuntimeLogScroll() {
+    if (!this.runtimeLogAutoScroll()) {
+      return;
+    }
+
+    window.setTimeout(() => this.scrollRuntimeLogToBottom());
+  }
+
   private scrollLogToBottom() {
     const element = this.deployLog?.nativeElement;
+    if (element) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }
+
+  private scrollRuntimeLogToBottom() {
+    const element = this.runtimeLog?.nativeElement;
     if (element) {
       element.scrollTop = element.scrollHeight;
     }

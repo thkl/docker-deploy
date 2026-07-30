@@ -1,9 +1,9 @@
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
-import { DeploymentHooks } from "./deploy.js";
+import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
 import { GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeStatus, ServerCapabilities } from "./types.js";
 
-export type AgentJobType = "deploy" | "importCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "inspectStatus" | "runtimeLogs";
+export type AgentJobType = "deploy" | "importCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow";
 
 export interface DeployJobPayload {
     projectName: string;
@@ -57,4 +57,5 @@ export interface AgentClient {
     detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]>;
     inspectStatus(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<RuntimeStatus>;
     runtimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number): Promise<RuntimeLogs>;
+    followRuntimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number, hooks?: RuntimeLogHooks): Promise<RuntimeLogStream>;
 }

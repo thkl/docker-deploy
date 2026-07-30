@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
@@ -17,6 +17,16 @@ export interface DeploymentHooks {
     onOutput?: (stream: "stdout" | "stderr", chunk: string) => void;
     onSuccess?: () => void;
     onFailure?: (error: Error & { code?: number | string }) => void;
+}
+
+export interface RuntimeLogHooks {
+    onOutput?: (stream: "stdout" | "stderr", chunk: string) => void;
+    onClose?: () => void;
+    onFailure?: (error: Error) => void;
+}
+
+export interface RuntimeLogStream {
+    stop(): void;
 }
 
 /**
@@ -281,6 +291,32 @@ EOF`;
 }
 
 /**
+ * Follows runtime logs for one Compose service/container until stopped.
+ */
+export async function followRuntimeLogs(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number, hooks: RuntimeLogHooks = {}): Promise<RuntimeLogStream> {
+    const safeTail = Math.min(Math.max(Math.trunc(tail) || 200, 10), 2000);
+    const status = await inspectProjectStatus(repoName, appSettings, globalSettings);
+    const match = status.services.find((candidate) => candidate.service === service || candidate.containerId === service || candidate.containerName === service);
+    if (!match?.containerId) {
+        throw new Error("Service container was not found.");
+    }
+
+    const worker = spawn("docker", [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock",
+        "alpine:latest",
+        "sh",
+        "-c",
+        `apk add --no-cache docker-cli > /dev/null 2>&1 && docker logs --follow --tail ${safeTail} ${shellQuote(match.containerId)}`
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+
+    return wireRuntimeLogWorker(worker, hooks);
+}
+
+/**
  * Builds the shell block that writes a stored Docker Compose override into the
  * project checkout before compose commands run.
  */
@@ -356,6 +392,48 @@ function resolveHostPath(value: string) {
     }
 
     return value;
+}
+
+function wireRuntimeLogWorker(worker: ChildProcess, hooks: RuntimeLogHooks): RuntimeLogStream {
+    let stopped = false;
+    let failed = false;
+
+    worker.stdout?.on("data", (chunk: Buffer | string) => hooks.onOutput?.("stdout", String(chunk)));
+    worker.stderr?.on("data", (chunk: Buffer | string) => hooks.onOutput?.("stderr", String(chunk)));
+    worker.on("error", (error) => {
+        failed = true;
+        hooks.onFailure?.(error);
+    });
+    worker.on("close", (code, signal) => {
+        if (failed) {
+            return;
+        }
+
+        if (!stopped && code && code !== 0) {
+            hooks.onFailure?.(new Error(`Runtime log stream exited with code ${code}${signal ? ` (${signal})` : ""}.`));
+            return;
+        }
+
+        hooks.onClose?.();
+    });
+
+    return {
+        stop() {
+            stopped = true;
+            if (!worker.killed) {
+                worker.kill("SIGTERM");
+                windowedKill(worker);
+            }
+        }
+    };
+}
+
+function windowedKill(worker: ChildProcess) {
+    setTimeout(() => {
+        if (worker.exitCode === null && worker.signalCode === null) {
+            worker.kill("SIGKILL");
+        }
+    }, 1500).unref();
 }
 
 type DockerPortBindings = Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;

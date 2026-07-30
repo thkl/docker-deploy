@@ -31,7 +31,6 @@ export class DeploymentStreamHub {
             const match = url.pathname.match(/^\/api\/projects\/([^/]+)\/deployments\/stream$/);
 
             if (!match) {
-                socket.destroy();
                 return;
             }
 

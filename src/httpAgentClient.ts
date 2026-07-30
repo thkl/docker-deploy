@@ -3,7 +3,7 @@ import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCh
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
-import { DeploymentHooks } from "./deploy.js";
+import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
 import { ControllerKeyState } from "./keyStore.js";
 import { GlobalSettings, ProjectSettings, ServerRecord } from "./types.js";
 
@@ -96,6 +96,17 @@ export class HttpAgentClient implements AgentClient {
     }
 
     /**
+     * Follows runtime logs through a remote target server until stopped.
+     */
+    async followRuntimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number, hooks: RuntimeLogHooks = {}): Promise<RuntimeLogStream> {
+        const accepted = await this.postJob({
+            jobType: "runtimeLogsFollow",
+            payload: { projectName, appSettings, globalSettings, service, tail } satisfies RuntimeLogsJobPayload
+        });
+        return this.connectRuntimeLogStream(accepted, hooks);
+    }
+
+    /**
      * Sends one encrypted job command to the agent.
      */
     private async postJob<T extends object = object>(request: AgentJobRequest) {
@@ -164,6 +175,56 @@ export class HttpAgentClient implements AgentClient {
                 hooks.onFailure?.(failure);
             }
         });
+    }
+
+    /**
+     * Opens a remote runtime log stream and returns a cancellation handle.
+     */
+    private connectRuntimeLogStream(accepted: AgentJobAccepted, hooks: RuntimeLogHooks): RuntimeLogStream {
+        const streamUrl = new URL(`${this.requireBaseUrl()}/agent/jobs/${accepted.jobId}/logs`);
+        streamUrl.protocol = streamUrl.protocol === "https:" ? "wss:" : "ws:";
+        streamUrl.searchParams.set("streamToken", accepted.streamToken);
+
+        const socket = new WebSocket(streamUrl);
+        let stopped = false;
+        let completed = false;
+        socket.on("message", (raw) => {
+            try {
+                const frame = this.openAgentEnvelope<AgentLogFrame>(JSON.parse(String(raw)) as SecureEnvelope);
+                if (frame.stream === "stdout" || frame.stream === "stderr") {
+                    hooks.onOutput?.(frame.stream, frame.chunk);
+                }
+
+                if (frame.done) {
+                    completed = true;
+                    if (!frame.success) {
+                        hooks.onFailure?.(new Error(frame.error || frame.chunk));
+                    }
+                    hooks.onClose?.();
+                    socket.close();
+                }
+            } catch (error) {
+                hooks.onFailure?.(new Error(error instanceof Error ? error.message : "Could not read remote runtime log frame."));
+                socket.close();
+            }
+        });
+        socket.on("error", (error) => {
+            if (!stopped) {
+                hooks.onFailure?.(error);
+            }
+        });
+        socket.on("close", () => {
+            if (!stopped && !completed) {
+                hooks.onClose?.();
+            }
+        });
+
+        return {
+            stop() {
+                stopped = true;
+                socket.close();
+            }
+        };
     }
 
     /**

@@ -156,21 +156,35 @@
       </div>
 
       <div class="deploy-head-actions">
-        <select class="secondary" [value]="selectedRuntimeService()" (change)="updateRuntimeService($event)" [disabled]="loadingRuntimeStatus() || loadingRuntimeLogs() || !runtimeStatus()?.services?.length">
+        <span
+          class="stream-chip"
+          [class.live]="runtimeLogStreamState() === 'live'"
+          [class.error]="runtimeLogStreamState() === 'error'"
+        >
+          {{ runtimeLogStreamLabel() }}
+        </span>
+        <select class="secondary" [value]="selectedRuntimeService()" (change)="updateRuntimeService($event)" [disabled]="loadingRuntimeStatus() || loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed' || !runtimeStatus()?.services?.length">
           @for (service of runtimeStatus()?.services || []; track service.containerId || service.containerName || service.service) {
             <option [value]="service.service">{{ service.service }}</option>
           } @empty {
             <option value="">No services</option>
           }
         </select>
-        <select class="secondary" [value]="runtimeLogTail()" (change)="updateRuntimeTail($event)" [disabled]="loadingRuntimeLogs()">
+        <select class="secondary" [value]="runtimeLogTail()" (change)="updateRuntimeTail($event)" [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed'">
           <option value="100">100 lines</option>
           <option value="200">200 lines</option>
           <option value="500">500 lines</option>
           <option value="1000">1000 lines</option>
         </select>
-        <button type="button" class="secondary" (click)="loadRuntimeLogs(project.id)" [disabled]="loadingRuntimeLogs() || !runtimeStatus()?.services?.length">
+        <label class="auto-scroll">
+          <input type="checkbox" [checked]="runtimeLogAutoScroll()" (change)="toggleRuntimeLogAutoScroll($event)" />
+          <span>Auto-scroll</span>
+        </label>
+        <button type="button" class="secondary" (click)="loadRuntimeLogs(project.id)" [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed' || !runtimeStatus()?.services?.length">
           {{ loadingRuntimeLogs() ? 'Loading...' : 'Load logs' }}
+        </button>
+        <button type="button" class="secondary" (click)="toggleRuntimeLogStream(project.id)" [disabled]="loadingRuntimeLogs() || !runtimeStatus()?.services?.length">
+          {{ runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live' : 'Live' }}
         </button>
       </div>
     </div>
@@ -182,7 +196,7 @@
     @if (loadingRuntimeLogs()) {
       <div class="empty-log">Loading runtime logs...</div>
     } @else if (runtimeLogs(); as logs) {
-      <pre class="deploy-log">{{ logs.output || 'No runtime log output returned.' }}</pre>
+      <pre #runtimeLog class="deploy-log" (scroll)="onRuntimeLogScroll()">{{ logs.output || 'No runtime log output returned.' }}</pre>
     } @else {
       <div class="empty-log">Select a service and load recent runtime logs.</div>
     }
