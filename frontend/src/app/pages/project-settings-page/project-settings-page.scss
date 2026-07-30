@@ -220,6 +220,21 @@ textarea {
   min-width: 0;
 }
 
+.builder-diagnostics {
+  background: color-mix(in srgb, var(--danger), transparent 92%);
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 62%);
+  border-radius: 7px;
+  color: var(--danger);
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.builder-diagnostics p {
+  color: inherit;
+  margin: 0;
+}
+
 .builder-head,
 .builder-service-head,
 .section-toolbar,
@@ -290,6 +305,19 @@ fieldset small {
 
 .resource-row input {
   min-width: 0;
+}
+
+.remove-action {
+  align-items: end;
+  display: grid;
+  gap: 0.25rem;
+  justify-items: end;
+}
+
+.remove-action small {
+  color: var(--muted);
+  max-width: 260px;
+  text-align: right;
 }
 
 .switch,

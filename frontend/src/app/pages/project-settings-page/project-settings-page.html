@@ -133,6 +133,14 @@
           </nav>
 
           <div class="builder-workspace">
+            @if (builderDiagnostics().length) {
+              <div class="builder-diagnostics">
+                @for (diagnostic of builderDiagnostics(); track diagnostic) {
+                  <p>{{ diagnostic }}</p>
+                }
+              </div>
+            }
+
             @if (builderSection() === 'services') {
               <div class="section-toolbar">
                 <div>
@@ -146,7 +154,12 @@
                 <section class="builder-service">
                   <div class="builder-service-head">
                     <strong>{{ service.name || 'Unnamed service' }}</strong>
-                    <button type="button" class="secondary" (click)="removeBuilderService(service.id)" [disabled]="builderServices().length === 1">Remove</button>
+                    <div class="remove-action">
+                      <button type="button" class="secondary" (click)="removeBuilderService(service.id)" [disabled]="!canRemoveBuilderService(service)">Remove</button>
+                      @if (serviceRemoveReason(service)) {
+                        <small>{{ serviceRemoveReason(service) }}</small>
+                      }
+                    </div>
                   </div>
 
                   <div class="field-grid">
@@ -285,7 +298,12 @@
                     <input type="checkbox" [checked]="network.external" (change)="updateBuilderNetwork(network.id, 'external', $event)" />
                     <span>External</span>
                   </label>
-                  <button type="button" class="secondary" (click)="removeBuilderNetwork(network.id)">Remove</button>
+                  <div class="remove-action">
+                    <button type="button" class="secondary" (click)="removeBuilderNetwork(network.id)" [disabled]="!canRemoveBuilderNetwork(network)">Remove</button>
+                    @if (networkRemoveReason(network)) {
+                      <small>{{ networkRemoveReason(network) }}</small>
+                    }
+                  </div>
                 </div>
               }
             }
@@ -307,7 +325,12 @@
                     <input type="checkbox" [checked]="volume.external" (change)="updateBuilderVolume(volume.id, 'external', $event)" />
                     <span>External</span>
                   </label>
-                  <button type="button" class="secondary" (click)="removeBuilderVolume(volume.id)">Remove</button>
+                  <div class="remove-action">
+                    <button type="button" class="secondary" (click)="removeBuilderVolume(volume.id)" [disabled]="!canRemoveBuilderVolume(volume)">Remove</button>
+                    @if (volumeRemoveReason(volume)) {
+                      <small>{{ volumeRemoveReason(volume) }}</small>
+                    }
+                  </div>
                 </div>
               }
             }

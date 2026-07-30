@@ -93,6 +93,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly error = signal('');
   protected readonly traefikEnabled = signal(false);
   protected readonly wildcardCertificate = signal(false);
+  private readonly traefikFormRevision = signal(0);
   protected readonly selectedServerId = signal('local');
   protected readonly servers = this.store.servers;
   protected readonly traefikAvailable = computed(() => {
@@ -103,6 +104,58 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly submitLabel = computed(() => (this.isNew() ? 'Create project' : 'Save'));
   protected readonly builderServiceNames = computed(() => this.builderServices().map((service) => service.name.trim()).filter(Boolean));
   protected readonly builderNetworkNames = computed(() => this.builderNetworks().map((network) => network.name.trim()).filter(Boolean));
+  protected readonly builderServiceReferences = computed(() => {
+    const refs = new Map<string, string[]>();
+    for (const service of this.builderServices()) {
+      const serviceName = service.name.trim();
+      if (!serviceName) {
+        continue;
+      }
+
+      for (const dependency of splitLines(service.dependsOn)) {
+        refs.set(dependency, [...(refs.get(dependency) ?? []), `${serviceName} depends_on`]);
+      }
+    }
+
+    const traefik = this.currentTraefikComposeSettings();
+    if (traefik.enabled && traefik.service) {
+      refs.set(traefik.service, [...(refs.get(traefik.service) ?? []), 'Traefik target']);
+    }
+
+    return refs;
+  });
+  protected readonly builderNetworkReferences = computed(() => {
+    const refs = new Map<string, string[]>();
+    for (const service of this.builderServices()) {
+      const serviceName = service.name.trim() || 'Unnamed service';
+      for (const network of splitLines(service.networks)) {
+        refs.set(network, [...(refs.get(network) ?? []), `${serviceName} network`]);
+      }
+    }
+
+    const traefik = this.currentTraefikComposeSettings();
+    if (traefik.enabled && traefik.network) {
+      refs.set(traefik.network, [...(refs.get(traefik.network) ?? []), 'Traefik network']);
+    }
+
+    return refs;
+  });
+  protected readonly builderVolumeReferences = computed(() => {
+    const refs = new Map<string, string[]>();
+    const volumeNames = this.builderVolumes().map((volume) => volume.name.trim()).filter(Boolean);
+    for (const service of this.builderServices()) {
+      const serviceName = service.name.trim() || 'Unnamed service';
+      for (const mount of splitLines(service.volumes)) {
+        const source = mount.split(':')[0]?.trim();
+        if (source && volumeNames.includes(source)) {
+          refs.set(source, [...(refs.get(source) ?? []), `${serviceName} volume`]);
+        }
+      }
+    }
+
+    return refs;
+  });
+  protected readonly builderDiagnostics = computed(() => this.buildBuilderDiagnostics());
   private readonly globalDefaults = signal<GlobalSettings>({
     dataRoot: '/root/docker-apps',
     defaultTraefikNetwork: 'proxy',
@@ -144,6 +197,16 @@ export class ProjectSettingsPage implements OnInit {
     this.form.controls.traefikWildcardCertificate.valueChanges.pipe(takeUntilDestroyed()).subscribe((enabled) => {
       this.wildcardCertificate.set(enabled);
     });
+    for (const control of [
+      this.form.controls.traefikHostname,
+      this.form.controls.traefikService,
+      this.form.controls.traefikPort,
+      this.form.controls.traefikNetwork,
+    ]) {
+      control.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+        this.traefikFormRevision.update((revision) => revision + 1);
+      });
+    }
     this.form.controls.serverId.valueChanges.pipe(takeUntilDestroyed()).subscribe((serverId) => {
       this.selectedServerId.set(serverId || 'local');
     });
@@ -369,6 +432,19 @@ export class ProjectSettingsPage implements OnInit {
     this.builderServices.update((services) => services.filter((service) => service.id !== id));
   }
 
+  protected canRemoveBuilderService(service: ComposeBuilderService) {
+    return this.builderServices().length > 1 && this.builderServiceReferences().get(service.name.trim()) === undefined;
+  }
+
+  protected serviceRemoveReason(service: ComposeBuilderService) {
+    if (this.builderServices().length === 1) {
+      return 'At least one service is required.';
+    }
+
+    const refs = this.builderServiceReferences().get(service.name.trim()) ?? [];
+    return refs.length ? `Referenced by ${refs.join(', ')}.` : '';
+  }
+
   protected updateBuilderService(id: number, field: keyof ComposeBuilderService, event: Event) {
     const target = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
     const value = field === 'init' && target instanceof HTMLInputElement ? target.checked : target.value;
@@ -405,6 +481,15 @@ export class ProjectSettingsPage implements OnInit {
     this.builderNetworks.update((networks) => networks.filter((network) => network.id !== id));
   }
 
+  protected canRemoveBuilderNetwork(network: ComposeBuilderNetwork) {
+    return this.builderNetworkReferences().get(network.name.trim()) === undefined;
+  }
+
+  protected networkRemoveReason(network: ComposeBuilderNetwork) {
+    const refs = this.builderNetworkReferences().get(network.name.trim()) ?? [];
+    return refs.length ? `Referenced by ${refs.join(', ')}.` : '';
+  }
+
   protected updateBuilderNetwork(id: number, field: keyof ComposeBuilderNetwork, event: Event) {
     const target = event.target as HTMLInputElement;
     const value = field === 'external' ? target.checked : target.value;
@@ -420,6 +505,15 @@ export class ProjectSettingsPage implements OnInit {
 
   protected removeBuilderVolume(id: number) {
     this.builderVolumes.update((volumes) => volumes.filter((volume) => volume.id !== id));
+  }
+
+  protected canRemoveBuilderVolume(volume: ComposeBuilderVolume) {
+    return this.builderVolumeReferences().get(volume.name.trim()) === undefined;
+  }
+
+  protected volumeRemoveReason(volume: ComposeBuilderVolume) {
+    const refs = this.builderVolumeReferences().get(volume.name.trim()) ?? [];
+    return refs.length ? `Referenced by ${refs.join(', ')}.` : '';
   }
 
   protected updateBuilderVolume(id: number, field: keyof ComposeBuilderVolume, event: Event) {
@@ -554,6 +648,11 @@ export class ProjectSettingsPage implements OnInit {
   private toPayload(): ProjectPayload | null {
     if (this.composeMode() === 'builder') {
       this.normalizeBuilderTraefikRefs();
+      const diagnostics = this.builderDiagnostics();
+      if (diagnostics.length) {
+        this.error.set(diagnostics[0]);
+        return null;
+      }
     }
     const value = this.form.getRawValue();
     const traefikSettings = this.currentTraefikComposeSettings();
@@ -591,16 +690,17 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   private currentTraefikComposeSettings(): ComposeTraefikSettings {
+    this.traefikFormRevision();
     const value = this.form.getRawValue();
     return {
       enabled: this.traefikAvailable() && value.traefikEnabled,
       projectName: value.name.trim(),
       hostname: value.traefikHostname.trim(),
-      service: value.traefikService.trim() || value.name.trim(),
+      service: value.traefikService.trim() || this.builderServiceNames()[0] || value.name.trim(),
       port: value.traefikPort.trim(),
       entryPoints: value.traefikEntryPoints.trim(),
       certResolver: value.traefikCertResolver.trim(),
-      network: value.traefikNetwork.trim(),
+      network: value.traefikNetwork.trim() || this.builderNetworkNames()[0] || this.globalDefaults().defaultTraefikNetwork,
       wildcardCertificate: value.traefikWildcardCertificate,
       wildcardDomain: value.traefikWildcardDomain.trim(),
       websocket: value.traefikWebsocket,
@@ -612,14 +712,72 @@ export class ProjectSettingsPage implements OnInit {
     const serviceNames = this.builderServiceNames();
     const networkNames = this.builderNetworkNames();
     const value = this.form.getRawValue();
+    let changed = false;
 
     if (serviceNames.length && !serviceNames.includes(value.traefikService.trim())) {
       this.form.controls.traefikService.setValue(serviceNames[0], { emitEvent: false });
+      changed = true;
     }
 
     if (networkNames.length && !networkNames.includes(value.traefikNetwork.trim())) {
       this.form.controls.traefikNetwork.setValue(networkNames[0], { emitEvent: false });
+      changed = true;
     }
+
+    if (changed) {
+      this.traefikFormRevision.update((revision) => revision + 1);
+    }
+  }
+
+  private buildBuilderDiagnostics() {
+    const diagnostics: string[] = [];
+    const serviceNames = this.builderServiceNames();
+    const networkNames = this.builderNetworkNames();
+    const volumeNames = this.builderVolumes().map((volume) => volume.name.trim()).filter(Boolean);
+
+    appendDuplicateNameDiagnostics(diagnostics, 'service', serviceNames);
+    appendDuplicateNameDiagnostics(diagnostics, 'network', networkNames);
+    appendDuplicateNameDiagnostics(diagnostics, 'volume', volumeNames);
+
+    for (const service of this.builderServices()) {
+      const serviceName = service.name.trim() || 'Unnamed service';
+      if (service.networkMode.trim() && splitLines(service.networks).length) {
+        diagnostics.push(`${serviceName} cannot use network_mode and selected networks together.`);
+      }
+
+      for (const network of splitLines(service.networks)) {
+        if (!networkNames.includes(network)) {
+          diagnostics.push(`${serviceName} references missing network ${network}.`);
+        }
+      }
+
+      for (const dependency of splitLines(service.dependsOn)) {
+        if (!serviceNames.includes(dependency)) {
+          diagnostics.push(`${serviceName} depends on missing service ${dependency}.`);
+        }
+      }
+    }
+
+    const traefik = this.currentTraefikComposeSettings();
+    if (traefik.enabled) {
+      const target = this.builderServices().find((service) => service.name.trim() === traefik.service);
+      if (!traefik.hostname) {
+        diagnostics.push('Traefik needs a hostname.');
+      }
+      if (!traefik.port) {
+        diagnostics.push('Traefik needs the container port.');
+      }
+      if (!target) {
+        diagnostics.push('Traefik target service is missing.');
+      } else if (target.networkMode.trim() === 'host') {
+        diagnostics.push(`${target.name} uses host networking, so Traefik cannot attach it to a Docker network.`);
+      }
+      if (!networkNames.includes(traefik.network)) {
+        diagnostics.push('Traefik Docker network is missing.');
+      }
+    }
+
+    return diagnostics;
   }
 
   private readApiError(error: unknown) {
@@ -887,6 +1045,18 @@ function splitLines(value: string) {
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function appendDuplicateNameDiagnostics(diagnostics: string[], label: string, names: string[]) {
+  const seen = new Set<string>();
+  const reported = new Set<string>();
+  for (const name of names) {
+    if (seen.has(name) && !reported.has(name)) {
+      diagnostics.push(`Duplicate ${label} name ${name}.`);
+      reported.add(name);
+    }
+    seen.add(name);
+  }
 }
 
 function yamlKey(value: string) {
