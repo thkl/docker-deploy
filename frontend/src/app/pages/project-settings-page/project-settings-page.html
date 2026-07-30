@@ -133,6 +133,10 @@
               <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)" placeholder="." />
             </label>
             <label>
+              <span>Container name</span>
+              <input [value]="service.containerName" (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay" />
+            </label>
+            <label>
               <span>Restart policy</span>
               <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)">
                 <option value="">none</option>
@@ -141,6 +145,14 @@
                 <option value="on-failure">on-failure</option>
                 <option value="no">no</option>
               </select>
+            </label>
+            <label>
+              <span>Network mode</span>
+              <input [value]="service.networkMode" (input)="updateBuilderService(service.id, 'networkMode', $event)" placeholder="host" />
+            </label>
+            <label class="check-row inline-check">
+              <input type="checkbox" [checked]="service.init" (change)="updateBuilderService(service.id, 'init', $event)" />
+              <span>Init process</span>
             </label>
           </div>
 
@@ -177,6 +189,11 @@
               <input [value]="service.command" (input)="updateBuilderService(service.id, 'command', $event)" placeholder="npm start" />
             </label>
           </div>
+
+          <label class="compose-field">
+            <span>Advanced service YAML</span>
+            <textarea [value]="service.extra" (input)="updateBuilderService(service.id, 'extra', $event)" placeholder="healthcheck:&#10;  test: ['CMD', 'curl', '-f', 'http://localhost']"></textarea>
+          </label>
         </section>
       }
 
