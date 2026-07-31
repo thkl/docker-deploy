@@ -246,30 +246,84 @@
                     </fieldset>
                   </div>
 
-                  <div class="builder-textareas">
-                    <label>
-                      <span>Ports</span>
-                      <textarea [value]="service.ports" (input)="updateBuilderService(service.id, 'ports', $event)" placeholder="8080:80"></textarea>
-                    </label>
-                    <label>
-                      <span>Environment</span>
-                      <textarea [value]="service.environment" (input)="updateBuilderService(service.id, 'environment', $event)" placeholder="NODE_ENV=production"></textarea>
-                    </label>
-                    <label>
-                      <span>Volumes</span>
-                      <textarea [value]="service.volumes" (input)="updateBuilderService(service.id, 'volumes', $event)" placeholder="app-data:/app/data"></textarea>
-                    </label>
-                    <label>
-                      <span>Expose container ports</span>
-                      <textarea [value]="service.expose" (input)="updateBuilderService(service.id, 'expose', $event)" placeholder="3000"></textarea>
-                    </label>
+                  <div class="structured-editors">
+                    <section class="list-editor">
+                      <div class="list-editor-head">
+                        <span>Ports</span>
+                        <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'ports', '8080:80')">Add</button>
+                      </div>
+                      @for (port of builderServiceListItems(service, 'ports'); track $index) {
+                        <div class="list-row">
+                          <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'ports', $index, $event)" placeholder="8080:80" />
+                          <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'ports', $index)">Remove</button>
+                        </div>
+                      } @empty {
+                        <small>No published ports configured.</small>
+                      }
+                    </section>
+
+                    <section class="list-editor">
+                      <div class="list-editor-head">
+                        <span>Environment</span>
+                        <button type="button" class="secondary compact" (click)="addBuilderEnvironmentEntry(service.id)">Add</button>
+                      </div>
+                      @for (entry of builderEnvironmentEntries(service); track $index) {
+                        <div class="list-row env-row">
+                          <input [value]="entry.key" (input)="updateBuilderEnvironmentEntry(service.id, $index, 'key', $event)" placeholder="NODE_ENV" />
+                          <input [value]="entry.value" (input)="updateBuilderEnvironmentEntry(service.id, $index, 'value', $event)" placeholder="production" />
+                          <button type="button" class="secondary compact" (click)="removeBuilderEnvironmentEntry(service.id, $index)">Remove</button>
+                        </div>
+                      } @empty {
+                        <small>No environment variables configured.</small>
+                      }
+                    </section>
+
+                    <section class="list-editor">
+                      <div class="list-editor-head">
+                        <span>Volumes</span>
+                        <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'volumes', './data:/data')">Add</button>
+                      </div>
+                      @for (volume of builderServiceListItems(service, 'volumes'); track $index) {
+                        <div class="list-row">
+                          <input [value]="volume" (input)="updateBuilderServiceListItem(service.id, 'volumes', $index, $event)" placeholder="app-data:/app/data" />
+                          <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'volumes', $index)">Remove</button>
+                        </div>
+                      } @empty {
+                        <small>No volume mounts configured.</small>
+                      }
+                    </section>
+
+                    <section class="list-editor">
+                      <div class="list-editor-head">
+                        <span>Expose container ports</span>
+                        <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'expose', '3000')">Add</button>
+                      </div>
+                      @for (port of builderServiceListItems(service, 'expose'); track $index) {
+                        <div class="list-row">
+                          <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'expose', $index, $event)" placeholder="3000" />
+                          <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'expose', $index)">Remove</button>
+                        </div>
+                      } @empty {
+                        <small>No exposed container ports configured.</small>
+                      }
+                    </section>
                   </div>
 
                   <div class="field-grid">
-                    <label>
-                      <span>Profiles</span>
-                      <input [value]="service.profiles" (input)="updateBuilderService(service.id, 'profiles', $event)" placeholder="dev" />
-                    </label>
+                    <section class="list-editor inline-list-editor">
+                      <div class="list-editor-head">
+                        <span>Profiles</span>
+                        <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'profiles', 'dev')">Add</button>
+                      </div>
+                      @for (profile of builderServiceListItems(service, 'profiles'); track $index) {
+                        <div class="list-row">
+                          <input [value]="profile" (input)="updateBuilderServiceListItem(service.id, 'profiles', $index, $event)" placeholder="dev" />
+                          <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'profiles', $index)">Remove</button>
+                        </div>
+                      } @empty {
+                        <small>No profiles configured.</small>
+                      }
+                    </section>
                     <label>
                       <span>Command</span>
                       <input [value]="service.command" (input)="updateBuilderService(service.id, 'command', $event)" placeholder="npm start" />

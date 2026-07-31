@@ -14,27 +14,49 @@ export class DeploymentStreamService {
 
   streamLatest(projectRef: string) {
     return new Observable<DeploymentRecord | null>((subscriber) => {
-      const websocket = new WebSocket(this.streamUrl(projectRef));
+      let websocket: WebSocket | undefined;
+      let reconnectTimer: ReturnType<typeof window.setTimeout> | undefined;
+      let reconnectDelay = 1000;
+      let closed = false;
 
-      websocket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data) as DeploymentStreamMessage;
-          subscriber.next(message.deployment);
-        } catch (error) {
-          subscriber.error(error);
-        }
+      const connect = () => {
+        websocket = new WebSocket(this.streamUrl(projectRef));
+
+        websocket.onopen = () => {
+          reconnectDelay = 1000;
+        };
+
+        websocket.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data) as DeploymentStreamMessage;
+            subscriber.next(message.deployment);
+          } catch (error) {
+            subscriber.error(error);
+          }
+        };
+
+        websocket.onerror = () => {
+          websocket?.close();
+        };
+
+        websocket.onclose = () => {
+          if (closed || subscriber.closed) {
+            return;
+          }
+
+          reconnectTimer = window.setTimeout(connect, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, 10_000);
+        };
       };
 
-      websocket.onerror = () => {
-        subscriber.error(new Error('Deployment log stream failed.'));
-      };
-
-      websocket.onclose = () => {
-        subscriber.complete();
-      };
+      connect();
 
       return () => {
-        websocket.close();
+        closed = true;
+        if (reconnectTimer) {
+          window.clearTimeout(reconnectTimer);
+        }
+        websocket?.close();
       };
     });
   }

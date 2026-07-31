@@ -331,14 +331,53 @@ fieldset small {
   color: var(--muted);
 }
 
-.builder-textareas {
+.structured-editors {
   display: grid;
   gap: 0.75rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.builder-textareas textarea {
-  min-height: 88px;
+.list-editor {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.65rem;
+}
+
+.list-editor-head,
+.list-row {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+  justify-content: space-between;
+}
+
+.list-editor-head span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.list-editor small {
+  color: var(--muted);
+}
+
+.list-row input {
+  min-width: 0;
+}
+
+.env-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(140px, 1fr) auto;
+}
+
+.inline-list-editor {
+  align-self: stretch;
+}
+
+button.compact {
+  min-height: 32px;
+  padding: 0 0.65rem;
 }
 
 .resource-row input {
@@ -485,9 +524,13 @@ button.secondary:hover {
 @media (max-width: 900px) {
   .field-grid,
   .toggle-grid,
-  .builder-textareas,
+  .structured-editors,
   .builder-shell,
   .choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .env-row {
     grid-template-columns: 1fr;
   }
 

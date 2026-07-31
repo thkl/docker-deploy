@@ -90,14 +90,24 @@ export class DeploymentStreamHub {
         const clients = this.deploymentClients.get(projectName) ?? new Set<WebSocket>();
         clients.add(webSocket);
         this.deploymentClients.set(projectName, clients);
+        const keepAlive = setInterval(() => {
+            if (webSocket.readyState === WebSocket.OPEN) {
+                webSocket.ping();
+            }
+        }, 20_000);
 
         this.sendSnapshot(projectName, webSocket);
 
         webSocket.on("close", () => {
+            clearInterval(keepAlive);
             clients.delete(webSocket);
             if (clients.size === 0) {
                 this.deploymentClients.delete(projectName);
             }
+        });
+
+        webSocket.on("error", () => {
+            clearInterval(keepAlive);
         });
     }
 

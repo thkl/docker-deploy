@@ -50,6 +50,11 @@ type ComposeBuilderRenderableService = Omit<ComposeBuilderService, 'id'> & { id?
 type ComposeBuilderRenderableNetwork = Omit<ComposeBuilderNetwork, 'id'> & { id?: number };
 type ComposeBuilderRenderableVolume = Omit<ComposeBuilderVolume, 'id'> & { id?: number };
 
+interface ComposeEnvironmentEntry {
+  key: string;
+  value: string;
+}
+
 interface ComposeTraefikSettings {
   enabled: boolean;
   projectName: string;
@@ -555,6 +560,84 @@ export class ProjectSettingsPage implements OnInit {
 
   protected isBuilderServiceListValueSelected(service: ComposeBuilderService, field: 'networks' | 'dependsOn', item: string) {
     return splitLines(service[field]).includes(item);
+  }
+
+  protected builderServiceListItems(service: ComposeBuilderService, field: ComposeBuilderListField) {
+    return splitLines(service[field]);
+  }
+
+  protected addBuilderServiceListItem(id: number, field: ComposeBuilderListField, value = '') {
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      return { ...service, [field]: [...splitLines(service[field]), value].join('\n') };
+    }));
+  }
+
+  protected updateBuilderServiceListItem(id: number, field: ComposeBuilderListField, index: number, event: Event) {
+    const target = event.target as HTMLInputElement;
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      const items = splitLines(service[field]);
+      items[index] = target.value;
+      return { ...service, [field]: items.join('\n') };
+    }));
+  }
+
+  protected removeBuilderServiceListItem(id: number, field: ComposeBuilderListField, index: number) {
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      const items = splitLines(service[field]);
+      items.splice(index, 1);
+      return { ...service, [field]: items.join('\n') };
+    }));
+  }
+
+  protected builderEnvironmentEntries(service: ComposeBuilderService): ComposeEnvironmentEntry[] {
+    return parseEnvironmentEntries(service.environment);
+  }
+
+  protected addBuilderEnvironmentEntry(id: number) {
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      return { ...service, environment: renderEnvironmentEntries([...parseEnvironmentEntries(service.environment), { key: 'VARIABLE', value: 'value' }]) };
+    }));
+  }
+
+  protected updateBuilderEnvironmentEntry(id: number, index: number, field: keyof ComposeEnvironmentEntry, event: Event) {
+    const target = event.target as HTMLInputElement;
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      const entries = parseEnvironmentEntries(service.environment);
+      entries[index] = { ...(entries[index] ?? { key: '', value: '' }), [field]: target.value };
+      return { ...service, environment: renderEnvironmentEntries(entries) };
+    }));
+  }
+
+  protected removeBuilderEnvironmentEntry(id: number, index: number) {
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      const entries = parseEnvironmentEntries(service.environment);
+      entries.splice(index, 1);
+      return { ...service, environment: renderEnvironmentEntries(entries) };
+    }));
   }
 
   protected addBuilderNetwork(name = 'app') {
@@ -1139,6 +1222,23 @@ function splitLines(value: string) {
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parseEnvironmentEntries(value: string): ComposeEnvironmentEntry[] {
+  return value
+    .split(/\r?\n/)
+    .map((entry) => {
+      const [key, ...rest] = entry.split('=');
+      return { key: key.trim(), value: rest.join('=').trim() };
+    })
+    .filter((entry) => entry.key || entry.value);
+}
+
+function renderEnvironmentEntries(entries: ComposeEnvironmentEntry[]) {
+  return entries
+    .filter((entry) => entry.key || entry.value)
+    .map((entry) => `${entry.key}=${entry.value}`)
+    .join('\n');
 }
 
 function appendDuplicateNameDiagnostics(diagnostics: string[], label: string, names: string[]) {
