@@ -45,6 +45,7 @@ function webhookProjectCandidates(body: unknown) {
     const repository = readRecord(payload.repository);
     const project = readRecord(payload.project);
     const candidates = [
+        readString(repository?.id),
         readString(repository?.name),
         readString(repository?.path),
         readString(project?.name),
