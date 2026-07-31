@@ -287,11 +287,13 @@ async function readResponseError(response: globalThis.Response) {
 function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "globalSettingsStore" | "agentManager">) {
     const { configStore, deploymentService, deploymentStore, globalSettingsStore, agentManager } = dependencies;
 
-    app.get("/api/projects", (req: Request, res: Response, next: NextFunction) => {
+    app.get("/api/projects", async (req: Request, res: Response, next: NextFunction) => {
         try {
             const globalSettings = globalSettingsStore.readSettings();
+            const config = configStore.readConfig();
+            await deploymentService.reconcileRunningDeployments(config);
             // Shape the storage record into the UI-facing project summary.
-            const projects = Object.entries(configStore.readConfig())
+            const projects = Object.entries(config)
                 .sort(([left], [right]) => left.localeCompare(right))
                 .map(([name, settings]) => ({
                     id: settings.id,
@@ -674,17 +676,21 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
         res.json(deploymentStore.list(project.settings.id ?? project.name));
     });
 
-    app.get("/api/projects/:name/deployments/latest", (req: Request, res: Response) => {
-        const rawProjectName = req.params.name;
-        const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
-        const project = configStore.resolveProject(projectRef);
+    app.get("/api/projects/:name/deployments/latest", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
 
-        if (!project) {
-            res.status(404).json({ error: "Project does not exist." });
-            return;
+            if (!project) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            res.json(await deploymentService.reconcileLatestDeployment(project.name, project.settings));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not load latest deployment." });
         }
-
-        res.json(deploymentStore.latest(project.settings.id ?? project.name));
     });
 }
 

@@ -88,6 +88,34 @@ export class DeploymentStore {
     }
 
     /**
+     * Returns deployment records that were still running when this controller
+     * process started. Their worker callbacks cannot fire anymore.
+     */
+    listRunning() {
+        const rows = this.database
+            .prepare(
+                `SELECT
+                    d.id,
+                    d.project_id AS projectId,
+                    p.name AS projectName,
+                    d.server_id AS serverId,
+                    d.trigger,
+                    d.status,
+                    d.started_at AS startedAt,
+                    d.finished_at AS finishedAt,
+                    d.exit_code AS exitCode,
+                    d.error
+                 FROM deployments d
+                 JOIN projects p ON p.id = d.project_id
+                 WHERE d.status = 'running'
+                 ORDER BY d.started_at ASC`
+            )
+            .all() as unknown as DeploymentRow[];
+
+        return rows.map((row) => this.rowToRecord(row));
+    }
+
+    /**
      * Removes all deployment history for a deleted project.
      */
     deleteProject(projectName: string) {
