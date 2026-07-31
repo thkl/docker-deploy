@@ -1,5 +1,13 @@
 import { AppDatabase, listServers } from "./database.js";
-import { ServerCapabilities, ServerPayload, ServerRecord } from "./types.js";
+import { ServerActiveJob, ServerCapabilities, ServerPayload, ServerRecord } from "./types.js";
+
+export interface ServerHealthSnapshot {
+    status: "online" | "offline" | "unpaired";
+    agentVersion?: string;
+    activeJobs?: ServerActiveJob[];
+    lastHealthError?: string;
+    capabilities?: ServerCapabilities;
+}
 
 /**
  * Stores target Docker servers known to the controller.
@@ -115,6 +123,37 @@ export class ServerStore {
         this.database
             .prepare("UPDATE servers SET capabilities_json = ?, last_seen_at = ?, updated_at = ?, status = 'online' WHERE id = ?")
             .run(JSON.stringify(capabilities), new Date().toISOString(), new Date().toISOString(), serverId);
+        return this.get(serverId);
+    }
+
+    /**
+     * Stores a full health snapshot used by the settings UI.
+     */
+    updateHealth(serverId: string, health: ServerHealthSnapshot) {
+        const now = new Date().toISOString();
+        this.database
+            .prepare(
+                `UPDATE servers
+                 SET status = ?,
+                     last_seen_at = CASE WHEN ? = 'offline' THEN last_seen_at ELSE ? END,
+                     updated_at = ?,
+                     agent_version = ?,
+                     active_jobs_json = ?,
+                     last_health_error = ?,
+                     capabilities_json = COALESCE(?, capabilities_json)
+                 WHERE id = ?`
+            )
+            .run(
+                health.status,
+                health.status,
+                now,
+                now,
+                health.agentVersion ?? null,
+                JSON.stringify(health.activeJobs ?? []),
+                health.lastHealthError ?? null,
+                health.capabilities ? JSON.stringify(health.capabilities) : null,
+                serverId
+            );
         return this.get(serverId);
     }
 

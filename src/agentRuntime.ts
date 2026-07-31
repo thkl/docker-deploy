@@ -7,9 +7,13 @@ import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
 import { RuntimeLogStream } from "./deploy.js";
+import { appVersion } from "./version.js";
 
 interface AgentJobState {
     id: string;
+    type: string;
+    startedAt: string;
+    active: boolean;
     streamToken: string;
     frames: AgentLogFrame[];
     sockets: Set<WebSocket>;
@@ -59,6 +63,10 @@ export class AgentRuntime {
             res.json({
                 serverId: this.state.serverId,
                 paired: Boolean(this.state.controllerPublicEncryptionKey && this.state.controllerPublicSigningKey),
+                version: appVersion(),
+                activeJobs: [...this.jobs.values()]
+                    .filter((job) => job.active)
+                    .map((job) => ({ id: job.id, type: job.type, startedAt: job.startedAt })),
                 encryptionPublicKey: this.state.encryptionPublicKey,
                 signingPublicKey: this.state.signingPublicKey,
                 pairedAt: this.state.pairedAt,
@@ -118,8 +126,14 @@ export class AgentRuntime {
         this.app.post("/agent/jobs", async (req: Request, res: Response) => {
             try {
                 const request = this.openControllerEnvelope<AgentJobRequest>((req.body as { envelope?: SecureEnvelope }).envelope);
-                const accepted = this.createJob();
+                const accepted = this.createJob(request.jobType);
                 const response = await this.startJob(request, accepted);
+                if (!isStreamingJob(request.jobType)) {
+                    const job = this.jobs.get(accepted.jobId);
+                    if (job) {
+                        job.active = false;
+                    }
+                }
                 res.json({ envelope: this.sealControllerEnvelope({ ...accepted, ...response }, "job.accepted") });
             } catch (error) {
                 res.status(400).json({ error: error instanceof Error ? error.message : "Job failed." });
@@ -153,6 +167,7 @@ export class AgentRuntime {
                 ws.on("close", () => {
                     job.sockets.delete(ws);
                     if (job.cancel && job.sockets.size === 0) {
+                        job.active = false;
                         job.cancel();
                     }
                 });
@@ -258,9 +273,12 @@ export class AgentRuntime {
     /**
      * Creates an in-memory job stream.
      */
-    private createJob(): AgentJobAccepted {
+    private createJob(jobType: AgentJobRequest["jobType"]): AgentJobAccepted {
         const job: AgentJobState = {
             id: randomUUID(),
+            type: jobType,
+            startedAt: new Date().toISOString(),
+            active: true,
             streamToken: randomUUID(),
             frames: [],
             sockets: new Set()
@@ -279,6 +297,9 @@ export class AgentRuntime {
         }
 
         job.frames.push(frame);
+        if (frame.done) {
+            job.active = false;
+        }
         const serialized = JSON.stringify(this.sealControllerEnvelope(frame, "job.log"));
         for (const socket of job.sockets) {
             if (socket.readyState === WebSocket.OPEN) {
@@ -321,4 +342,8 @@ export class AgentRuntime {
             recipientEncryptionPublicKey: this.state.controllerPublicEncryptionKey
         });
     }
+}
+
+function isStreamingJob(jobType: AgentJobRequest["jobType"]) {
+    return jobType === "deploy" || jobType === "runtimeLogsFollow" || jobType === "runtimeActionFollow";
 }

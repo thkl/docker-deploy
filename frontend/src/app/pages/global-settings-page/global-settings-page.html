@@ -22,18 +22,47 @@
     <section class="settings-panel">
       <div class="panel-head">
         <h3>Servers</h3>
-        <span>Deployment agents controlled by this updater</span>
+        <div class="panel-actions">
+          <span>Deployment agents controlled by this updater</span>
+          <button type="button" class="secondary" (click)="refreshAllServers()" [disabled]="refreshingServer() !== '' || servers().length === 0">
+            {{ refreshingServer() ? 'Refreshing...' : 'Refresh health' }}
+          </button>
+        </div>
       </div>
 
       <div class="server-list">
         @for (server of servers(); track server.id) {
           <article class="server-row">
-            <div>
-              <strong>{{ server.name }}</strong>
+            <div class="server-main">
+              <div class="server-title">
+                <strong>{{ server.name }}</strong>
+                <span class="server-chip" [class.unpaired]="server.status === 'unpaired'" [class.offline]="server.status === 'offline'">{{ server.status || server.kind }}</span>
+              </div>
               <span>{{ server.id }} @if (server.baseUrl) { · {{ server.baseUrl }} }</span>
+              @if (server.lastHealthError) {
+                <small class="health-error">{{ server.lastHealthError }}</small>
+              }
             </div>
+
+            <div class="server-health">
+              <span>
+                <strong>{{ server.agentVersion || 'unknown' }}</strong>
+                <small>version</small>
+              </span>
+              <span>
+                <strong>{{ formatDate(server.lastSeenAt) }}</strong>
+                <small>last heartbeat</small>
+              </span>
+              <span>
+                <strong>{{ activeJobLabel(server) }}</strong>
+                <small>{{ traefikLabel(server) }}</small>
+              </span>
+            </div>
+
             <div class="server-actions">
-              <span class="server-chip" [class.unpaired]="server.status === 'unpaired'">{{ server.status || server.kind }}</span>
+              <button type="button" class="secondary" (click)="refreshServer(server.id)" [disabled]="refreshingServer() !== ''">
+                {{ refreshingServer() === server.id ? 'Checking...' : 'Check' }}
+              </button>
               @if (server.kind === 'remote') {
                 @if (server.status === 'unpaired') {
                   <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">
@@ -45,6 +74,14 @@
                 </button>
               }
             </div>
+
+            @if (server.activeJobs?.length) {
+              <div class="active-job-list">
+                @for (job of server.activeJobs; track job.id) {
+                  <span>{{ job.type }} · {{ formatDate(job.startedAt) }}</span>
+                }
+              </div>
+            }
           </article>
         } @empty {
           <p class="muted-copy">No servers have been registered yet.</p>
@@ -60,6 +97,12 @@
           <button type="button" class="secondary" (click)="saveServer()" [disabled]="savingServer()">
             {{ savingServer() ? 'Saving...' : 'Save agent' }}
           </button>
+        </div>
+
+        <div class="agent-install">
+          <strong>Agent container</strong>
+          <code>docker compose -f docker-compose-agent.yaml up -d</code>
+          <span>Open <code>/app/data/agent-pairing.json</code> on the target server and paste the pairing token above.</span>
         </div>
 
         <div class="field-grid">

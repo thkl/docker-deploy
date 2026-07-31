@@ -89,6 +89,9 @@ export interface ServerRecord {
     status?: "online" | "offline" | "unpaired";
     lastSeenAt?: string;
     pairedAt?: string;
+    agentVersion?: string;
+    activeJobs?: ServerActiveJob[];
+    lastHealthError?: string;
     capabilities?: ServerCapabilities;
     createdAt: string;
     updatedAt: string;
@@ -102,6 +105,12 @@ export interface ServerPayload {
     agentPublicSigningKey?: string;
     pairingToken?: string;
     capabilities?: ServerCapabilities;
+}
+
+export interface ServerActiveJob {
+    id: string;
+    type: string;
+    startedAt: string;
 }
 
 export interface ServerCapabilities {

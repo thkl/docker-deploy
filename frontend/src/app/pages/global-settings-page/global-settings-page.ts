@@ -1,5 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { forkJoin } from 'rxjs';
+import { ServerRecord } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -20,6 +22,7 @@ export class GlobalSettingsPage implements OnInit {
   protected readonly saving = signal(false);
   protected readonly savingServer = signal(false);
   protected readonly pairingServer = signal('');
+  protected readonly refreshingServer = signal('');
   protected readonly deletingServer = signal('');
   protected readonly message = signal('');
   protected readonly error = signal('');
@@ -115,6 +118,76 @@ export class GlobalSettingsPage implements OnInit {
         this.deletingServer.set('');
       },
     });
+  }
+
+  protected refreshServer(serverId: string) {
+    this.refreshingServer.set(serverId);
+    this.message.set('');
+    this.error.set('');
+
+    this.api.refreshServerHealth(serverId).subscribe({
+      next: (server) => {
+        this.store.loadServers();
+        this.message.set(`${server.name} health refreshed.`);
+        this.refreshingServer.set('');
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not refresh agent health.');
+        this.refreshingServer.set('');
+      },
+    });
+  }
+
+  protected refreshAllServers() {
+    const servers = this.servers();
+    if (!servers.length) {
+      return;
+    }
+
+    this.refreshingServer.set('all');
+    this.message.set('');
+    this.error.set('');
+
+    forkJoin(servers.map((server) => this.api.refreshServerHealth(server.id))).subscribe({
+      next: () => {
+        this.store.loadServers();
+        this.message.set('Agent health refreshed.');
+        this.refreshingServer.set('');
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not refresh agent health.');
+        this.refreshingServer.set('');
+      },
+    });
+  }
+
+  protected formatDate(value?: string) {
+    if (!value) {
+      return 'Never';
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(value));
+  }
+
+  protected activeJobLabel(server: ServerRecord) {
+    const count = server.activeJobs?.length ?? 0;
+    return count === 1 ? '1 active job' : `${count} active jobs`;
+  }
+
+  protected traefikLabel(server: ServerRecord) {
+    const traefik = server.capabilities?.traefik;
+    if (!traefik) {
+      return 'Traefik unknown';
+    }
+
+    if (traefik.available) {
+      return `Traefik available · ${traefik.containerCount} containers`;
+    }
+
+    return traefik.networkPresent ? 'Traefik network only' : 'Traefik unavailable';
   }
 
   protected pairServer(serverId: string) {

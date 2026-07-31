@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
-import { GlobalSettings, GlobalSettingsPayload, ProjectConfig, ProjectSettings, ServerRecord } from "./types.js";
+import { GlobalSettings, GlobalSettingsPayload, ProjectConfig, ProjectSettings, ServerActiveJob, ServerRecord } from "./types.js";
 import type { DeploymentRecord } from "./deploymentStore.js";
 
 const schemaVersion = 3;
@@ -62,6 +62,9 @@ export class AppDatabase {
                 status TEXT NOT NULL DEFAULT 'unpaired',
                 last_seen_at TEXT,
                 paired_at TEXT,
+                agent_version TEXT,
+                active_jobs_json TEXT,
+                last_health_error TEXT,
                 capabilities_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -148,6 +151,9 @@ export class AppDatabase {
         this.ensureColumn("servers", "status", "TEXT NOT NULL DEFAULT 'unpaired'");
         this.ensureColumn("servers", "last_seen_at", "TEXT");
         this.ensureColumn("servers", "paired_at", "TEXT");
+        this.ensureColumn("servers", "agent_version", "TEXT");
+        this.ensureColumn("servers", "active_jobs_json", "TEXT");
+        this.ensureColumn("servers", "last_health_error", "TEXT");
         this.ensureColumn("servers", "capabilities_json", "TEXT");
         this.migrateProjectsToStableIds();
         this.connection.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)").run(String(schemaVersion));
@@ -392,6 +398,9 @@ export function listServers(database: DatabaseSync): ServerRecord[] {
                 status,
                 last_seen_at AS lastSeenAt,
                 paired_at AS pairedAt,
+                agent_version AS agentVersion,
+                active_jobs_json AS activeJobsJson,
+                last_health_error AS lastHealthError,
                 capabilities_json AS capabilitiesJson,
                 created_at AS createdAt,
                 updated_at AS updatedAt
@@ -412,6 +421,9 @@ export function listServers(database: DatabaseSync): ServerRecord[] {
         status: row.status,
         ...(row.lastSeenAt ? { lastSeenAt: row.lastSeenAt } : {}),
         ...(row.pairedAt ? { pairedAt: row.pairedAt } : {}),
+        ...(row.agentVersion ? { agentVersion: row.agentVersion } : {}),
+        ...(row.activeJobsJson ? { activeJobs: parseActiveJobs(row.activeJobsJson) } : {}),
+        ...(row.lastHealthError ? { lastHealthError: row.lastHealthError } : {}),
         ...(row.capabilitiesJson ? { capabilities: JSON.parse(row.capabilitiesJson) } : {}),
         createdAt: row.createdAt,
         updatedAt: row.updatedAt
@@ -430,9 +442,21 @@ interface ServerRow {
     status: "online" | "offline" | "unpaired";
     lastSeenAt: string | null;
     pairedAt: string | null;
+    agentVersion: string | null;
+    activeJobsJson: string | null;
+    lastHealthError: string | null;
     capabilitiesJson: string | null;
     createdAt: string;
     updatedAt: string;
+}
+
+function parseActiveJobs(value: string): ServerActiveJob[] {
+    try {
+        const parsed = JSON.parse(value) as ServerActiveJob[];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
 }
 
 /**

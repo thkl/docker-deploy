@@ -15,8 +15,9 @@ import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
-import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerCapabilities, ServerPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerActiveJob, ServerCapabilities, ServerPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
+import { appVersion } from "./version.js";
 import { resolveWebhookProject } from "./webhookResolver.js";
 
 /**
@@ -64,7 +65,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/servers", adminAuth.requireAuth);
 
     registerSettingsRoutes(app, globalSettingsStore);
-    registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore });
+    registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore, deploymentStore });
     registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams });
     registerWebhookRoute(app, { configStore, deploymentService });
     registerCiDeployRoute(app, { configStore, deploymentService });
@@ -92,10 +93,11 @@ function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSetting
 /**
  * Registers target-server read endpoints.
  */
-function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "controllerKeys" | "agentManager" | "globalSettingsStore">) {
-    const { serverStore, controllerKeys, agentManager, globalSettingsStore } = dependencies;
+function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "controllerKeys" | "agentManager" | "globalSettingsStore" | "deploymentStore">) {
+    const { serverStore, controllerKeys, agentManager, globalSettingsStore, deploymentStore } = dependencies;
 
     app.get("/api/servers", (req: Request, res: Response) => {
+        refreshLocalHealth(serverStore, deploymentStore, globalSettingsStore);
         res.json(serverStore.list());
     });
 
@@ -118,6 +120,46 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             res.json(capabilities);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not inspect server capabilities." });
+        }
+    });
+
+    app.post("/api/servers/:id/health", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            const server = serverStore.get(serverId);
+            if (!server) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+
+            if (server.kind === "local") {
+                res.json(refreshLocalHealth(serverStore, deploymentStore, globalSettingsStore));
+                return;
+            }
+
+            if (!server.baseUrl) {
+                res.status(400).json({ error: "Remote agent URL is missing." });
+                return;
+            }
+
+            const health = await fetchAgentHealth(server.baseUrl, globalSettingsStore.readSettings());
+            if (!health.ok || !health.body) {
+                res.json(serverStore.updateHealth(server.id, {
+                    status: server.status === "unpaired" ? "unpaired" : "offline",
+                    activeJobs: [],
+                    lastHealthError: health.message
+                }));
+                return;
+            }
+
+            res.json(serverStore.updateHealth(server.id, {
+                status: health.body.paired ? "online" : "unpaired",
+                agentVersion: health.body.version,
+                activeJobs: health.body.activeJobs ?? [],
+                capabilities: health.body.capabilities
+            }));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not refresh server health." });
         }
     });
 
@@ -196,12 +238,12 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             }
 
             const paired = serverStore.markPaired(server.id, controllerKeys.encryptionPublicKey, controllerKeys.signingPublicKey);
-            if (health.body?.capabilities) {
-                res.json(serverStore.updateCapabilities(server.id, health.body.capabilities));
-                return;
-            }
-
-            res.json(paired);
+            res.json(serverStore.updateHealth(server.id, {
+                status: "online",
+                agentVersion: health.body?.version,
+                activeJobs: health.body?.activeJobs ?? [],
+                capabilities: health.body?.capabilities
+            }) ?? paired);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not pair server." });
         }
@@ -221,7 +263,7 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
             return;
         }
 
-        res.status(201).json(serverStore.createRemote({
+        const created = serverStore.createRemote({
             ...payload,
             id: payload.id || health.body.serverId,
             name: payload.name || health.body.serverId,
@@ -229,10 +271,49 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
             agentPublicEncryptionKey: health.body.encryptionPublicKey,
             agentPublicSigningKey: health.body.signingPublicKey,
             capabilities: health.body.capabilities
-        }));
+        });
+        if (!created) {
+            res.status(400).json({ error: "Could not create server." });
+            return;
+        }
+
+        res.status(201).json(serverStore.updateHealth(created.id, {
+            status: health.body.paired ? "online" : "unpaired",
+            agentVersion: health.body.version,
+            activeJobs: health.body.activeJobs ?? [],
+            capabilities: health.body.capabilities
+        }) ?? created);
     } catch (error) {
         res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
     }
+}
+
+/**
+ * Refreshes the local controller-as-agent row without making an HTTP call.
+ */
+function refreshLocalHealth(serverStore: ServerStore, deploymentStore: DeploymentStore, globalSettingsStore: GlobalSettingsStore) {
+    const activeJobs = deploymentStore
+        .listRunning()
+        .filter((deployment) => (deployment.serverId || "local") === "local")
+        .map((deployment) => ({
+            id: deployment.id,
+            type: `deploy:${deployment.trigger}`,
+            startedAt: deployment.startedAt
+        }));
+
+    return serverStore.updateHealth("local", {
+        status: "online",
+        agentVersion: appVersion(),
+        activeJobs,
+        capabilities: serverStore.get("local")?.capabilities ?? {
+            traefik: {
+                available: false,
+                containerCount: 0,
+                networkPresent: false,
+                checkedAt: new Date().toISOString()
+            }
+        }
+    });
 }
 
 /**
@@ -254,7 +335,7 @@ async function fetchAgentHealth(agentBaseUrl: string, globalSettings: GlobalSett
             };
         }
 
-        const body = await response.json() as { serverId?: string; encryptionPublicKey?: string; signingPublicKey?: string; capabilities?: ServerCapabilities };
+        const body = await response.json() as AgentHealthBody;
         if (!body.serverId || !body.encryptionPublicKey || !body.signingPublicKey) {
             return {
                 ok: false,
@@ -269,6 +350,16 @@ async function fetchAgentHealth(agentBaseUrl: string, globalSettings: GlobalSett
             message: `${healthUrl} could not be reached: ${error instanceof Error ? error.message : String(error)}`
         };
     }
+}
+
+interface AgentHealthBody {
+    serverId?: string;
+    paired?: boolean;
+    version?: string;
+    activeJobs?: ServerActiveJob[];
+    encryptionPublicKey?: string;
+    signingPublicKey?: string;
+    capabilities?: ServerCapabilities;
 }
 
 /**

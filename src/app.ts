@@ -18,6 +18,7 @@ import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { AuthenticatedRequest } from "./types.js";
+import { appVersion } from "./version.js";
 
 /**
  * Express controller bootstrap.
@@ -100,7 +101,12 @@ class App {
      */
     private async warmLocalCapabilities() {
         const traefik = await this.localAgent.detectTraefik(this.globalSettingsStore.readSettings());
-        this.serverStore.updateCapabilities("local", { traefik });
+        this.serverStore.updateHealth("local", {
+            status: "online",
+            agentVersion: appVersion(),
+            activeJobs: [],
+            capabilities: { traefik }
+        });
     }
 
     /**

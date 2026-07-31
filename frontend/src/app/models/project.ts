@@ -99,6 +99,9 @@ export interface ServerRecord {
   status?: 'online' | 'offline' | 'unpaired';
   lastSeenAt?: string;
   pairedAt?: string;
+  agentVersion?: string;
+  activeJobs?: ServerActiveJob[];
+  lastHealthError?: string;
   capabilities?: ServerCapabilities;
   createdAt: string;
   updatedAt: string;
@@ -120,6 +123,12 @@ export interface ServerCapabilities {
     networkPresent: boolean;
     checkedAt: string;
   };
+}
+
+export interface ServerActiveJob {
+  id: string;
+  type: string;
+  startedAt: string;
 }
 
 export type RuntimeProjectStatus = 'running' | 'partial' | 'stopped' | 'unknown' | 'error';

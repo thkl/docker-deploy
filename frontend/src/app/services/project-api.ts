@@ -89,6 +89,10 @@ export class ProjectApi {
     return this.http.get<ServerCapabilities>(`/api/servers/${encodeURIComponent(serverId)}/capabilities`);
   }
 
+  refreshServerHealth(serverId: string): Observable<ServerRecord> {
+    return this.http.post<ServerRecord>(`/api/servers/${encodeURIComponent(serverId)}/health`, {});
+  }
+
   createServer(payload: ServerPayload): Observable<ServerRecord> {
     return this.http.post<ServerRecord>('/api/servers', payload);
   }
