@@ -239,9 +239,18 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
             return;
         }
 
+        const serverId = payload.id || health.body.serverId;
+        const existing = serverId ? serverStore.get(serverId) : undefined;
+        if (existing) {
+            res.status(409).json({
+                error: `Agent ${serverId} is already registered as ${existing.name}. Use Pair or Check on the existing agent instead of adding it again.`
+            });
+            return;
+        }
+
         const created = serverStore.createRemote({
             ...payload,
-            id: payload.id || health.body.serverId,
+            id: serverId,
             name: payload.name || health.body.serverId,
             baseUrl,
             agentPublicEncryptionKey: health.body.encryptionPublicKey,

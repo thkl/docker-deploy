@@ -96,7 +96,9 @@ export class GlobalSettingsPage implements OnInit {
         this.savingServer.set(false);
       },
       error: (error) => {
-        this.error.set(error?.error?.error || 'Could not save remote server.');
+        this.error.set(error?.status === 409
+          ? error?.error?.error || 'This remote agent is already registered.'
+          : error?.error?.error || 'Could not save remote server.');
         this.savingServer.set(false);
       },
     });
