@@ -285,3 +285,8 @@
     justify-content: flex-start;
   }
 }
+
+.service-item {
+  display: flex;
+  flex-direction: column;
+}
