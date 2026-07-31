@@ -26,7 +26,7 @@ export class HttpAgentClient implements AgentClient {
             jobType: "deploy",
             payload: { projectName, appSettings, globalSettings }
         });
-        this.connectLogStream(accepted, hooks);
+        return this.connectLogStream(accepted, hooks);
     }
 
     /**
@@ -184,7 +184,7 @@ export class HttpAgentClient implements AgentClient {
     /**
      * Opens the short-lived log stream for a deployment job.
      */
-    private connectLogStream(accepted: AgentJobAccepted, hooks: DeploymentHooks) {
+    private connectLogStream(accepted: AgentJobAccepted, hooks: DeploymentHooks): RuntimeLogStream {
         const streamUrl = new URL(`${this.requireBaseUrl()}/agent/jobs/${accepted.jobId}/logs`);
         streamUrl.protocol = streamUrl.protocol === "https:" ? "wss:" : "ws:";
         streamUrl.searchParams.set("streamToken", accepted.streamToken);
@@ -230,6 +230,13 @@ export class HttpAgentClient implements AgentClient {
                 hooks.onFailure?.(failure);
             }
         });
+
+        return {
+            stop() {
+                finished = true;
+                socket.close();
+            }
+        };
     }
 
     /**

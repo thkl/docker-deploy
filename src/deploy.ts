@@ -44,7 +44,7 @@ function shellQuote(value: string | number | boolean) {
  * applies generated Traefik compose labels, builds, replaces containers, and
  * streams process output through the supplied hooks.
  */
-export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
+export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}): RuntimeLogStream {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
     const composeOverride = appSettings.composeOverride?.trim();
@@ -125,6 +125,15 @@ EOF`;
     worker.stderr?.on("data", (chunk: Buffer | string) => {
         hooks.onOutput?.("stderr", String(chunk));
     });
+
+    return {
+        stop() {
+            if (!worker.killed) {
+                worker.kill("SIGTERM");
+                windowedKill(worker);
+            }
+        }
+    };
 }
 
 /**

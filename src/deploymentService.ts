@@ -2,6 +2,7 @@ import { DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { AgentManager } from "./agentManager.js";
 import { ProjectSettings } from "./types.js";
+import { RuntimeLogStream } from "./deploy.js";
 
 /**
  * Coordinates deployment lifecycle state with the worker execution layer.
@@ -11,7 +12,7 @@ import { ProjectSettings } from "./types.js";
  * job to a local or remote agent.
  */
 export class DeploymentService {
-    private readonly activeDeploymentIds = new Set<string>();
+    private readonly activeDeployments = new Map<string, RuntimeLogStream>();
 
     constructor(
         private readonly deploymentStore: DeploymentStore,
@@ -27,30 +28,46 @@ export class DeploymentService {
     startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
         const deployment = this.deploymentStore.start(projectName, trigger, appSettings.serverId ?? "local");
         const globalSettings = this.globalSettingsStore.readSettings();
-        this.activeDeploymentIds.add(deployment.id);
         this.broadcastDeployment(projectName);
 
         const agent = this.agentManager.getClient(appSettings.serverId ?? "local");
-        Promise.resolve(agent.deployProject(projectName, appSettings, globalSettings, {
+        const deploymentRun = agent.deployProject(projectName, appSettings, globalSettings, {
             onOutput: (stream, chunk) => {
                 this.deploymentStore.append(projectName, deployment.id, stream, chunk);
                 this.broadcastDeployment(projectName);
             },
             onSuccess: () => {
-                this.activeDeploymentIds.delete(deployment.id);
+                if (!this.activeDeployments.has(deployment.id)) {
+                    return;
+                }
+                this.activeDeployments.delete(deployment.id);
                 this.deploymentStore.finish(projectName, deployment.id, "succeeded");
                 this.broadcastDeployment(projectName);
             },
             onFailure: (error) => {
-                this.activeDeploymentIds.delete(deployment.id);
+                if (!this.activeDeployments.has(deployment.id)) {
+                    return;
+                }
+                this.activeDeployments.delete(deployment.id);
                 this.deploymentStore.finish(projectName, deployment.id, "failed", {
                     error: error.message,
                     exitCode: error.code
                 });
                 this.broadcastDeployment(projectName);
             }
-        })).catch((error) => {
-            this.activeDeploymentIds.delete(deployment.id);
+        });
+
+        if (isRuntimeLogStream(deploymentRun)) {
+            this.activeDeployments.set(deployment.id, deploymentRun);
+        }
+
+        Promise.resolve(deploymentRun).then((stream) => {
+            const latest = this.deploymentStore.latest(appSettings.id ?? projectName);
+            if (stream && latest?.id === deployment.id && latest.status === "running") {
+                this.activeDeployments.set(deployment.id, stream);
+            }
+        }).catch((error) => {
+            this.activeDeployments.delete(deployment.id);
             this.deploymentStore.finish(projectName, deployment.id, "failed", {
                 error: error instanceof Error ? error.message : "Could not dispatch deployment.",
                 exitCode: "dispatch"
@@ -59,6 +76,32 @@ export class DeploymentService {
         });
 
         return deployment;
+    }
+
+    /**
+     * Cancels the latest active deployment for a project in this controller
+     * process and records it as a failed deployment with a canceled exit code.
+     */
+    cancelDeployment(projectName: string, appSettings: ProjectSettings) {
+        const latest = this.deploymentStore.latest(appSettings.id ?? projectName);
+        if (latest?.status !== "running") {
+            throw new Error("No running deployment exists for this project.");
+        }
+
+        const stream = this.activeDeployments.get(latest.id);
+        if (!stream) {
+            throw new Error("This deployment is not active in the current controller process.");
+        }
+
+        this.activeDeployments.delete(latest.id);
+        this.deploymentStore.append(projectName, latest.id, "stdout", "--> Deployment canceled by user.\n");
+        stream.stop();
+        this.deploymentStore.finish(projectName, latest.id, "failed", {
+            error: "Deployment canceled by user.",
+            exitCode: "canceled"
+        });
+        this.broadcastDeployment(projectName);
+        return this.deploymentStore.latest(appSettings.id ?? projectName);
     }
 
     /**
@@ -76,7 +119,7 @@ export class DeploymentService {
 
         const globalSettings = this.globalSettingsStore.readSettings();
         for (const deployment of runningDeployments) {
-            if (this.activeDeploymentIds.has(deployment.id)) {
+            if (this.activeDeployments.has(deployment.id)) {
                 continue;
             }
 
@@ -100,7 +143,7 @@ export class DeploymentService {
      */
     async reconcileLatestDeployment(projectName: string, appSettings: ProjectSettings) {
         const latest = this.deploymentStore.latest(appSettings.id ?? projectName);
-        if (latest?.status !== "running" || this.activeDeploymentIds.has(latest.id)) {
+        if (latest?.status !== "running" || this.activeDeployments.has(latest.id)) {
             return latest;
         }
 
@@ -134,4 +177,8 @@ export class DeploymentService {
 
         this.broadcastDeployment(projectName);
     }
+}
+
+function isRuntimeLogStream(value: RuntimeLogStream | Promise<RuntimeLogStream | void> | void): value is RuntimeLogStream {
+    return !!value && typeof value === "object" && "stop" in value && typeof value.stop === "function";
 }

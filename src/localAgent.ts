@@ -18,7 +18,7 @@ export class LocalAgent implements AgentClient {
      * Starts a deployment worker for the selected local target server.
      */
     deployProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
-        dispatchBuildWorker(projectName, appSettings, globalSettings, hooks);
+        return dispatchBuildWorker(projectName, appSettings, globalSettings, hooks);
     }
 
     /**

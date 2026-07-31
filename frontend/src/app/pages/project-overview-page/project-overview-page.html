@@ -392,6 +392,11 @@
         <button type="button" class="secondary" (click)="toggleDeploymentLog()" [disabled]="!latestDeployment()">
           {{ deploymentLogExpanded() ? 'Hide log' : 'Show log' }}
         </button>
+        @if (latestDeployment()?.status === 'running') {
+          <button type="button" class="danger-action" (click)="cancelDeployment(project.id)" [disabled]="cancelingDeployment()">
+            {{ cancelingDeployment() ? 'Canceling...' : 'Cancel deployment' }}
+          </button>
+        }
         <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingDeployment()">
           Refresh
         </button>

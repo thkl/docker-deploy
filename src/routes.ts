@@ -470,6 +470,25 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
         res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id });
     });
 
+    app.post("/api/projects/:name/deployments/cancel", (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            res.json(deploymentService.cancelDeployment(projectName, appSettings));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not cancel deployment." });
+        }
+    });
+
     app.post("/api/projects/:name/compose/import", async (req: Request, res: Response) => {
         try {
             const rawProjectName = req.params.name;

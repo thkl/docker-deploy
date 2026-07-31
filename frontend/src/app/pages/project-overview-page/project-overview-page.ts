@@ -31,6 +31,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly loadingRuntimeOperations = signal(false);
   protected readonly loadingComposeInspection = signal(false);
   protected readonly deploying = signal(false);
+  protected readonly cancelingDeployment = signal(false);
   protected readonly deployMessage = signal('');
   protected readonly deployError = signal('');
   protected readonly runtimeStatusError = signal('');
@@ -106,6 +107,35 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
       error: () => {
         this.deploying.set(false);
         this.deployError.set(`Could not start deployment for ${projectName}.`);
+      },
+    });
+  }
+
+  protected cancelDeployment(projectRef: string) {
+    this.cancelingDeployment.set(true);
+    this.deployMessage.set('Canceling deployment...');
+    this.deployError.set('');
+
+    this.api.cancelDeployment(projectRef).subscribe({
+      next: (deployment) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.setLatestDeployment(deployment);
+        this.cancelingDeployment.set(false);
+        this.deployMessage.set('Deployment canceled.');
+        this.store.loadProjects();
+        this.loadRuntimeStatus(projectRef);
+      },
+      error: (error) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.cancelingDeployment.set(false);
+        this.deployMessage.set('');
+        this.deployError.set(error?.error?.error || 'Could not cancel deployment.');
       },
     });
   }
@@ -754,6 +784,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.loadingRuntimeLogs.set(false);
     this.loadingRuntimeOperations.set(false);
     this.loadingComposeInspection.set(false);
+    this.cancelingDeployment.set(false);
   }
 
   private setLatestDeployment(deployment: DeploymentRecord | null) {
