@@ -1,7 +1,7 @@
 import { Component, computed, effect, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { ComposeInspection, ComposeMountInspection, ComposeServiceInspection, DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
+import { DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
@@ -24,12 +24,10 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeStatus = signal<RuntimeStatus | null>(null);
   protected readonly runtimeLogs = signal<RuntimeLogs | null>(null);
   protected readonly runtimeOperations = signal<RuntimeOperationRecord[]>([]);
-  protected readonly composeInspection = signal<ComposeInspection | null>(null);
   protected readonly loadingDeployment = signal(false);
   protected readonly loadingRuntimeStatus = signal(false);
   protected readonly loadingRuntimeLogs = signal(false);
   protected readonly loadingRuntimeOperations = signal(false);
-  protected readonly loadingComposeInspection = signal(false);
   protected readonly deploying = signal(false);
   protected readonly cancelingDeployment = signal(false);
   protected readonly deployMessage = signal('');
@@ -37,7 +35,6 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeStatusError = signal('');
   protected readonly runtimeLogsError = signal('');
   protected readonly runtimeOperationsError = signal('');
-  protected readonly composeInspectionError = signal('');
   protected readonly runtimeActionMessage = signal('');
   protected readonly runtimeActionError = signal('');
   protected readonly runtimeActionKey = signal('');
@@ -109,6 +106,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.deploying.set(true);
     this.deployMessage.set(`Starting deployment for ${projectName}...`);
     this.deployError.set('');
+    this.selectedLogView.set('deployment');
 
     this.api.deployProject(project?.id ?? projectRef).subscribe({
       next: () => {
@@ -434,67 +432,6 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     return `${Math.max(0, Math.round((finished - started) / 1000))}s`;
   }
 
-  protected inspectCompose(projectRef: string) {
-    this.loadingComposeInspection.set(true);
-    this.composeInspectionError.set('');
-    this.composeInspection.set(null);
-
-    this.api.inspectCompose(projectRef).subscribe({
-      next: (inspection) => {
-        if (this.activeProjectRef !== projectRef) {
-          return;
-        }
-
-        this.composeInspection.set(inspection);
-        this.loadingComposeInspection.set(false);
-      },
-      error: (error) => {
-        if (this.activeProjectRef !== projectRef) {
-          return;
-        }
-
-        this.loadingComposeInspection.set(false);
-        this.composeInspectionError.set(error?.error?.error || 'Could not inspect Docker Compose file.');
-      },
-    });
-  }
-
-  protected composeSourceLabel(inspection: ComposeInspection) {
-    return inspection.source === 'storedOverride' ? 'Stored override' : 'Repository compose';
-  }
-
-  protected serviceSummary(service: ComposeServiceInspection) {
-    const parts = [
-      service.image ? `image ${service.image}` : '',
-      service.build ? 'build configured' : '',
-      service.ports.length ? `${service.ports.length} ports` : '',
-      service.mounts.length ? `${service.mounts.length} mounts` : ''
-    ].filter(Boolean);
-    return parts.join(' · ') || 'No image, build, ports, or mounts declared.';
-  }
-
-  protected mountLabel(mount: ComposeMountInspection) {
-    const source = mount.source || '(anonymous)';
-    const target = mount.target || '(no target)';
-    return `${source} -> ${target}${mount.readOnly ? ' :ro' : ''}`;
-  }
-
-  protected portsLabel(service: ComposeServiceInspection) {
-    if (service.ports.length) {
-      return service.ports.map((port) => port.raw).join(', ');
-    }
-
-    return service.expose.length ? `expose ${service.expose.join(', ')}` : 'no declared ports';
-  }
-
-  protected mountsLabel(service: ComposeServiceInspection) {
-    return service.mounts.length ? service.mounts.map((mount) => this.mountLabel(mount)).join(', ') : 'no mounts';
-  }
-
-  protected hasUnsafeMount(service: ComposeServiceInspection) {
-    return service.mounts.some((mount) => !mount.safeForCleanup);
-  }
-
   protected updateRuntimeService(event: Event) {
     this.disconnectRuntimeLogStream();
     this.selectedRuntimeService.set((event.target as HTMLSelectElement).value);
@@ -792,11 +729,9 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeStatus.set(null);
     this.runtimeLogs.set(null);
     this.runtimeOperations.set([]);
-    this.composeInspection.set(null);
     this.runtimeStatusError.set('');
     this.runtimeLogsError.set('');
     this.runtimeOperationsError.set('');
-    this.composeInspectionError.set('');
     this.runtimeActionMessage.set('');
     this.runtimeActionError.set('');
     this.runtimeActionKey.set('');
@@ -812,7 +747,6 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.loadingRuntimeStatus.set(true);
     this.loadingRuntimeLogs.set(false);
     this.loadingRuntimeOperations.set(false);
-    this.loadingComposeInspection.set(false);
     this.cancelingDeployment.set(false);
 
     const cachedStatus = this.store.runtimeStatusFor(projectRef);
@@ -826,6 +760,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.latestDeployment.set(deployment);
     if (deployment?.status === 'running') {
       this.deploymentLogExpanded.set(true);
+      this.selectedLogView.set('deployment');
     }
     this.queueLogScroll();
   }

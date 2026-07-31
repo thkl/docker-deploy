@@ -57,7 +57,7 @@
 }
 
 .runtime-light.running {
-  background: var(--accent);
+  background: var(--running);
 }
 
 .runtime-light.partial {
@@ -397,64 +397,6 @@
   padding-bottom: 0;
 }
 
-.storage-plan {
-  border-top: 1px solid var(--line);
-  display: grid;
-  gap: 0.85rem;
-  padding: 0.9rem;
-}
-
-.storage-plan h3 {
-  font-size: 0.98rem;
-  margin: 0 0 0.25rem;
-}
-
-.storage-plan p {
-  color: var(--muted);
-  margin: 0;
-}
-
-.storage-map-list {
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  overflow: hidden;
-}
-
-.storage-map-row {
-  align-items: center;
-  border-bottom: 1px solid var(--line);
-  display: grid;
-  gap: 0.65rem;
-  grid-template-columns: minmax(120px, 0.7fr) minmax(180px, 1.2fr) minmax(180px, 1.4fr);
-  padding: 0.65rem 0.75rem;
-}
-
-.storage-map-row:last-child {
-  border-bottom: 0;
-}
-
-.storage-map-row span {
-  color: var(--muted);
-}
-
-.storage-map-row code {
-  overflow-wrap: anywhere;
-}
-
-.storage-preview {
-  background: var(--panel-soft);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  color: var(--ink);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  margin: 0;
-  overflow: auto;
-  padding: 0.75rem;
-  white-space: pre-wrap;
-}
-
 @media (max-width: 900px) {
   .status-bar,
   .command-bar,
@@ -474,11 +416,6 @@
   }
 
   .operation-row {
-    align-items: stretch;
-    grid-template-columns: 1fr;
-  }
-
-  .storage-map-row {
     align-items: stretch;
     grid-template-columns: 1fr;
   }
