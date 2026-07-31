@@ -10,6 +10,7 @@ import { hasUnsafeRelativeBindMounts } from "./composeInspection.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { DeploymentService } from "./deploymentService.js";
+import { EventBus } from "./eventBus.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ControllerKeyState } from "./keyStore.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
@@ -35,13 +36,14 @@ export interface RouteDependencies {
     serverStore: ServerStore;
     runtimeStatusStreams: RuntimeStatusStreamHub;
     agentHealth: AgentHealthService;
+    eventBus: EventBus;
 }
 
 /**
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth } = dependencies;
+    const { adminAuth, configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -66,8 +68,8 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/servers", adminAuth.requireAuth);
 
     registerSettingsRoutes(app, globalSettingsStore);
-    registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth });
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams });
+    registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus });
     registerWebhookRoute(app, { configStore, deploymentService });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
@@ -94,8 +96,8 @@ function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSetting
 /**
  * Registers target-server read endpoints.
  */
-function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "controllerKeys" | "agentManager" | "globalSettingsStore" | "agentHealth">) {
-    const { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth } = dependencies;
+function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "controllerKeys" | "agentManager" | "globalSettingsStore" | "agentHealth" | "eventBus">) {
+    const { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus } = dependencies;
 
     app.get("/api/servers", (req: Request, res: Response) => {
         agentHealth.refreshLocal();
@@ -141,7 +143,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
 
     app.post("/api/servers", (req: Request, res: Response) => {
         try {
-            void createRemoteServer(req.body as ServerPayload, serverStore, agentHealth, res);
+            void createRemoteServer(req.body as ServerPayload, serverStore, agentHealth, eventBus, res);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
         }
@@ -150,7 +152,9 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
     app.put("/api/servers/:id", (req: Request, res: Response) => {
         try {
             const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-            res.json(serverStore.updateRemote(serverId, req.body as ServerPayload));
+            const server = serverStore.updateRemote(serverId, req.body as ServerPayload);
+            eventBus.publish({ type: "servers.updated", changedAt: new Date().toISOString() });
+            res.json(server);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not update server." });
         }
@@ -160,6 +164,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
         try {
             const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
             serverStore.deleteRemote(serverId);
+            eventBus.publish({ type: "servers.updated", changedAt: new Date().toISOString() });
             res.json({ deleted: true });
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not remove server." });
@@ -214,13 +219,20 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             }
 
             const paired = serverStore.markPaired(server.id, controllerKeys.encryptionPublicKey, controllerKeys.signingPublicKey);
-            res.json(serverStore.updateHealth(server.id, {
+            const updated = serverStore.updateHealth(server.id, {
                 status: "online",
                 agentServerId: health.body?.serverId,
                 agentVersion: health.body?.version,
                 activeJobs: health.body?.activeJobs ?? [],
                 capabilities: health.body?.capabilities
-            }) ?? paired);
+            }) ?? paired;
+            if (!updated) {
+                res.status(400).json({ error: "Could not update paired server health." });
+                return;
+            }
+            eventBus.publish({ type: "server.health", server: updated });
+            eventBus.publish({ type: "servers.updated", changedAt: new Date().toISOString() });
+            res.json(updated);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not pair server." });
         }
@@ -231,7 +243,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
  * Creates a remote server and discovers public agent keys from `/agent/health`
  * when the UI only submits a base URL.
  */
-async function createRemoteServer(payload: ServerPayload, serverStore: ServerStore, agentHealth: AgentHealthService, res: Response) {
+async function createRemoteServer(payload: ServerPayload, serverStore: ServerStore, agentHealth: AgentHealthService, eventBus: EventBus, res: Response) {
     try {
         const baseUrl = String(payload.baseUrl || "").trim().replace(/\/+$/, "");
         const health = await agentHealth.fetchAgentHealth(baseUrl);
@@ -258,13 +270,16 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
             return;
         }
 
-        res.status(201).json(serverStore.updateHealth(created.id, {
+        const updated = serverStore.updateHealth(created.id, {
             status: health.body.paired ? "online" : "unpaired",
             agentServerId: health.body.serverId,
             agentVersion: health.body.version,
             activeJobs: health.body.activeJobs ?? [],
             capabilities: health.body.capabilities
-        }) ?? created);
+        }) ?? created;
+        eventBus.publish({ type: "server.health", server: updated });
+        eventBus.publish({ type: "servers.updated", changedAt: new Date().toISOString() });
+        res.status(201).json(updated);
     } catch (error) {
         res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
     }
@@ -288,8 +303,8 @@ async function readResponseError(response: globalThis.Response) {
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "runtimeStatusStreams">) {
-    const { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "runtimeStatusStreams" | "eventBus">) {
+    const { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus } = dependencies;
 
     app.get("/api/projects", async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -347,6 +362,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
+            eventBus.publish({ type: "projects.updated", changedAt: new Date().toISOString() });
 
             const created = configStore.resolveProject(repoName);
             res.status(201).json({ id: created?.settings.id, name: repoName });
@@ -398,6 +414,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
+            eventBus.publish({ type: "projects.updated", changedAt: new Date().toISOString() });
 
             res.json({ id: existing.id, name: nextName });
         } catch (error) {
@@ -459,6 +476,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             delete config[projectName];
             configStore.writeConfig(config);
             actions.push("project config deleted");
+            eventBus.publish({ type: "projects.updated", changedAt: new Date().toISOString() });
 
             res.json({ deleted: true, actions });
         } catch (error) {
@@ -611,6 +629,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             }
 
             const status = await agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettingsStore.readSettings());
+            eventBus.publish({ type: "runtime.status", projectId: appSettings.id, projectName, status });
             res.json(status);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not inspect project status." });
@@ -702,6 +721,12 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                     output: result.output
                 });
                 void runtimeStatusStreams.refreshProject(projectName);
+                eventBus.publish({
+                    type: "runtime.operation.updated",
+                    projectId: record.projectId,
+                    projectName,
+                    operation: record
+                });
                 res.json({ ...result, operation: record });
             } catch (error) {
                 const message = error instanceof Error ? error.message : "Could not run runtime action.";
@@ -716,6 +741,12 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                     output: message
                 });
                 void runtimeStatusStreams.refreshProject(projectName);
+                eventBus.publish({
+                    type: "runtime.operation.updated",
+                    projectId: record.projectId,
+                    projectName,
+                    operation: record
+                });
                 res.status(400).json({ error: message, operation: record });
             }
         } catch (error) {

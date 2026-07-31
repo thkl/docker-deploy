@@ -20,7 +20,8 @@ export class RuntimeStatusStreamHub {
         private readonly configStore: ConfigStore,
         private readonly globalSettingsStore: GlobalSettingsStore,
         private readonly agentManager: AgentManager,
-        private readonly adminAuth: AdminAuth
+        private readonly adminAuth: AdminAuth,
+        private readonly publishRuntimeStatus: (projectId: string | undefined, projectName: string, status: RuntimeStatus) => void = () => {}
     ) {}
 
     /**
@@ -64,6 +65,7 @@ export class RuntimeStatusStreamHub {
             projectName: project.name,
             status
         });
+        this.publishRuntimeStatus(project.settings.id, project.name, status);
     }
 
     private registerClient(webSocket: WebSocket) {

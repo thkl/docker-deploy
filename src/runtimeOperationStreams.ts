@@ -5,7 +5,7 @@ import { AdminAuth } from "./auth.js";
 import { ConfigStore } from "./configStore.js";
 import { RuntimeLogStream } from "./deploy.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
-import { RuntimeOperationStore } from "./runtimeOperationStore.js";
+import { RuntimeOperationRecord, RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { ProjectSettings, RuntimeServiceAction } from "./types.js";
 import { normalizeProjectName } from "./validation.js";
 
@@ -20,7 +20,8 @@ export class RuntimeOperationStreamHub {
         private readonly agentManager: AgentManager,
         private readonly runtimeOperationStore: RuntimeOperationStore,
         private readonly adminAuth: AdminAuth,
-        private readonly refreshRuntimeStatus: (projectName: string) => void | Promise<void> = () => {}
+        private readonly refreshRuntimeStatus: (projectName: string) => void | Promise<void> = () => {},
+        private readonly publishRuntimeOperation: (projectName: string, operation: RuntimeOperationRecord) => void = () => {}
     ) {}
 
     /**
@@ -103,6 +104,7 @@ export class RuntimeOperationStreamHub {
                 output: output.trim() || error || ""
             });
             void this.refreshRuntimeStatus(projectName);
+            this.publishRuntimeOperation(projectName, record);
             send({ type: "operation", operation: record });
             send({ type: "status", status: status === "succeeded" ? "closed" : "error" });
             webSocket.close();

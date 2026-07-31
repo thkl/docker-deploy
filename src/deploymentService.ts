@@ -1,4 +1,4 @@
-import { DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
+import { DeploymentRecord, DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { AgentManager } from "./agentManager.js";
 import { ProjectSettings } from "./types.js";
@@ -19,7 +19,8 @@ export class DeploymentService {
         private readonly globalSettingsStore: GlobalSettingsStore,
         private readonly agentManager: AgentManager,
         private readonly broadcastDeployment: (projectName: string) => void,
-        private readonly refreshRuntimeStatus: (projectName: string) => void | Promise<void> = () => {}
+        private readonly refreshRuntimeStatus: (projectName: string) => void | Promise<void> = () => {},
+        private readonly publishDeployment: (projectName: string, deployment: DeploymentRecord | null) => void = () => {}
     ) {}
 
     /**
@@ -29,13 +30,13 @@ export class DeploymentService {
     startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
         const deployment = this.deploymentStore.start(projectName, trigger, appSettings.serverId ?? "local");
         const globalSettings = this.globalSettingsStore.readSettings();
-        this.broadcastDeployment(projectName);
+        this.broadcastDeploymentUpdate(projectName, deployment);
 
         const agent = this.agentManager.getClient(appSettings.serverId ?? "local");
         const deploymentRun = agent.deployProject(projectName, appSettings, globalSettings, {
             onOutput: (stream, chunk) => {
                 this.deploymentStore.append(projectName, deployment.id, stream, chunk);
-                this.broadcastDeployment(projectName);
+                this.broadcastDeploymentUpdate(projectName);
             },
             onSuccess: () => {
                 if (!this.activeDeployments.has(deployment.id)) {
@@ -43,7 +44,7 @@ export class DeploymentService {
                 }
                 this.activeDeployments.delete(deployment.id);
                 this.deploymentStore.finish(projectName, deployment.id, "succeeded");
-                this.broadcastDeployment(projectName);
+                this.broadcastDeploymentUpdate(projectName);
                 void this.refreshRuntimeStatus(projectName);
             },
             onFailure: (error) => {
@@ -55,7 +56,7 @@ export class DeploymentService {
                     error: error.message,
                     exitCode: error.code
                 });
-                this.broadcastDeployment(projectName);
+                this.broadcastDeploymentUpdate(projectName);
             }
         });
 
@@ -74,7 +75,7 @@ export class DeploymentService {
                 error: error instanceof Error ? error.message : "Could not dispatch deployment.",
                 exitCode: "dispatch"
             });
-            this.broadcastDeployment(projectName);
+            this.broadcastDeploymentUpdate(projectName);
         });
 
         return deployment;
@@ -102,7 +103,7 @@ export class DeploymentService {
             error: "Deployment canceled by user.",
             exitCode: "canceled"
         });
-        this.broadcastDeployment(projectName);
+        this.broadcastDeploymentUpdate(projectName);
         void this.refreshRuntimeStatus(projectName);
         return this.deploymentStore.latest(appSettings.id ?? projectName);
     }
@@ -132,7 +133,7 @@ export class DeploymentService {
                     error: "Controller restarted while deployment was running, and the project no longer exists.",
                     exitCode: "controller-restart"
                 });
-                this.broadcastDeployment(deployment.projectName);
+                this.broadcastDeploymentUpdate(deployment.projectName);
                 void this.refreshRuntimeStatus(deployment.projectName);
                 continue;
             }
@@ -179,8 +180,13 @@ export class DeploymentService {
             });
         }
 
-        this.broadcastDeployment(projectName);
+        this.broadcastDeploymentUpdate(projectName);
         void this.refreshRuntimeStatus(projectName);
+    }
+
+    private broadcastDeploymentUpdate(projectName: string, deployment = this.deploymentStore.latest(projectName)) {
+        this.broadcastDeployment(projectName);
+        this.publishDeployment(projectName, deployment);
     }
 }
 

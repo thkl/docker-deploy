@@ -9,6 +9,7 @@ import { ConfigStore } from "./configStore.js";
 import { DeploymentService } from "./deploymentService.js";
 import { DeploymentStreamHub } from "./deploymentStreams.js";
 import { DeploymentStore } from "./deploymentStore.js";
+import { EventBus } from "./eventBus.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ensureControllerKeys } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
@@ -18,7 +19,7 @@ import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
-import { AuthenticatedRequest } from "./types.js";
+import { AuthenticatedRequest, RuntimeStatus } from "./types.js";
 
 /**
  * Express controller bootstrap.
@@ -40,24 +41,49 @@ class App {
     private readonly controllerKeys = ensureControllerKeys();
     private readonly localAgent = new LocalAgent();
     private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
-    private readonly agentHealth = new AgentHealthService(this.serverStore, this.deploymentStore, this.globalSettingsStore, this.agentManager);
+    private readonly eventBus = new EventBus(this.adminAuth, () => this.buildEventSnapshot());
+    private readonly agentHealth = new AgentHealthService(
+        this.serverStore,
+        this.deploymentStore,
+        this.globalSettingsStore,
+        this.agentManager,
+        (server) => this.eventBus.publish({ type: "server.health", server })
+    );
     private readonly deploymentStreams = new DeploymentStreamHub(this.configStore, this.deploymentStore, this.adminAuth);
     private readonly runtimeLogStreams = new RuntimeLogStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.adminAuth);
-    private readonly runtimeStatusStreams = new RuntimeStatusStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.adminAuth);
+    private readonly runtimeStatusStreams = new RuntimeStatusStreamHub(
+        this.configStore,
+        this.globalSettingsStore,
+        this.agentManager,
+        this.adminAuth,
+        (projectId, projectName, status) => this.eventBus.publish({ type: "runtime.status", projectId, projectName, status })
+    );
     private readonly runtimeOperationStreams = new RuntimeOperationStreamHub(
         this.configStore,
         this.globalSettingsStore,
         this.agentManager,
         this.runtimeOperationStore,
         this.adminAuth,
-        (projectName) => this.runtimeStatusStreams.refreshProject(projectName)
+        (projectName) => this.runtimeStatusStreams.refreshProject(projectName),
+        (projectName, operation) => this.eventBus.publish({
+            type: "runtime.operation.updated",
+            projectId: operation.projectId,
+            projectName,
+            operation
+        })
     );
     private readonly deploymentService = new DeploymentService(
         this.deploymentStore,
         this.globalSettingsStore,
         this.agentManager,
         (projectName) => this.deploymentStreams.broadcast(projectName),
-        (projectName) => this.runtimeStatusStreams.refreshProject(projectName)
+        (projectName) => this.runtimeStatusStreams.refreshProject(projectName),
+        (projectName, deployment) => this.eventBus.publish({
+            type: "deployment.updated",
+            projectId: deployment?.projectId,
+            projectName,
+            deployment
+        })
     );
 
     /**
@@ -86,7 +112,8 @@ class App {
             controllerKeys: this.controllerKeys,
             serverStore: this.serverStore,
             runtimeStatusStreams: this.runtimeStatusStreams,
-            agentHealth: this.agentHealth
+            agentHealth: this.agentHealth,
+            eventBus: this.eventBus
         });
         this.registerErrorHandler();
 
@@ -95,6 +122,7 @@ class App {
         this.runtimeLogStreams.register(server);
         this.runtimeOperationStreams.register(server);
         this.runtimeStatusStreams.register(server);
+        this.eventBus.register(server);
         server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
         this.agentHealth.startHeartbeat();
     }
@@ -106,6 +134,43 @@ class App {
         const traefik = await this.localAgent.detectTraefik(this.globalSettingsStore.readSettings());
         this.serverStore.updateCapabilities("local", { traefik });
         this.agentHealth.refreshLocal();
+    }
+
+    /**
+     * Sends initial state over the global browser event stream.
+     */
+    private async buildEventSnapshot() {
+        const config = this.configStore.readConfig();
+        const globalSettings = this.globalSettingsStore.readSettings();
+        const serverEvents = this.serverStore.list().map((server) => ({ type: "server.health" as const, server }));
+        const runtimeEvents = await Promise.all(
+            Object.entries(config).map(async ([projectName, appSettings]) => {
+                try {
+                    const status = await this.agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettings);
+                    return {
+                        type: "runtime.status" as const,
+                        projectId: appSettings.id,
+                        projectName,
+                        status
+                    };
+                } catch (error) {
+                    const status = {
+                        status: "error",
+                        checkedAt: new Date().toISOString(),
+                        services: [],
+                        error: error instanceof Error ? error.message : "Could not inspect runtime status."
+                    } satisfies RuntimeStatus;
+                    return {
+                        type: "runtime.status" as const,
+                        projectId: appSettings.id,
+                        projectName,
+                        status
+                    };
+                }
+            })
+        );
+
+        return [...serverEvents, ...runtimeEvents];
     }
 
     /**

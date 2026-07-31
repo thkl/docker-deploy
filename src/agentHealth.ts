@@ -28,7 +28,8 @@ export class AgentHealthService {
         private readonly serverStore: ServerStore,
         private readonly deploymentStore: DeploymentStore,
         private readonly globalSettingsStore: GlobalSettingsStore,
-        private readonly agentManager: AgentManager
+        private readonly agentManager: AgentManager,
+        private readonly publishServerHealth: (server: ServerRecord) => void = () => {}
     ) {}
 
     /**
@@ -50,7 +51,7 @@ export class AgentHealthService {
      */
     refreshLocal() {
         const capabilities = this.serverStore.get("local")?.capabilities;
-        return this.serverStore.updateHealth("local", {
+        return this.publishUpdatedServer(this.serverStore.updateHealth("local", {
             status: "online",
             agentVersion: appVersion(),
             activeJobs: this.localActiveJobs(),
@@ -62,7 +63,7 @@ export class AgentHealthService {
                     checkedAt: new Date().toISOString()
                 }
             }
-        });
+        }));
     }
 
     /**
@@ -106,29 +107,37 @@ export class AgentHealthService {
 
     private async refreshRemote(server: ServerRecord) {
         if (!server.baseUrl) {
-            return this.serverStore.updateHealth(server.id, {
+            return this.publishUpdatedServer(this.serverStore.updateHealth(server.id, {
                 status: server.status === "unpaired" ? "unpaired" : "offline",
                 activeJobs: [],
                 lastHealthError: "Remote agent URL is missing."
-            });
+            }));
         }
 
         const health = await fetchAgentHealth(server.baseUrl, this.globalSettingsStore.readSettings());
         if (!health.ok || !health.body) {
-            return this.serverStore.updateHealth(server.id, {
+            return this.publishUpdatedServer(this.serverStore.updateHealth(server.id, {
                 status: server.status === "unpaired" ? "unpaired" : "offline",
                 activeJobs: [],
                 lastHealthError: health.message
-            });
+            }));
         }
 
-        return this.serverStore.updateHealth(server.id, {
+        return this.publishUpdatedServer(this.serverStore.updateHealth(server.id, {
             status: health.body.paired ? "online" : "unpaired",
             agentServerId: health.body.serverId,
             agentVersion: health.body.version,
             activeJobs: health.body.activeJobs ?? [],
             capabilities: health.body.capabilities
-        });
+        }));
+    }
+
+    private publishUpdatedServer(server: ServerRecord | undefined) {
+        if (server) {
+            this.publishServerHealth(server);
+        }
+
+        return server;
     }
 
     private localActiveJobs() {

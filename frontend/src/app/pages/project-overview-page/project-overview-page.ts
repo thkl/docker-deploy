@@ -76,6 +76,20 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
       this.selectedRuntimeService.set(status.services[0].service);
     }
   });
+  private readonly deploymentSync = effect(() => {
+    const project = this.store.selectedProject();
+    if (!project || !this.activeProjectRef || (project.id !== this.activeProjectRef && project.name !== this.activeProjectRef)) {
+      return;
+    }
+
+    const deployment = project.lastDeployment ?? null;
+    if (deployment === this.latestDeployment()) {
+      return;
+    }
+
+    this.setLatestDeployment(deployment);
+    this.loadingDeployment.set(false);
+  });
 
   @ViewChild('deployLog') private deployLog?: ElementRef<HTMLElement>;
   @ViewChild('runtimeLog') private runtimeLog?: ElementRef<HTMLElement>;

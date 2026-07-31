@@ -1,17 +1,17 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ProjectSummary, RuntimeStatus, ServerRecord } from '../models/project';
+import { ControllerEvent, EventBusService } from '../services/event-bus';
 import { ProjectApi } from '../services/project-api';
-import { RuntimeStatusStreamService } from '../services/runtime-status-stream';
 
 const selectedProjectKey = 'updater.selectedProject';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectStore {
   private readonly api = inject(ProjectApi);
-  private readonly runtimeStatusStream = inject(RuntimeStatusStreamService);
+  private readonly eventBus = inject(EventBusService);
   private readonly selectedId = signal(localStorage.getItem(selectedProjectKey) ?? '');
-  private runtimeStatusSubscription?: Subscription;
+  private eventBusSubscription?: Subscription;
 
   readonly projects = signal<ProjectSummary[]>([]);
   readonly servers = signal<ServerRecord[]>([]);
@@ -53,7 +53,7 @@ export class ProjectStore {
         } else {
           this.selectedId.set(projects[0]?.id ?? '');
         }
-        this.connectRuntimeStatusStream();
+        this.connectEventBus();
         this.loading.set(false);
       },
       error: () => {
@@ -123,20 +123,62 @@ export class ProjectStore {
     );
   }
 
-  private connectRuntimeStatusStream() {
+  private connectEventBus() {
     this.loadRuntimeStatuses(this.projects());
-    if (this.runtimeStatusSubscription) {
+    if (this.eventBusSubscription) {
       return;
     }
 
-    this.runtimeStatusSubscription = this.runtimeStatusStream.streamStatuses().subscribe({
-      next: (message) => {
-        const project = this.projects().find((candidate) => candidate.id === message.projectId || candidate.name === message.projectName);
-        this.runtimeStatuses.update((statuses) => ({ ...statuses, [project?.id ?? message.projectId ?? message.projectName]: message.status }));
-      },
+    this.eventBusSubscription = this.eventBus.stream().subscribe({
+      next: (event) => this.handleControllerEvent(event),
       error: () => {
-        this.runtimeStatusSubscription = undefined;
+        this.eventBusSubscription = undefined;
       },
+    });
+  }
+
+  private handleControllerEvent(event: ControllerEvent) {
+    if (event.type === 'projects.updated') {
+      this.loadProjects();
+      return;
+    }
+
+    if (event.type === 'servers.updated') {
+      this.loadServers();
+      return;
+    }
+
+    if (event.type === 'server.health') {
+      this.upsertServer(event.server);
+      return;
+    }
+
+    if (event.type === 'runtime.status') {
+      const project = this.projects().find((candidate) => candidate.id === event.projectId || candidate.name === event.projectName);
+      this.runtimeStatuses.update((statuses) => ({ ...statuses, [project?.id ?? event.projectId ?? event.projectName]: event.status }));
+      this.runtimeStatusLoading.update((statuses) => ({ ...statuses, [project?.id ?? event.projectId ?? event.projectName]: false }));
+      return;
+    }
+
+    if (event.type === 'deployment.updated') {
+      this.projects.update((projects) =>
+        projects.map((project) =>
+          project.id === event.projectId || project.name === event.projectName
+            ? { ...project, lastDeployment: event.deployment }
+            : project,
+        ),
+      );
+    }
+  }
+
+  private upsertServer(server: ServerRecord) {
+    this.servers.update((servers) => {
+      const existingIndex = servers.findIndex((candidate) => candidate.id === server.id);
+      if (existingIndex === -1) {
+        return [...servers, server].sort((left, right) => left.name.localeCompare(right.name));
+      }
+
+      return servers.map((candidate) => (candidate.id === server.id ? server : candidate));
     });
   }
 }
