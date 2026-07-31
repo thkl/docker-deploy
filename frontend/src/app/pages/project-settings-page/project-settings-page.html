@@ -183,6 +183,10 @@
                       <input [value]="service.dockerfile" (input)="updateBuilderService(service.id, 'dockerfile', $event)" placeholder="Dockerfile" />
                     </label>
                     <label>
+                      <span>Build target</span>
+                      <input [value]="service.buildTarget" (input)="updateBuilderService(service.id, 'buildTarget', $event)" placeholder="runtime" />
+                    </label>
+                    <label>
                       <span>Container name</span>
                       <input [value]="service.containerName" (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay" />
                     </label>

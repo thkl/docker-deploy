@@ -13,6 +13,7 @@ interface ComposeBuilderService {
   image: string;
   build: string;
   dockerfile: string;
+  buildTarget: string;
   containerName: string;
   command: string;
   restart: string;
@@ -489,15 +490,24 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   protected addBuilderService() {
-    const index = this.builderServices().length + 1;
+    const currentServices = this.builderServices();
+    const index = currentServices.length + 1;
+    const shouldCreateAppNetwork = index > 1 && this.builderNetworks().length === 0;
+    const serviceNetwork = this.builderNetworks()[0]?.name || (shouldCreateAppNetwork ? 'app' : '');
+
+    if (shouldCreateAppNetwork) {
+      this.addBuilderNetwork('app');
+    }
+
     this.builderServices.update((services) => [
-      ...services,
+      ...services.map((service) => service.networks || service.networkMode ? service : { ...service, networks: serviceNetwork }),
       {
         id: this.nextBuilderId++,
         name: index === 1 ? 'app' : `service-${index}`,
         image: '',
         build: index === 1 ? '.' : '',
         dockerfile: '',
+        buildTarget: '',
         containerName: '',
         command: '',
         restart: 'unless-stopped',
@@ -507,17 +517,13 @@ export class ProjectSettingsPage implements OnInit {
         expose: '',
         environment: '',
         volumes: '',
-        networks: this.builderNetworks()[0]?.name || 'app',
+        networks: serviceNetwork,
         dependsOn: '',
         dependsOnAdvanced: '',
         profiles: '',
         extra: ''
       }
     ]);
-
-    if (this.builderNetworks().length === 0) {
-      this.addBuilderNetwork('app');
-    }
   }
 
   protected removeBuilderService(id: number) {
@@ -748,9 +754,6 @@ export class ProjectSettingsPage implements OnInit {
     if (this.builderServices().length === 0) {
       this.addBuilderService();
     }
-    if (this.builderNetworks().length === 0) {
-      this.addBuilderNetwork('app');
-    }
   }
 
   private resetForNewProject() {
@@ -978,10 +981,15 @@ function renderComposeBuilder(
     if (service.image.trim()) {
       lines.push(`    image: ${yamlScalar(service.image.trim())}`);
     }
-    if (service.build.trim() && service.dockerfile.trim()) {
+    if (service.build.trim() && (service.dockerfile.trim() || service.buildTarget.trim())) {
       lines.push('    build:');
       lines.push(`      context: ${yamlScalar(service.build.trim())}`);
-      lines.push(`      dockerfile: ${yamlScalar(service.dockerfile.trim())}`);
+      if (service.dockerfile.trim()) {
+        lines.push(`      dockerfile: ${yamlScalar(service.dockerfile.trim())}`);
+      }
+      if (service.buildTarget.trim()) {
+        lines.push(`      target: ${yamlScalar(service.buildTarget.trim())}`);
+      }
     } else if (service.build.trim()) {
       lines.push(`    build: ${yamlScalar(service.build.trim())}`);
     }
@@ -1328,8 +1336,8 @@ function uniqueBuilderName(baseName: string, usedNames: string[]) {
 function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderService, 'id'>[]; networks: Omit<ComposeBuilderNetwork, 'id'>[]; volumes: Omit<ComposeBuilderVolume, 'id'>[] } | null {
   if (!compose.trim()) {
     return {
-      services: [blankBuilderService('app', '.', 'app')],
-      networks: [{ name: 'app', external: false, driver: '', extra: '' }],
+      services: [blankBuilderService('app', '.', '')],
+      networks: [],
       volumes: [{ name: 'data', external: false, driver: '', extra: '' }]
     };
   }
@@ -1388,6 +1396,8 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
             service.build = value;
           } else if (key === 'dockerfile') {
             service.dockerfile = value;
+          } else if (key === 'target') {
+            service.buildTarget = value;
           } else {
             service.extra = appendRawLine(service.extra, raw.slice(4));
           }
@@ -1409,6 +1419,13 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
         }
         if (service && indent === 6 && text.startsWith('- ') && listKey) {
           appendParsedServiceListValue(service, listKey, unquoteYaml(text.slice(2)));
+          continue;
+        }
+        if (service && indent === 6 && listKey === 'networks' && /^[^:]+:\s*\{\}\s*$/.test(text)) {
+          continue;
+        }
+        if (service && indent === 6 && listKey && text.startsWith('target:') && service.build) {
+          service.buildTarget = unquoteYaml(text.slice('target:'.length));
           continue;
         }
         if (service && indent === 6 && listKey === 'environment') {
@@ -1439,6 +1456,11 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
 
       if (key === 'build' && !value) {
         objectKey = 'build';
+        continue;
+      }
+
+      if (key === 'target' && service.build) {
+        service.buildTarget = unquoteYaml(value);
         continue;
       }
 
@@ -1484,6 +1506,7 @@ function blankBuilderService(name: string, build: string, networks: string): Omi
     image: '',
     build,
     dockerfile: '',
+    buildTarget: '',
     containerName: '',
     command: '',
     restart: 'unless-stopped',
@@ -1502,7 +1525,7 @@ function blankBuilderService(name: string, build: string, networks: string): Omi
 }
 
 function applyParsedServiceScalar(service: Omit<ComposeBuilderService, 'id'>, key: string, value: string) {
-  if (key === 'image' || key === 'build' || key === 'dockerfile' || key === 'command' || key === 'restart' || key === 'networkMode' || key === 'containerName') {
+  if (key === 'image' || key === 'build' || key === 'dockerfile' || key === 'buildTarget' || key === 'command' || key === 'restart' || key === 'networkMode' || key === 'containerName') {
     service[key] = value;
   } else if (key === 'network_mode') {
     service.networkMode = value;
