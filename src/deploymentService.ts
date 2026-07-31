@@ -20,7 +20,8 @@ export class DeploymentService {
         private readonly agentManager: AgentManager,
         private readonly broadcastDeployment: (projectName: string) => void,
         private readonly refreshRuntimeStatus: (projectName: string) => void | Promise<void> = () => {},
-        private readonly publishDeployment: (projectName: string, deployment: DeploymentRecord | null) => void = () => {}
+        private readonly publishDeployment: (projectName: string, deployment: DeploymentRecord | null) => void = () => {},
+        private readonly refreshServerHealth: (serverId: string) => void | Promise<void> = () => {}
     ) {}
 
     /**
@@ -31,6 +32,7 @@ export class DeploymentService {
         const deployment = this.deploymentStore.start(projectName, trigger, appSettings.serverId ?? "local");
         const globalSettings = this.globalSettingsStore.readSettings();
         this.broadcastDeploymentUpdate(projectName, deployment);
+        void this.refreshServerHealth(appSettings.serverId ?? "local");
 
         const agent = this.agentManager.getClient(appSettings.serverId ?? "local");
         const deploymentRun = agent.deployProject(projectName, appSettings, globalSettings, {
@@ -45,6 +47,7 @@ export class DeploymentService {
                 this.activeDeployments.delete(deployment.id);
                 this.deploymentStore.finish(projectName, deployment.id, "succeeded");
                 this.broadcastDeploymentUpdate(projectName);
+                void this.refreshServerHealth(appSettings.serverId ?? "local");
                 void this.refreshRuntimeStatus(projectName);
             },
             onFailure: (error) => {
@@ -57,6 +60,7 @@ export class DeploymentService {
                     exitCode: error.code
                 });
                 this.broadcastDeploymentUpdate(projectName);
+                void this.refreshServerHealth(appSettings.serverId ?? "local");
             }
         });
 
@@ -76,6 +80,7 @@ export class DeploymentService {
                 exitCode: "dispatch"
             });
             this.broadcastDeploymentUpdate(projectName);
+            void this.refreshServerHealth(appSettings.serverId ?? "local");
         });
 
         return deployment;
@@ -104,6 +109,7 @@ export class DeploymentService {
             exitCode: "canceled"
         });
         this.broadcastDeploymentUpdate(projectName);
+        void this.refreshServerHealth(appSettings.serverId ?? "local");
         void this.refreshRuntimeStatus(projectName);
         return this.deploymentStore.latest(appSettings.id ?? projectName);
     }
@@ -134,6 +140,7 @@ export class DeploymentService {
                     exitCode: "controller-restart"
                 });
                 this.broadcastDeploymentUpdate(deployment.projectName);
+                void this.refreshServerHealth(deployment.serverId || "local");
                 void this.refreshRuntimeStatus(deployment.projectName);
                 continue;
             }
@@ -181,6 +188,7 @@ export class DeploymentService {
         }
 
         this.broadcastDeploymentUpdate(projectName);
+        void this.refreshServerHealth(appSettings.serverId ?? "local");
         void this.refreshRuntimeStatus(projectName);
     }
 

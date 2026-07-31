@@ -83,7 +83,10 @@ class App {
             projectId: deployment?.projectId,
             projectName,
             deployment
-        })
+        }),
+        async (serverId) => {
+            await this.agentHealth.refreshServer(serverId);
+        }
     );
 
     /**
