@@ -15,6 +15,7 @@ import { registerRoutes } from "./routes.js";
 import { RuntimeLogStreamHub } from "./runtimeLogStreams.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
+import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { AuthenticatedRequest } from "./types.js";
 
@@ -40,12 +41,21 @@ class App {
     private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
     private readonly deploymentStreams = new DeploymentStreamHub(this.configStore, this.deploymentStore, this.adminAuth);
     private readonly runtimeLogStreams = new RuntimeLogStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.adminAuth);
-    private readonly runtimeOperationStreams = new RuntimeOperationStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.runtimeOperationStore, this.adminAuth);
+    private readonly runtimeStatusStreams = new RuntimeStatusStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.adminAuth);
+    private readonly runtimeOperationStreams = new RuntimeOperationStreamHub(
+        this.configStore,
+        this.globalSettingsStore,
+        this.agentManager,
+        this.runtimeOperationStore,
+        this.adminAuth,
+        (projectName) => this.runtimeStatusStreams.refreshProject(projectName)
+    );
     private readonly deploymentService = new DeploymentService(
         this.deploymentStore,
         this.globalSettingsStore,
         this.agentManager,
-        (projectName) => this.deploymentStreams.broadcast(projectName)
+        (projectName) => this.deploymentStreams.broadcast(projectName),
+        (projectName) => this.runtimeStatusStreams.refreshProject(projectName)
     );
 
     /**
@@ -72,7 +82,8 @@ class App {
             globalSettingsStore: this.globalSettingsStore,
             agentManager: this.agentManager,
             controllerKeys: this.controllerKeys,
-            serverStore: this.serverStore
+            serverStore: this.serverStore,
+            runtimeStatusStreams: this.runtimeStatusStreams
         });
         this.registerErrorHandler();
 
@@ -80,6 +91,7 @@ class App {
         this.deploymentStreams.register(server);
         this.runtimeLogStreams.register(server);
         this.runtimeOperationStreams.register(server);
+        this.runtimeStatusStreams.register(server);
         server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
     }
 

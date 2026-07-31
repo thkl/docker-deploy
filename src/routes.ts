@@ -12,6 +12,7 @@ import { DeploymentService } from "./deploymentService.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ControllerKeyState } from "./keyStore.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
+import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
 import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerCapabilities, ServerPayload } from "./types.js";
@@ -31,13 +32,14 @@ export interface RouteDependencies {
     agentManager: AgentManager;
     controllerKeys: ControllerKeyState;
     serverStore: ServerStore;
+    runtimeStatusStreams: RuntimeStatusStreamHub;
 }
 
 /**
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore } = dependencies;
+    const { adminAuth, configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -63,7 +65,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
 
     registerSettingsRoutes(app, globalSettingsStore);
     registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore });
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager });
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams });
     registerWebhookRoute(app, { configStore, deploymentService });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
@@ -287,8 +289,8 @@ async function readResponseError(response: globalThis.Response) {
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager">) {
-    const { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "runtimeStatusStreams">) {
+    const { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams } = dependencies;
 
     app.get("/api/projects", async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -700,6 +702,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                     finishedAt: result.checkedAt,
                     output: result.output
                 });
+                void runtimeStatusStreams.refreshProject(projectName);
                 res.json({ ...result, operation: record });
             } catch (error) {
                 const message = error instanceof Error ? error.message : "Could not run runtime action.";
@@ -713,6 +716,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                     error: message,
                     output: message
                 });
+                void runtimeStatusStreams.refreshProject(projectName);
                 res.status(400).json({ error: message, operation: record });
             }
         } catch (error) {

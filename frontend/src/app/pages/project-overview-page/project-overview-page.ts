@@ -1,4 +1,4 @@
-import { Component, computed, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, effect, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ComposeInspection, ComposeMountInspection, ComposeServiceInspection, DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
@@ -66,6 +66,18 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   private runtimeLogSubscription: Subscription | undefined;
   private runtimeOperationSubscription: Subscription | undefined;
   private activeProjectRef = '';
+  private readonly runtimeStatusSync = effect(() => {
+    const status = this.activeProjectRef ? this.store.runtimeStatusFor(this.activeProjectRef) : null;
+    if (!status) {
+      return;
+    }
+
+    this.runtimeStatus.set(status);
+    this.loadingRuntimeStatus.set(false);
+    if (!this.selectedRuntimeService() && status.services[0]?.service) {
+      this.selectedRuntimeService.set(status.services[0].service);
+    }
+  });
 
   @ViewChild('deployLog') private deployLog?: ElementRef<HTMLElement>;
   @ViewChild('runtimeLog') private runtimeLog?: ElementRef<HTMLElement>;
@@ -786,6 +798,12 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.loadingRuntimeOperations.set(false);
     this.loadingComposeInspection.set(false);
     this.cancelingDeployment.set(false);
+
+    const cachedStatus = this.store.runtimeStatusFor(projectRef);
+    if (cachedStatus) {
+      this.runtimeStatus.set(cachedStatus);
+      this.loadingRuntimeStatus.set(false);
+    }
   }
 
   private setLatestDeployment(deployment: DeploymentRecord | null) {

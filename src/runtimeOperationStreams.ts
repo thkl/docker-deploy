@@ -19,7 +19,8 @@ export class RuntimeOperationStreamHub {
         private readonly globalSettingsStore: GlobalSettingsStore,
         private readonly agentManager: AgentManager,
         private readonly runtimeOperationStore: RuntimeOperationStore,
-        private readonly adminAuth: AdminAuth
+        private readonly adminAuth: AdminAuth,
+        private readonly refreshRuntimeStatus: (projectName: string) => void | Promise<void> = () => {}
     ) {}
 
     /**
@@ -101,6 +102,7 @@ export class RuntimeOperationStreamHub {
                 ...(error ? { error } : {}),
                 output: output.trim() || error || ""
             });
+            void this.refreshRuntimeStatus(projectName);
             send({ type: "operation", operation: record });
             send({ type: "status", status: status === "succeeded" ? "closed" : "error" });
             webSocket.close();

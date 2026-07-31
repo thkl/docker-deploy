@@ -1,13 +1,17 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { ProjectSummary, RuntimeStatus, ServerRecord } from '../models/project';
 import { ProjectApi } from '../services/project-api';
+import { RuntimeStatusStreamService } from '../services/runtime-status-stream';
 
 const selectedProjectKey = 'updater.selectedProject';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectStore {
   private readonly api = inject(ProjectApi);
+  private readonly runtimeStatusStream = inject(RuntimeStatusStreamService);
   private readonly selectedId = signal(localStorage.getItem(selectedProjectKey) ?? '');
+  private runtimeStatusSubscription?: Subscription;
 
   readonly projects = signal<ProjectSummary[]>([]);
   readonly servers = signal<ServerRecord[]>([]);
@@ -49,7 +53,7 @@ export class ProjectStore {
         } else {
           this.selectedId.set(projects[0]?.id ?? '');
         }
-        this.loadRuntimeStatuses(projects);
+        this.connectRuntimeStatusStream();
         this.loading.set(false);
       },
       error: () => {
@@ -117,9 +121,22 @@ export class ProjectStore {
     this.runtimeStatuses.update((statuses) =>
       Object.fromEntries(Object.entries(statuses).filter(([id]) => currentIds.has(id))),
     );
+  }
 
-    for (const project of projects) {
-      this.refreshRuntimeStatus(project.id);
+  private connectRuntimeStatusStream() {
+    this.loadRuntimeStatuses(this.projects());
+    if (this.runtimeStatusSubscription) {
+      return;
     }
+
+    this.runtimeStatusSubscription = this.runtimeStatusStream.streamStatuses().subscribe({
+      next: (message) => {
+        const project = this.projects().find((candidate) => candidate.id === message.projectId || candidate.name === message.projectName);
+        this.runtimeStatuses.update((statuses) => ({ ...statuses, [project?.id ?? message.projectId ?? message.projectName]: message.status }));
+      },
+      error: () => {
+        this.runtimeStatusSubscription = undefined;
+      },
+    });
   }
 }

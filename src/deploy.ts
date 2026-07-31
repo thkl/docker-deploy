@@ -239,27 +239,34 @@ printf '{"containerCount":%s,"networkPresent":%s}\\n' "$CONTAINERS" "$NETWORK_PR
 export async function inspectProjectStatus(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<RuntimeStatus> {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
-    const dockerRunCommand = `docker run -i --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            alpine:latest sh << 'EOF'
-                apk add --no-cache docker-cli > /dev/null 2>&1
-                IDS="$(docker ps -aq --filter ${shellQuote(`label=com.docker.compose.project=${composeProjectName}`)})"
-                if [ -z "$IDS" ]; then
-                    echo "[]"
-                else
-                    docker inspect $IDS
-                fi
-EOF`;
 
     try {
-        const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 2 * 1024 * 1024 });
+        const { stdout: idsOutput, stderr: idsError } = await execAsync(
+            `docker ps -aq --filter ${shellQuote(`label=com.docker.compose.project=${composeProjectName}`)}`,
+            { maxBuffer: 512 * 1024 }
+        );
+        if (idsError.trim()) {
+            return runtimeError(idsError.trim());
+        }
+
+        const ids = idsOutput.split(/\s+/).map((id) => id.trim()).filter(Boolean);
+        if (!ids.length) {
+            return {
+                status: "stopped",
+                checkedAt: new Date().toISOString(),
+                services: []
+            };
+        }
+
+        const { stdout, stderr } = await execAsync(
+            `docker inspect ${ids.map(shellQuote).join(" ")}`,
+            { maxBuffer: 2 * 1024 * 1024 }
+        );
         if (stderr.trim()) {
             return runtimeError(stderr.trim());
         }
 
-        const services = stdout
-            ? (JSON.parse(stdout.trim()) as DockerInspectContainer[]).map(parseRuntimeService)
-            : [];
+        const services = (JSON.parse(stdout.trim()) as DockerInspectContainer[]).map(parseRuntimeService);
 
         return {
             status: summarizeRuntimeStatus(services),

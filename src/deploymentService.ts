@@ -18,7 +18,8 @@ export class DeploymentService {
         private readonly deploymentStore: DeploymentStore,
         private readonly globalSettingsStore: GlobalSettingsStore,
         private readonly agentManager: AgentManager,
-        private readonly broadcastDeployment: (projectName: string) => void
+        private readonly broadcastDeployment: (projectName: string) => void,
+        private readonly refreshRuntimeStatus: (projectName: string) => void | Promise<void> = () => {}
     ) {}
 
     /**
@@ -43,6 +44,7 @@ export class DeploymentService {
                 this.activeDeployments.delete(deployment.id);
                 this.deploymentStore.finish(projectName, deployment.id, "succeeded");
                 this.broadcastDeployment(projectName);
+                void this.refreshRuntimeStatus(projectName);
             },
             onFailure: (error) => {
                 if (!this.activeDeployments.has(deployment.id)) {
@@ -101,6 +103,7 @@ export class DeploymentService {
             exitCode: "canceled"
         });
         this.broadcastDeployment(projectName);
+        void this.refreshRuntimeStatus(projectName);
         return this.deploymentStore.latest(appSettings.id ?? projectName);
     }
 
@@ -130,6 +133,7 @@ export class DeploymentService {
                     exitCode: "controller-restart"
                 });
                 this.broadcastDeployment(deployment.projectName);
+                void this.refreshRuntimeStatus(deployment.projectName);
                 continue;
             }
 
@@ -176,6 +180,7 @@ export class DeploymentService {
         }
 
         this.broadcastDeployment(projectName);
+        void this.refreshRuntimeStatus(projectName);
     }
 }
 
