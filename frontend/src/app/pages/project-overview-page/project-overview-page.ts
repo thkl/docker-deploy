@@ -43,6 +43,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeActionKey = signal('');
   protected readonly runtimeActionOutput = signal('');
   protected readonly selectedRuntimeOperationId = signal('');
+  protected readonly selectedLogView = signal<'runtime' | 'deployment' | 'actions'>('runtime');
   protected readonly selectedRuntimeService = signal('');
   protected readonly runtimeLogTail = signal(200);
   protected readonly runtimeLogStreamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
@@ -403,6 +404,20 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
           : action === 'recreate'
             ? 'Recreate'
             : 'Pull';
+  }
+
+  protected selectedRuntimeServiceStatus() {
+    const selected = this.selectedRuntimeService();
+    return this.runtimeStatus()?.services.find((service) => service.service === selected) ?? this.runtimeStatus()?.services[0] ?? null;
+  }
+
+  protected selectLogView(view: 'runtime' | 'deployment' | 'actions') {
+    this.selectedLogView.set(view);
+    if (view === 'deployment') {
+      this.queueLogScroll();
+    } else if (view === 'runtime') {
+      this.queueRuntimeLogScroll();
+    }
   }
 
   protected toggleRuntimeOperation(operation: RuntimeOperationRecord) {
@@ -787,6 +802,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeActionKey.set('');
     this.runtimeActionOutput.set('');
     this.selectedRuntimeOperationId.set('');
+    this.selectedLogView.set('runtime');
     this.deployError.set('');
     this.deployMessage.set('');
     this.selectedRuntimeService.set('');

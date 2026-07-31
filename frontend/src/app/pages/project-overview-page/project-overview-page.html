@@ -1,60 +1,87 @@
 @if (store.selectedProject(); as project) {
-  <section class="project-grid">
-    <article class="summary">
-      <span>Deploy target</span>
-      <strong>{{ project.path || '/root/docker-apps/' + project.name }}</strong>
-    </article>
-    <article class="summary">
-      <span>Target server</span>
-      <strong>{{ selectedServer()?.name || project.serverId || 'local' }}</strong>
-      <small>{{ selectedServer()?.kind || 'local' }}</small>
-    </article>
-    <article class="summary">
-      <span>Repository</span>
-      <strong>{{ project.repositoryUrl || 'Not set' }}</strong>
-    </article>
-    <article class="summary">
-      <span>Proxy</span>
-      <strong>
-        @if (project.traefik.enabled && project.traefik.hostname) {
-          {{ project.traefik.hostname }}
-        } @else {
-          Off
-        }
-      </strong>
-    </article>
-    <article class="summary">
-      <span>Compose</span>
-      <strong>{{ project.hasComposeOverride ? 'Stored override' : 'Repository compose' }}</strong>
-    </article>
-    <article class="summary">
-      <span>Last deployment</span>
-      <strong>{{ statusLabel(latestDeployment()) }}</strong>
-    </article>
-    <article class="summary">
-      <span>Runtime</span>
-      @if (loadingRuntimeStatus()) {
-        <strong class="skeleton-line short" aria-label="Loading runtime status"></strong>
-      } @else {
+  <section class="status-bar">
+    <div class="status-main">
+      <span
+        class="runtime-light"
+        [class.running]="runtimeStatus()?.status === 'running'"
+        [class.partial]="runtimeStatus()?.status === 'partial'"
+        [class.failed]="runtimeStatus()?.status === 'error'"
+      ></span>
+      <div>
         <strong>{{ runtimeStatusLabel(runtimeStatus()) }}</strong>
-      }
-      @if (!loadingRuntimeStatus() && runtimeStatus()?.checkedAt) {
-        <small>{{ formatDate(runtimeStatus()?.checkedAt) }}</small>
-      }
-    </article>
+        <span>
+          {{ statusLabel(latestDeployment()) }} deploy
+          @if (runtimeStatus()?.services?.length) {
+            · {{ runtimeStatus()?.services?.length }} services
+          }
+          @if (runtimeStatus()?.checkedAt) {
+            · checked {{ formatDate(runtimeStatus()?.checkedAt) }}
+          }
+        </span>
+      </div>
+    </div>
+    <div class="status-facts">
+      <span>{{ selectedServer()?.name || project.serverId || 'local' }}</span>
+      <span>{{ project.hasComposeOverride ? 'Stored override' : 'Repository compose' }}</span>
+      <span>{{ project.traefik.enabled && project.traefik.hostname ? project.traefik.hostname : 'No proxy' }}</span>
+      <span>{{ project.path || '/root/docker-apps/' + project.name }}</span>
+    </div>
   </section>
 
-  <section class="panel">
-    <div>
-      <h2>Project operations</h2>
-      <p>Deploy manually, inspect the latest worker output, or adjust project configuration.</p>
-    </div>
-    <div class="panel-actions">
+  <section class="command-bar">
+    <div class="command-group primary-actions">
       <button type="button" (click)="deploy(project.id)" [disabled]="deploying()">
         {{ deploying() ? 'Starting...' : 'Deploy now' }}
       </button>
-      <a [routerLink]="['/projects', project.id, 'settings']">Project settings</a>
-      <button type="button" class="danger-action" (click)="openDelete(project)">Delete project</button>
+      @if (latestDeployment()?.status === 'running') {
+        <button type="button" class="danger-action" (click)="cancelDeployment(project.id)" [disabled]="cancelingDeployment()">
+          {{ cancelingDeployment() ? 'Canceling...' : 'Cancel deploy' }}
+        </button>
+      }
+      <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingDeployment() || loadingRuntimeStatus()">
+        {{ loadingDeployment() || loadingRuntimeStatus() ? 'Refreshing...' : 'Refresh' }}
+      </button>
+      <button type="button" class="secondary" (click)="inspectCompose(project.id)" [disabled]="loadingComposeInspection()">
+        {{ loadingComposeInspection() ? 'Inspecting...' : 'Inspect compose' }}
+      </button>
+    </div>
+
+    <div class="command-group service-command">
+      <select class="secondary" [value]="selectedRuntimeService()" (change)="updateRuntimeService($event)" [disabled]="loadingRuntimeStatus() || runtimeActionKey() !== '' || !runtimeStatus()?.services?.length">
+        @for (service of runtimeStatus()?.services || []; track service.containerId || service.containerName || service.service) {
+          <option [value]="service.service">{{ service.service }}</option>
+        } @empty {
+          <option value="">No services</option>
+        }
+      </select>
+      @if (selectedRuntimeServiceStatus(); as service) {
+        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'restart')" [disabled]="runtimeActionBusy(service)">
+          {{ runtimeActionBusy(service, 'restart') ? 'Restarting...' : 'Restart' }}
+        </button>
+        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'start')" [disabled]="runtimeActionBusy(service)">
+          {{ runtimeActionBusy(service, 'start') ? 'Starting...' : 'Start' }}
+        </button>
+        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'stop')" [disabled]="runtimeActionBusy(service)">
+          {{ runtimeActionBusy(service, 'stop') ? 'Stopping...' : 'Stop' }}
+        </button>
+        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'recreate')" [disabled]="runtimeActionBusy(service)">
+          {{ runtimeActionBusy(service, 'recreate') ? 'Recreating...' : 'Recreate' }}
+        </button>
+        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'pull')" [disabled]="runtimeActionBusy(service)">
+          {{ runtimeActionBusy(service, 'pull') ? 'Pulling...' : 'Pull' }}
+        </button>
+      }
+    </div>
+
+    <div class="command-group">
+      <button type="button" class="secondary" (click)="loadRuntimeLogs(project.id)" [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed' || !runtimeStatus()?.services?.length">
+        {{ loadingRuntimeLogs() ? 'Loading logs...' : 'Load logs' }}
+      </button>
+      <button type="button" class="secondary" (click)="toggleRuntimeLogStream(project.id)" [disabled]="loadingRuntimeLogs() || !runtimeStatus()?.services?.length">
+        {{ runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live' : 'Live logs' }}
+      </button>
+      <a class="secondary" [routerLink]="['/projects', project.id, 'settings']">Settings</a>
+      <button type="button" class="danger-action" (click)="openDelete(project)">Delete</button>
     </div>
   </section>
 
@@ -159,63 +186,10 @@
     }
   </section>
 
-  <section class="deploy-panel">
+  <section class="deploy-panel runtime-panel">
     <div class="deploy-head">
       <div>
-        <h2>Runtime operations</h2>
-        <p>Recent service actions with status, timing, and command output.</p>
-      </div>
-      <button type="button" class="secondary" (click)="loadRuntimeOperations(project.id)" [disabled]="loadingRuntimeOperations()">
-        {{ loadingRuntimeOperations() ? 'Refreshing...' : 'Refresh history' }}
-      </button>
-    </div>
-
-    @if (runtimeOperationsError()) {
-      <p class="notice error">{{ runtimeOperationsError() }}</p>
-    }
-
-    @if (loadingRuntimeOperations()) {
-      <div class="status-skeleton" aria-label="Loading runtime operation history">
-        @for (row of [1, 2, 3]; track row) {
-          <div class="operation-row">
-            <span class="skeleton-line short"></span>
-            <span class="skeleton-line"></span>
-            <span class="skeleton-line"></span>
-            <span class="skeleton-line short"></span>
-          </div>
-        }
-      </div>
-    } @else if (runtimeOperations().length > 0) {
-      <div class="operation-list">
-        @for (operation of runtimeOperations(); track operation.id) {
-          <div class="operation-row" [class.failed]="operation.status === 'failed'">
-            <span class="status-chip" [class.failed]="operation.status === 'failed'">{{ operation.status }}</span>
-            <div class="service-item">
-              <strong>{{ runtimeActionLabel(operation.action) }} {{ operation.service }}</strong>
-              <small>{{ formatDate(operation.startedAt) }} · {{ operationDuration(operation) || 'duration unknown' }}</small>
-            </div>
-            <span>{{ operation.serverId }}</span>
-            <button type="button" class="secondary compact" (click)="toggleRuntimeOperation(operation)">
-              {{ selectedRuntimeOperationId() === operation.id ? 'Hide output' : 'Show output' }}
-            </button>
-            @if (operation.error) {
-              <small class="error-text">{{ operation.error }}</small>
-            }
-            @if (selectedRuntimeOperationId() === operation.id) {
-              <pre class="operation-output">{{ operation.output || 'No command output captured.' }}</pre>
-            }
-          </div>
-        }
-      </div>
-    } @else {
-      <div class="empty-log">No runtime service actions have been recorded yet.</div>
-    }
-  </section>
-
-  <section class="deploy-panel">
-    <div class="deploy-head">
-      <div>
-        <h2>Runtime status</h2>
+        <h2>Runtime services</h2>
         @if (loadingRuntimeStatus()) {
           <p>Checking Compose containers on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
         } @else if (runtimeStatus(); as status) {
@@ -224,9 +198,6 @@
           <p>Inspect Compose containers on the target server.</p>
         }
       </div>
-      <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingRuntimeStatus()">
-        {{ loadingRuntimeStatus() ? 'Checking...' : 'Refresh status' }}
-      </button>
     </div>
 
     @if (runtimeStatusError()) {
@@ -282,7 +253,7 @@
       @if (status.services.length > 0) {
         <div class="service-list">
           @for (service of status.services; track service.containerId || service.containerName || service.service) {
-            <div class="service-row">
+            <div class="service-row selectable" [class.selected]="selectedRuntimeService() === service.service" (click)="selectedRuntimeService.set(service.service)">
               <div class="service-item">
                 <strong>{{ service.service }}</strong>
                 <small>{{ service.containerName || service.containerId || 'container unavailable' }}</small>
@@ -291,23 +262,6 @@
               <span>{{ service.health || 'no healthcheck' }}</span>
               <code>{{ service.image || 'image unknown' }}</code>
               <small>{{ servicePortLabel(service) }}</small>
-              <div class="service-actions">
-                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'restart')" [disabled]="runtimeActionBusy(service)">
-                  {{ runtimeActionBusy(service, 'restart') ? 'Restarting...' : 'Restart' }}
-                </button>
-                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'start')" [disabled]="runtimeActionBusy(service)">
-                  {{ runtimeActionBusy(service, 'start') ? 'Starting...' : 'Start' }}
-                </button>
-                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'stop')" [disabled]="runtimeActionBusy(service)">
-                  {{ runtimeActionBusy(service, 'stop') ? 'Stopping...' : 'Stop' }}
-                </button>
-                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'recreate')" [disabled]="runtimeActionBusy(service)">
-                  {{ runtimeActionBusy(service, 'recreate') ? 'Recreating...' : 'Recreate' }}
-                </button>
-                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'pull')" [disabled]="runtimeActionBusy(service)">
-                  {{ runtimeActionBusy(service, 'pull') ? 'Pulling...' : 'Pull' }}
-                </button>
-              </div>
             </div>
           }
         </div>
@@ -319,17 +273,12 @@
     }
   </section>
 
-  <section class="deploy-panel">
+  <section class="deploy-panel logs-panel">
     <div class="deploy-head">
       <div>
-        <h2>Runtime logs</h2>
-        @if (runtimeLogs(); as logs) {
-          <p>Loaded {{ logs.tail }} lines from {{ logs.service }} at {{ formatDate(logs.checkedAt) }}.</p>
-        } @else {
-          <p>Read recent container output from a deployed service.</p>
-        }
+        <h2>Logs</h2>
+        <p>Runtime output, deployment output, and service action history in one place.</p>
       </div>
-
       <div class="deploy-head-actions">
         <span
           class="stream-chip"
@@ -338,13 +287,6 @@
         >
           {{ runtimeLogStreamLabel() }}
         </span>
-        <select class="secondary" [value]="selectedRuntimeService()" (change)="updateRuntimeService($event)" [disabled]="loadingRuntimeStatus() || loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed' || !runtimeStatus()?.services?.length">
-          @for (service of runtimeStatus()?.services || []; track service.containerId || service.containerName || service.service) {
-            <option [value]="service.service">{{ service.service }}</option>
-          } @empty {
-            <option value="">No services</option>
-          }
-        </select>
         <select class="secondary" [value]="runtimeLogTail()" (change)="updateRuntimeTail($event)" [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed'">
           <option value="100">100 lines</option>
           <option value="200">200 lines</option>
@@ -355,95 +297,86 @@
           <input type="checkbox" [checked]="runtimeLogAutoScroll()" (change)="toggleRuntimeLogAutoScroll($event)" />
           <span>Auto-scroll</span>
         </label>
-        <button type="button" class="secondary" (click)="loadRuntimeLogs(project.id)" [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed' || !runtimeStatus()?.services?.length">
-          {{ loadingRuntimeLogs() ? 'Loading...' : 'Load logs' }}
-        </button>
-        <button type="button" class="secondary" (click)="toggleRuntimeLogStream(project.id)" [disabled]="loadingRuntimeLogs() || !runtimeStatus()?.services?.length">
-          {{ runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live' : 'Live' }}
-        </button>
       </div>
     </div>
 
-    @if (runtimeLogsError()) {
-      <p class="notice error">{{ runtimeLogsError() }}</p>
-    }
-
-    @if (loadingRuntimeLogs()) {
-      <div class="empty-log">Loading runtime logs...</div>
-    } @else if (runtimeLogs(); as logs) {
-      <pre #runtimeLog class="deploy-log" (scroll)="onRuntimeLogScroll()">{{ logs.output || 'No runtime log output returned.' }}</pre>
-    } @else {
-      <div class="empty-log">Select a service and load recent runtime logs.</div>
-    }
-  </section>
-
-  <section class="deploy-panel">
-    <div class="deploy-head">
-      <div>
-        <h2>Latest deployment</h2>
-        @if (latestDeployment(); as deployment) {
-          <p>
-            Started {{ formatDate(deployment.startedAt) }} by {{ deployment.trigger }}.
-            @if (deployment.finishedAt) {
-              Finished {{ formatDate(deployment.finishedAt) }}.
-            }
-          </p>
-        } @else {
-          <p>No deployment has been recorded for this project yet.</p>
-        }
-      </div>
-
-      <div class="deploy-head-actions">
-        @if (loadingDeployment()) {
-          <span class="loading-state">Refreshing</span>
-        }
-        <span
-          class="stream-chip"
-          [class.live]="streamState() === 'live'"
-          [class.error]="streamState() === 'error'"
-        >
-          {{ streamLabel() }}
-        </span>
-        @if (deploymentLogExpanded()) {
-          <label class="auto-scroll">
-            <input type="checkbox" [checked]="autoScroll()" (change)="toggleAutoScroll($event)" />
-            <span>Auto-scroll</span>
-          </label>
-        }
-        <button type="button" class="secondary" (click)="toggleDeploymentLog()" [disabled]="!latestDeployment()">
-          {{ deploymentLogExpanded() ? 'Hide log' : 'Show log' }}
-        </button>
-        @if (latestDeployment()?.status === 'running') {
-          <button type="button" class="danger-action" (click)="cancelDeployment(project.id)" [disabled]="cancelingDeployment()">
-            {{ cancelingDeployment() ? 'Canceling...' : 'Cancel deployment' }}
-          </button>
-        }
-        <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingDeployment()">
-          Refresh
-        </button>
-      </div>
+    <div class="log-tabs">
+      <button type="button" [class.active]="selectedLogView() === 'runtime'" (click)="selectLogView('runtime')">Runtime</button>
+      <button type="button" [class.active]="selectedLogView() === 'deployment'" (click)="selectLogView('deployment')">Deployment</button>
+      <button type="button" [class.active]="selectedLogView() === 'actions'" (click)="selectLogView('actions')">Actions</button>
     </div>
 
-    @if (latestDeployment(); as deployment) {
-      <div class="deploy-meta">
-        <span class="status-chip" [class.running]="deployment.status === 'running'" [class.failed]="deployment.status === 'failed'">
-          {{ statusLabel(deployment) }}
-        </span>
-        <span>ID {{ deployment.id }}</span>
-        <span>Server {{ deployment.serverId || project.serverId || 'local' }}</span>
-        @if (deployment.exitCode !== undefined) {
-          <span>Exit {{ deployment.exitCode }}</span>
-        }
-        @if (deployment.error) {
-          <span class="error-text">{{ deployment.error }}</span>
-        }
-      </div>
+    @if (selectedLogView() === 'runtime') {
+      @if (runtimeLogsError()) {
+        <p class="notice error">{{ runtimeLogsError() }}</p>
+      }
 
-      @if (deploymentLogExpanded()) {
+      @if (loadingRuntimeLogs()) {
+        <div class="empty-log">Loading runtime logs...</div>
+      } @else if (runtimeLogs(); as logs) {
+        <pre #runtimeLog class="deploy-log" (scroll)="onRuntimeLogScroll()">{{ logs.output || 'No runtime log output returned.' }}</pre>
+      } @else {
+        <div class="empty-log">Select a service and load recent runtime logs.</div>
+      }
+    } @else if (selectedLogView() === 'deployment') {
+      @if (latestDeployment(); as deployment) {
+        <div class="deploy-meta">
+          <span class="status-chip" [class.running]="deployment.status === 'running'" [class.failed]="deployment.status === 'failed'">
+            {{ statusLabel(deployment) }}
+          </span>
+          <span>{{ deployment.trigger }}</span>
+          <span>{{ formatDate(deployment.startedAt) }}</span>
+          <span>Server {{ deployment.serverId || project.serverId || 'local' }}</span>
+          @if (deployment.exitCode !== undefined) {
+            <span>Exit {{ deployment.exitCode }}</span>
+          }
+          @if (deployment.error) {
+            <span class="error-text">{{ deployment.error }}</span>
+          }
+        </div>
         <pre #deployLog class="deploy-log" (scroll)="onLogScroll()">{{ deployment.log || 'Waiting for worker output...' }}</pre>
+      } @else {
+        <div class="empty-log">Trigger a deployment to capture worker output here.</div>
       }
     } @else {
-      <div class="empty-log">Trigger a deployment to capture worker output here.</div>
+      <div class="deploy-head compact-head">
+        <div></div>
+        <button type="button" class="secondary" (click)="loadRuntimeOperations(project.id)" [disabled]="loadingRuntimeOperations()">
+          {{ loadingRuntimeOperations() ? 'Refreshing...' : 'Refresh history' }}
+        </button>
+      </div>
+
+      @if (runtimeOperationsError()) {
+        <p class="notice error">{{ runtimeOperationsError() }}</p>
+      }
+
+      @if (loadingRuntimeOperations()) {
+        <div class="empty-log">Loading action history...</div>
+      } @else if (runtimeOperations().length > 0) {
+        <div class="operation-list">
+          @for (operation of runtimeOperations(); track operation.id) {
+            <div class="operation-row" [class.failed]="operation.status === 'failed'">
+              <span class="status-chip" [class.failed]="operation.status === 'failed'">{{ operation.status }}</span>
+              <div class="service-item">
+                <strong>{{ runtimeActionLabel(operation.action) }} {{ operation.service }}</strong>
+                <small>{{ formatDate(operation.startedAt) }} · {{ operationDuration(operation) || 'duration unknown' }}</small>
+              </div>
+              <span>{{ operation.serverId }}</span>
+              <button type="button" class="secondary compact" (click)="toggleRuntimeOperation(operation)">
+                {{ selectedRuntimeOperationId() === operation.id ? 'Hide output' : 'Show output' }}
+              </button>
+              @if (operation.error) {
+                <small class="error-text">{{ operation.error }}</small>
+              }
+              @if (selectedRuntimeOperationId() === operation.id) {
+                <pre class="operation-output">{{ operation.output || 'No command output captured.' }}</pre>
+              }
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="empty-log">No runtime service actions have been recorded yet.</div>
+      }
     }
   </section>
 } @else {
