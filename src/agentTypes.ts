@@ -1,9 +1,9 @@
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
-import { ComposeInspection, ComposeValidation, GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeStatus, ServerCapabilities, TraefikDiagnostics } from "./types.js";
+import { ComposeInspection, ComposeValidation, GlobalSettings, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, TraefikDiagnostics } from "./types.js";
 
-export type AgentJobType = "deploy" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow";
+export type AgentJobType = "deploy" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow" | "runtimeAction";
 
 export interface DeployJobPayload {
     projectName: string;
@@ -26,6 +26,11 @@ export interface RuntimeLogsJobPayload extends DeployJobPayload {
     tail: number;
 }
 
+export interface RuntimeActionJobPayload extends DeployJobPayload {
+    service: string;
+    action: RuntimeServiceAction;
+}
+
 export interface DeleteCheckoutJobPayload {
     checkoutPath: string;
 }
@@ -38,7 +43,7 @@ export interface DiagnoseTraefikJobPayload extends DeployJobPayload {}
 
 export interface AgentJobRequest {
     jobType: AgentJobType;
-    payload: DeployJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | ValidateComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload | DiagnoseTraefikJobPayload;
+    payload: DeployJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | ValidateComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | RuntimeActionJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload | DiagnoseTraefikJobPayload;
 }
 
 export interface AgentJobAccepted {
@@ -67,4 +72,5 @@ export interface AgentClient {
     inspectStatus(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<RuntimeStatus>;
     runtimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number): Promise<RuntimeLogs>;
     followRuntimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number, hooks?: RuntimeLogHooks): Promise<RuntimeLogStream>;
+    runtimeAction(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction): Promise<RuntimeActionResult>;
 }

@@ -152,6 +152,15 @@ export interface RuntimeLogs {
   output: string;
 }
 
+export type RuntimeServiceAction = 'restart' | 'start' | 'stop' | 'recreate' | 'pull';
+
+export interface RuntimeActionResult {
+  service: string;
+  action: RuntimeServiceAction;
+  checkedAt: string;
+  output: string;
+}
+
 export type TraefikDiagnosticStatus = 'pass' | 'warn' | 'fail';
 
 export interface TraefikDiagnosticCheck {

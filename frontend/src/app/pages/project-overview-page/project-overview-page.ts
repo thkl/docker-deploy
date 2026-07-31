@@ -1,7 +1,7 @@
 import { Component, computed, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { ComposeInspection, ComposeMountInspection, ComposeServiceInspection, DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
+import { ComposeInspection, ComposeMountInspection, ComposeServiceInspection, DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
@@ -33,6 +33,9 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeStatusError = signal('');
   protected readonly runtimeLogsError = signal('');
   protected readonly composeInspectionError = signal('');
+  protected readonly runtimeActionMessage = signal('');
+  protected readonly runtimeActionError = signal('');
+  protected readonly runtimeActionKey = signal('');
   protected readonly selectedRuntimeService = signal('');
   protected readonly runtimeLogTail = signal(200);
   protected readonly runtimeLogStreamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
@@ -245,6 +248,53 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     }
 
     return service.ports || 'no published ports';
+  }
+
+  protected runRuntimeAction(projectRef: string, service: RuntimeServiceStatus, action: RuntimeServiceAction) {
+    const serviceName = service.service;
+    const actionKey = `${serviceName}:${action}`;
+    this.disconnectRuntimeLogStream();
+    this.runtimeActionKey.set(actionKey);
+    this.runtimeActionMessage.set(`${this.runtimeActionLabel(action)} ${serviceName}...`);
+    this.runtimeActionError.set('');
+
+    this.api.runRuntimeAction(projectRef, serviceName, action).subscribe({
+      next: () => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.runtimeActionMessage.set(`${this.runtimeActionLabel(action)} ${serviceName} finished.`);
+        this.runtimeActionKey.set('');
+        this.loadRuntimeStatus(projectRef);
+      },
+      error: (error) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.runtimeActionError.set(error?.error?.error || `Could not ${action} ${serviceName}.`);
+        this.runtimeActionMessage.set('');
+        this.runtimeActionKey.set('');
+      },
+    });
+  }
+
+  protected runtimeActionBusy(service: RuntimeServiceStatus, action?: RuntimeServiceAction) {
+    const current = this.runtimeActionKey();
+    return action ? current === `${service.service}:${action}` : current.startsWith(`${service.service}:`);
+  }
+
+  protected runtimeActionLabel(action: RuntimeServiceAction) {
+    return action === 'restart'
+      ? 'Restart'
+      : action === 'start'
+        ? 'Start'
+        : action === 'stop'
+          ? 'Stop'
+          : action === 'recreate'
+            ? 'Recreate'
+            : 'Pull';
   }
 
   protected inspectCompose(projectRef: string) {
@@ -571,6 +621,9 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeStatusError.set('');
     this.runtimeLogsError.set('');
     this.composeInspectionError.set('');
+    this.runtimeActionMessage.set('');
+    this.runtimeActionError.set('');
+    this.runtimeActionKey.set('');
     this.deployError.set('');
     this.deployMessage.set('');
     this.selectedRuntimeService.set('');

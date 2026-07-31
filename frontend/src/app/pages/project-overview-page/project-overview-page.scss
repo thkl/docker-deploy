@@ -98,6 +98,11 @@
   color: var(--danger);
 }
 
+.inline-notice {
+  border-left: 0;
+  margin: 0.85rem 0;
+}
+
 .deploy-panel {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -229,6 +234,17 @@
 
 .service-state {
   color: var(--ink) !important;
+}
+
+.service-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.secondary.compact {
+  min-height: 30px;
+  padding: 0 0.55rem;
 }
 
 .deploy-log {

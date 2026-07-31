@@ -2,7 +2,7 @@ import { createServer, Server } from "node:http";
 import express, { Express, Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
-import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
@@ -226,6 +226,11 @@ export class AgentRuntime {
                 job.cancel = () => stream.stop();
             }
             return {};
+        }
+
+        if (request.jobType === "runtimeAction") {
+            const payload = request.payload as RuntimeActionJobPayload;
+            return { result: await this.localAgent.runtimeAction(payload.projectName, payload.appSettings, payload.globalSettings, payload.service, payload.action) };
         }
 
         const payload = request.payload as DeleteCheckoutJobPayload;

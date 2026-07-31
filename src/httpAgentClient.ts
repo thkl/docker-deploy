@@ -1,11 +1,11 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
 import { ControllerKeyState } from "./keyStore.js";
-import { GlobalSettings, ProjectSettings, ServerRecord } from "./types.js";
+import { GlobalSettings, ProjectSettings, RuntimeServiceAction, ServerRecord } from "./types.js";
 
 /**
  * Controller-side client for a remote updater agent.
@@ -137,6 +137,17 @@ export class HttpAgentClient implements AgentClient {
             payload: { projectName, appSettings, globalSettings, service, tail } satisfies RuntimeLogsJobPayload
         });
         return this.connectRuntimeLogStream(accepted, hooks);
+    }
+
+    /**
+     * Runs one runtime action through a remote target server.
+     */
+    async runtimeAction(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["runtimeAction"]>> }>({
+            jobType: "runtimeAction",
+            payload: { projectName, appSettings, globalSettings, service, action } satisfies RuntimeActionJobPayload
+        });
+        return accepted.result;
     }
 
     /**

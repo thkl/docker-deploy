@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeLogs, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikDiagnostics } from '../models/project';
+import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikDiagnostics } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -55,6 +55,10 @@ export class ProjectApi {
   getRuntimeLogs(projectRef: string, service: string, tail: number): Observable<RuntimeLogs> {
     const params = new URLSearchParams({ service, tail: String(tail) });
     return this.http.get<RuntimeLogs>(`/api/projects/${encodeURIComponent(projectRef)}/runtime-logs?${params.toString()}`);
+  }
+
+  runRuntimeAction(projectRef: string, service: string, action: RuntimeServiceAction): Observable<RuntimeActionResult> {
+    return this.http.post<RuntimeActionResult>(`/api/projects/${encodeURIComponent(projectRef)}/runtime-actions`, { service, action });
   }
 
   listDeployments(projectRef: string): Observable<DeploymentRecord[]> {

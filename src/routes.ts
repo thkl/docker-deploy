@@ -12,7 +12,7 @@ import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.j
 import { ControllerKeyState } from "./keyStore.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
-import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ProjectSettings, ServerCapabilities, ServerPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerCapabilities, ServerPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject } from "./webhookResolver.js";
 
@@ -629,6 +629,38 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
         }
     });
 
+    app.post("/api/projects/:name/runtime-actions", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+            const service = String(req.body.service || "").trim();
+            const action = String(req.body.action || "").trim() as RuntimeServiceAction;
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            if (!service) {
+                res.status(400).json({ error: "Service is required." });
+                return;
+            }
+
+            if (!isRuntimeServiceAction(action)) {
+                res.status(400).json({ error: "Unsupported runtime action." });
+                return;
+            }
+
+            const result = await agentManager.getClient(appSettings.serverId ?? "local").runtimeAction(projectName, appSettings, globalSettingsStore.readSettings(), service, action);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not run runtime action." });
+        }
+    });
+
     app.get("/api/projects/:name/deployments", (req: Request, res: Response) => {
         const rawProjectName = req.params.name;
         const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
@@ -724,6 +756,10 @@ function registerCiDeployRoute(app: Express, dependencies: Pick<RouteDependencie
         const deployment = deploymentService.startDeployment(projectName, appSettings, "ci");
         res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id });
     });
+}
+
+function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {
+    return ["restart", "start", "stop", "recreate", "pull"].includes(value);
 }
 
 /**

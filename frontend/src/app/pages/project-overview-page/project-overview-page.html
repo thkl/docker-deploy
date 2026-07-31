@@ -159,6 +159,14 @@
       <p class="notice error">{{ runtimeStatusError() }}</p>
     }
 
+    @if (runtimeActionMessage()) {
+      <p class="notice inline-notice">{{ runtimeActionMessage() }}</p>
+    }
+
+    @if (runtimeActionError()) {
+      <p class="notice error inline-notice">{{ runtimeActionError() }}</p>
+    }
+
     @if (loadingRuntimeStatus()) {
       <div class="status-skeleton" aria-label="Loading runtime service status">
         <div class="deploy-meta">
@@ -205,6 +213,23 @@
               <span>{{ service.health || 'no healthcheck' }}</span>
               <code>{{ service.image || 'image unknown' }}</code>
               <small>{{ servicePortLabel(service) }}</small>
+              <div class="service-actions">
+                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'restart')" [disabled]="runtimeActionBusy(service)">
+                  {{ runtimeActionBusy(service, 'restart') ? 'Restarting...' : 'Restart' }}
+                </button>
+                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'start')" [disabled]="runtimeActionBusy(service)">
+                  {{ runtimeActionBusy(service, 'start') ? 'Starting...' : 'Start' }}
+                </button>
+                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'stop')" [disabled]="runtimeActionBusy(service)">
+                  {{ runtimeActionBusy(service, 'stop') ? 'Stopping...' : 'Stop' }}
+                </button>
+                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'recreate')" [disabled]="runtimeActionBusy(service)">
+                  {{ runtimeActionBusy(service, 'recreate') ? 'Recreating...' : 'Recreate' }}
+                </button>
+                <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'pull')" [disabled]="runtimeActionBusy(service)">
+                  {{ runtimeActionBusy(service, 'pull') ? 'Pulling...' : 'Pull' }}
+                </button>
+              </div>
             </div>
           }
         </div>

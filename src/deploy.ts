@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
+import { GlobalSettings, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 
 const execAsync = promisify(exec);
@@ -453,6 +453,47 @@ export async function followRuntimeLogs(repoName: string, appSettings: ProjectSe
 }
 
 /**
+ * Runs one service-level Docker Compose action for an already deployed project.
+ */
+export async function runRuntimeServiceAction(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction): Promise<RuntimeActionResult> {
+    const serviceName = service.trim();
+    if (!serviceName) {
+        throw new Error("Service is required.");
+    }
+
+    if (!isRuntimeServiceAction(action)) {
+        throw new Error("Unsupported runtime action.");
+    }
+
+    const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const projectPath = resolveHostPath(hostAppsPath);
+    const composeOverride = appSettings.composeOverride?.trim();
+    const composeOverrideScript = renderComposeOverrideScript(composeOverride);
+    const composeSelectionScript = renderComposeSelectionScript(composeOverride);
+    const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
+    const actionScript = renderRuntimeServiceActionScript(serviceName, action);
+    const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${shellQuote(`${projectPath}:${projectPath}`)} \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli docker-cli-compose > /dev/null 2>&1
+                cd ${shellQuote(projectPath)}
+${composeOverrideScript}
+${composeSelectionScript}
+${traefikOverrideScript}
+${actionScript}
+EOF`;
+
+    const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 4 * 1024 * 1024 });
+    return {
+        service: serviceName,
+        action,
+        checkedAt: new Date().toISOString(),
+        output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim()
+    };
+}
+
+/**
  * Builds the shell block that writes a stored Docker Compose override into the
  * project checkout before compose commands run.
  */
@@ -514,6 +555,41 @@ function renderCleanupScript(globalSettings: GlobalSettings) {
 
     return `
                     echo "--> Cleanup is enabled. Leaving compose artifacts in place; repository cleanup is not active yet."`;
+}
+
+function renderRuntimeServiceActionScript(service: string, action: RuntimeServiceAction) {
+    const quotedService = shellQuote(service);
+    if (action === "restart") {
+        return `
+                echo "--> Restarting ${service}..."
+                docker compose $COMPOSE_FILES restart ${quotedService}`;
+    }
+
+    if (action === "start") {
+        return `
+                echo "--> Starting ${service}..."
+                docker compose $COMPOSE_FILES start ${quotedService}`;
+    }
+
+    if (action === "stop") {
+        return `
+                echo "--> Stopping ${service}..."
+                docker compose $COMPOSE_FILES stop ${quotedService}`;
+    }
+
+    if (action === "recreate") {
+        return `
+                echo "--> Recreating ${service}..."
+                docker compose $COMPOSE_FILES up -d --no-deps --force-recreate ${quotedService}`;
+    }
+
+    return `
+                echo "--> Pulling image for ${service}..."
+                docker compose $COMPOSE_FILES pull ${quotedService}`;
+}
+
+function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {
+    return ["restart", "start", "stop", "recreate", "pull"].includes(value);
 }
 
 /**
