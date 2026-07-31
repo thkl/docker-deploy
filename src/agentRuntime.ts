@@ -2,7 +2,7 @@ import { createServer, Server } from "node:http";
 import express, { Express, Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
-import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload } from "./agentTypes.js";
+import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
@@ -182,6 +182,11 @@ export class AgentRuntime {
         if (request.jobType === "inspectCompose") {
             const payload = request.payload as InspectComposeJobPayload;
             return { result: await this.localAgent.inspectCompose(payload.projectName, payload.appSettings, payload.globalSettings) };
+        }
+
+        if (request.jobType === "validateCompose") {
+            const payload = request.payload as ValidateComposeJobPayload;
+            return { result: await this.localAgent.validateCompose(payload.projectName, payload.appSettings, payload.globalSettings) };
         }
 
         if (request.jobType === "stop") {

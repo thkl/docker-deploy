@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, GlobalSettings, ProjectPayload, ProjectSummary, TraefikDiagnostics } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, ComposeValidation, GlobalSettings, ProjectPayload, ProjectSummary, TraefikDiagnostics } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -83,8 +83,10 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly saving = signal<'save' | 'deploy' | ''>('');
   protected readonly importingCompose = signal(false);
   protected readonly inspectingCompose = signal(false);
+  protected readonly validatingCompose = signal(false);
   protected readonly diagnosingTraefik = signal(false);
   protected readonly composeInspection = signal<ComposeInspection | null>(null);
+  protected readonly composeValidation = signal<ComposeValidation | null>(null);
   protected readonly traefikDiagnostics = signal<TraefikDiagnostics | null>(null);
   protected readonly composeMode = signal<'builder' | 'yaml'>('builder');
   protected readonly builderSection = signal<'services' | 'networks' | 'volumes' | 'traefik'>('services');
@@ -263,6 +265,8 @@ export class ProjectSettingsPage implements OnInit {
       this.message.set('');
       this.error.set('');
       this.composeInspection.set(null);
+      this.composeValidation.set(null);
+      this.traefikDiagnostics.set(null);
 
       if (!projectRef) {
         this.isNew.set(true);
@@ -310,7 +314,16 @@ export class ProjectSettingsPage implements OnInit {
       this.store.loadProjects();
 
       if (mode === 'deploy') {
-        this.message.set(`Saving ${savedName} and starting deployment...`);
+        this.message.set(`Saving ${savedName} and validating compose...`);
+        const validation = await firstValueFrom(this.api.validateCompose(savedId));
+        this.composeValidation.set(validation);
+        if (!validation.valid) {
+          this.error.set(validation.error || 'Docker Compose validation failed.');
+          this.builderSection.set('services');
+          return;
+        }
+
+        this.message.set(`Compose is valid. Starting deployment for ${savedName}...`);
         await firstValueFrom(this.api.deployProject(savedId));
       }
 
@@ -372,6 +385,41 @@ export class ProjectSettingsPage implements OnInit {
       error: (error) => {
         this.error.set(error?.error?.error || 'Could not inspect Docker Compose file.');
         this.inspectingCompose.set(false);
+      },
+    });
+  }
+
+  protected validateCompose() {
+    this.message.set('');
+    this.error.set('');
+
+    if (this.isNew()) {
+      this.error.set('Save the project before validating compose.');
+      return;
+    }
+
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      this.error.set('Repository name is required and can only use letters, numbers, dots, underscores, and hyphens.');
+      return;
+    }
+
+    const payload = this.toPayload();
+    if (!payload) {
+      return;
+    }
+
+    this.validatingCompose.set(true);
+    this.composeValidation.set(null);
+    this.api.validateCompose(this.currentProjectRef, payload).subscribe({
+      next: (validation) => {
+        this.composeValidation.set(validation);
+        this.message.set(validation.valid ? 'Docker Compose validation passed.' : 'Docker Compose validation failed.');
+        this.validatingCompose.set(false);
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not validate Docker Compose file.');
+        this.validatingCompose.set(false);
       },
     });
   }

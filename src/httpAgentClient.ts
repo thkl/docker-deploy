@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -58,6 +58,17 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["inspectCompose"]>> }>({
             jobType: "inspectCompose",
             payload: { projectName, appSettings, globalSettings } satisfies InspectComposeJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
+     * Validates effective Compose YAML through a remote agent.
+     */
+    async validateCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["validateCompose"]>> }>({
+            jobType: "validateCompose",
+            payload: { projectName, appSettings, globalSettings } satisfies ValidateComposeJobPayload
         });
         return accepted.result;
     }

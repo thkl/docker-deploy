@@ -1,5 +1,6 @@
 import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js";
 import { inspectCompose } from "./composeInspection.js";
+import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
 import { deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectProjectStatus, readRuntimeLogs, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
@@ -39,6 +40,13 @@ export class LocalAgent implements AgentClient {
      */
     inspectCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
         return inspectCompose(projectName, appSettings, globalSettings);
+    }
+
+    /**
+     * Validates the effective Compose YAML on the target server.
+     */
+    validateCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        return validateCompose(projectName, appSettings, globalSettings);
     }
 
     /**

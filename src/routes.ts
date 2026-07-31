@@ -12,7 +12,7 @@ import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.j
 import { ControllerKeyState } from "./keyStore.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
-import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ServerCapabilities, ServerPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ProjectSettings, ServerCapabilities, ServerPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject } from "./webhookResolver.js";
 
@@ -503,6 +503,62 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             res.json(inspection);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not inspect Docker Compose file." });
+        }
+    });
+
+    app.get("/api/projects/:name/compose/validate", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            const validation = await agentManager.getClient(appSettings.serverId ?? "local").validateCompose(projectName, appSettings, globalSettingsStore.readSettings());
+            res.json(validation);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not validate Docker Compose file." });
+        }
+    });
+
+    app.post("/api/projects/:name/compose/validate", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const currentRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(currentRef);
+            const existing = project?.settings;
+
+            if (!existing) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            const payload = req.body as ProjectPayload;
+            const globalSettings = globalSettingsStore.readSettings();
+            const projectName = normalizeProjectName(payload.name || project?.name || currentRef);
+            const repositoryUrl = normalizeRepositoryUrl(payload.repositoryUrl);
+            const composeOverride = payload.composeOverride?.trim();
+            const traefik = normalizeTraefikSettings(payload, globalSettings);
+            const appSettings: ProjectSettings = {
+                id: existing.id,
+                serverId: payload.serverId?.trim() || existing.serverId || "local",
+                token: existing.token,
+                deployToken: existing.deployToken,
+                ...(repositoryUrl ? { repositoryUrl } : existing.repositoryUrl ? { repositoryUrl: existing.repositoryUrl } : {}),
+                ...(payload.path?.trim() ? { path: payload.path.trim() } : existing.path ? { path: existing.path } : {}),
+                ...(composeOverride ? { composeOverride } : {}),
+                ...(traefik ? { traefik } : {})
+            };
+
+            const validation = await agentManager.getClient(appSettings.serverId ?? "local").validateCompose(projectName, appSettings, globalSettings);
+            res.json(validation);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not validate Docker Compose file." });
         }
     });
 

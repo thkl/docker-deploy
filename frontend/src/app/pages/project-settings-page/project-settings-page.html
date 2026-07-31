@@ -88,6 +88,9 @@
       <button type="button" class="secondary" (click)="inspectCompose()" [disabled]="saving() !== '' || inspectingCompose()">
         {{ inspectingCompose() ? 'Inspecting...' : 'Inspect settings' }}
       </button>
+      <button type="button" class="secondary" (click)="validateCompose()" [disabled]="saving() !== '' || validatingCompose()">
+        {{ validatingCompose() ? 'Validating...' : 'Validate compose' }}
+      </button>
     </div>
 
     <div class="compose-tabs" role="tablist" aria-label="Compose editor mode">
@@ -482,6 +485,31 @@
               Use for Traefik
             </button>
           </div>
+        }
+      </div>
+    }
+
+    @if (composeValidation(); as validation) {
+      <div class="compose-validation" [class.invalid]="!validation.valid">
+        <div>
+          <strong>{{ validation.valid ? 'Compose valid' : 'Compose invalid' }}</strong>
+          <span>{{ validation.composeFile || validation.source }} · {{ validation.checkedAt }}</span>
+        </div>
+        @if (validation.error) {
+          <pre>{{ validation.error }}</pre>
+        }
+        @if (validation.warnings.length) {
+          <div class="validation-warnings">
+            @for (warning of validation.warnings; track warning) {
+              <p>{{ warning }}</p>
+            }
+          </div>
+        }
+        @if (validation.effectiveYaml) {
+          <label class="compose-field">
+            <span>Effective compose YAML</span>
+            <textarea [value]="validation.effectiveYaml" readonly spellcheck="false"></textarea>
+          </label>
         }
       </div>
     }

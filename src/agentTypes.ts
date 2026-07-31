@@ -1,9 +1,9 @@
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
-import { ComposeInspection, GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeStatus, ServerCapabilities, TraefikDiagnostics } from "./types.js";
+import { ComposeInspection, ComposeValidation, GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeStatus, ServerCapabilities, TraefikDiagnostics } from "./types.js";
 
-export type AgentJobType = "deploy" | "importCompose" | "inspectCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow";
+export type AgentJobType = "deploy" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow";
 
 export interface DeployJobPayload {
     projectName: string;
@@ -14,6 +14,8 @@ export interface DeployJobPayload {
 export interface ImportComposeJobPayload extends DeployJobPayload {}
 
 export interface InspectComposeJobPayload extends DeployJobPayload {}
+
+export interface ValidateComposeJobPayload extends DeployJobPayload {}
 
 export interface StopJobPayload extends DeployJobPayload {}
 
@@ -36,7 +38,7 @@ export interface DiagnoseTraefikJobPayload extends DeployJobPayload {}
 
 export interface AgentJobRequest {
     jobType: AgentJobType;
-    payload: DeployJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload | DiagnoseTraefikJobPayload;
+    payload: DeployJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | ValidateComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload | DiagnoseTraefikJobPayload;
 }
 
 export interface AgentJobAccepted {
@@ -58,6 +60,7 @@ export interface AgentClient {
     stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<string>;
     importCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ImportedCompose>;
     inspectCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ComposeInspection>;
+    validateCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ComposeValidation>;
     deleteCheckout(checkoutPath: string): Promise<CheckoutCleanupResult>;
     detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]>;
     diagnoseTraefik(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<TraefikDiagnostics>;

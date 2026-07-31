@@ -9,6 +9,7 @@ Docker Updater is a lightweight Docker Compose deployment panel. It connects a c
 - Local and remote agent model so Docker and checkout access happen on the target server.
 - Manual deploy, GitLab webhook deploy, and token-protected CI deploy endpoint.
 - Docker Compose import and inspection through the target agent.
+- Docker Compose validation with effective YAML preview before deployment.
 - Visual Compose builder with services, networks, volumes, host bind mounts, dependencies, restart policy, environment, ports, healthcheck-preserving advanced YAML, and raw YAML mode.
 - Traefik integration that writes labels and proxy-network membership into the stored override YAML.
 - Traefik availability checks, cached server capabilities, and on-demand routing diagnostics.
@@ -71,6 +72,20 @@ Use Project settings -> Docker Compose -> Builder.
 The builder prevents removing services, networks, or named volumes while another setting references them. It also warns about missing references, duplicates, `network_mode` conflicts, missing Traefik host/port values, and Traefik targeting host-networked services.
 
 Raw YAML mode remains available for Compose options the builder cannot safely edit.
+
+## Compose Validation
+
+Use Project settings -> Docker Compose -> **Validate compose** before deploying.
+
+Validation runs through the selected target agent and uses the same effective Compose input as deployment:
+
+- stored override YAML when one is configured
+- repository Compose file when no override is configured
+- generated Traefik overlay when Traefik is enabled and not already written into the override
+
+The result shows whether Compose is valid, any Docker Compose error output, warnings for missing external networks, and the normalized effective YAML from `docker compose config --no-interpolate`.
+
+`Save & deploy` validates after saving and blocks deployment when Compose is invalid.
 
 ## Traefik Setup
 

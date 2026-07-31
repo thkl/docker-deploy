@@ -140,8 +140,46 @@ textarea {
   padding-top: 0.9rem;
 }
 
+.compose-validation {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+}
+
+.compose-validation > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.compose-validation > div:first-child strong {
+  color: var(--accent-strong);
+}
+
+.compose-validation.invalid > div:first-child strong {
+  color: var(--danger);
+}
+
+.compose-validation pre,
+.validation-warnings {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  margin: 0;
+  overflow: auto;
+  padding: 0.7rem;
+  white-space: pre-wrap;
+}
+
+.validation-warnings p {
+  margin: 0;
+}
+
 .compose-inspection span,
-.compose-service small {
+.compose-service small,
+.compose-validation span {
   color: var(--muted);
 }
 

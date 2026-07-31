@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeLogs, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikDiagnostics } from '../models/project';
+import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeLogs, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikDiagnostics } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -33,6 +33,11 @@ export class ProjectApi {
 
   inspectCompose(projectRef: string): Observable<ComposeInspection> {
     return this.http.get<ComposeInspection>(`/api/projects/${encodeURIComponent(projectRef)}/compose/inspect`);
+  }
+
+  validateCompose(projectRef: string, payload?: ProjectPayload): Observable<ComposeValidation> {
+    const url = `/api/projects/${encodeURIComponent(projectRef)}/compose/validate`;
+    return payload ? this.http.post<ComposeValidation>(url, payload) : this.http.get<ComposeValidation>(url);
   }
 
   getLatestDeployment(projectRef: string): Observable<DeploymentRecord | null> {

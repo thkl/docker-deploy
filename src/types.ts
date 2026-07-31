@@ -209,3 +209,13 @@ export interface ComposeResourceInspection {
     name: string;
     external: boolean;
 }
+
+export interface ComposeValidation {
+    valid: boolean;
+    checkedAt: string;
+    source: "repository" | "storedOverride";
+    composeFile?: string;
+    effectiveYaml?: string;
+    warnings: string[];
+    error?: string;
+}
