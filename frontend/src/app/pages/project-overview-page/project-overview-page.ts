@@ -587,6 +587,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         }
 
         this.runtimeStatus.set(status);
+        this.store.setRuntimeStatus(projectRef, status);
         if (!this.selectedRuntimeService() && status.services[0]?.service) {
           this.selectedRuntimeService.set(status.services[0].service);
         }

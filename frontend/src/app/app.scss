@@ -114,10 +114,43 @@
   color: var(--sidebar-ink);
 }
 
+.project-name-row {
+  align-items: center;
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
 .project-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.runtime-dot {
+  background: var(--muted);
+  border-radius: 999px;
+  display: inline-block;
+  height: 0.55rem;
+  width: 0.55rem;
+}
+
+.runtime-dot.running {
+  background: var(--accent);
+}
+
+.runtime-dot.partial {
+  background: var(--warning);
+}
+
+.runtime-dot.stopped,
+.runtime-dot.unknown {
+  background: var(--muted);
+}
+
+.runtime-dot.error {
+  background: var(--danger);
 }
 
 .workspace {

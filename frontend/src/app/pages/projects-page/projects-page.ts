@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { DeploymentRecord } from '../../models/project';
+import { DeploymentRecord, RuntimeStatus } from '../../models/project';
 import { ProjectStore } from '../../state/project-store';
 
 @Component({
@@ -23,6 +23,22 @@ export class ProjectsPage {
       : deployment.status === 'succeeded'
         ? 'Succeeded'
         : 'Failed';
+  }
+
+  protected runtimeLabel(status: RuntimeStatus | null) {
+    if (!status) {
+      return 'Checking';
+    }
+
+    return status.status === 'running'
+      ? 'Containers running'
+      : status.status === 'partial'
+        ? 'Partially running'
+        : status.status === 'stopped'
+          ? 'Stopped'
+          : status.status === 'error'
+            ? 'Status error'
+            : 'Unknown';
   }
 
   protected formatDate(value?: string) {

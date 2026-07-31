@@ -133,6 +133,27 @@
       } @else {
         <div class="empty-log">No services were found in the Compose file.</div>
       }
+
+      @if (compose.storageMappings.length > 0) {
+        <section class="storage-plan">
+          <div>
+            <h3>Storage mapping</h3>
+            <p>Move repo-relative data mounts out of the checkout before enabling cleanup.</p>
+          </div>
+          <div class="storage-map-list">
+            @for (mapping of compose.storageMappings; track mapping.service + mapping.source + mapping.target) {
+              <div class="storage-map-row">
+                <span>{{ mapping.service }}</span>
+                <code>{{ mapping.source }} -> {{ mapping.target }}</code>
+                <code>{{ mapping.suggestedHostPath }}</code>
+              </div>
+            }
+          </div>
+          @if (compose.storageOverridePreview) {
+            <pre class="storage-preview">{{ compose.storageOverridePreview }}</pre>
+          }
+        </section>
+      }
     } @else {
       <div class="empty-log">Inspect the Compose file to see setup details.</div>
     }

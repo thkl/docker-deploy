@@ -5,6 +5,7 @@ import { AgentManager } from "./agentManager.js";
 import { sealEnvelope } from "./agentCrypto.js";
 import { AdminAuth } from "./auth.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
+import { hasUnsafeRelativeBindMounts } from "./composeInspection.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { DeploymentService } from "./deploymentService.js";
@@ -426,6 +427,16 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const globalSettings = globalSettingsStore.readSettings();
             const actions: string[] = [];
             const agent = agentManager.getClient(appSettings.serverId ?? "local");
+
+            if (payload.deleteCheckout) {
+                const inspection = await agent.inspectCompose(projectName, appSettings, globalSettings);
+                if (hasUnsafeRelativeBindMounts(inspection)) {
+                    res.status(400).json({
+                        error: `${inspection.unsafeRelativeBindMounts} relative bind mounts still point into the checkout. Map them to ${globalSettings.dataRoot}/${projectName}/... before deleting the repository folder.`
+                    });
+                    return;
+                }
+            }
 
             if (payload.stopContainers) {
                 await agent.stopProject(projectName, appSettings, globalSettings);

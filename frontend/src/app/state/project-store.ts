@@ -1,5 +1,5 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
-import { ProjectSummary, ServerRecord } from '../models/project';
+import { ProjectSummary, RuntimeStatus, ServerRecord } from '../models/project';
 import { ProjectApi } from '../services/project-api';
 
 const selectedProjectKey = 'updater.selectedProject';
@@ -11,6 +11,8 @@ export class ProjectStore {
 
   readonly projects = signal<ProjectSummary[]>([]);
   readonly servers = signal<ServerRecord[]>([]);
+  readonly runtimeStatuses = signal<Record<string, RuntimeStatus>>({});
+  readonly runtimeStatusLoading = signal<Record<string, boolean>>({});
   readonly loading = signal(false);
   readonly error = signal('');
   readonly selectedProjectId = this.selectedId.asReadonly();
@@ -47,6 +49,7 @@ export class ProjectStore {
         } else {
           this.selectedId.set(projects[0]?.id ?? '');
         }
+        this.loadRuntimeStatuses(projects);
         this.loading.set(false);
       },
       error: () => {
@@ -70,5 +73,53 @@ export class ProjectStore {
   selectProject(projectRef: string) {
     const project = this.projects().find((candidate) => candidate.id === projectRef || candidate.name === projectRef);
     this.selectedId.set(project?.id ?? projectRef);
+  }
+
+  runtimeStatusFor(projectRef: string) {
+    const project = this.projects().find((candidate) => candidate.id === projectRef || candidate.name === projectRef);
+    return this.runtimeStatuses()[project?.id ?? projectRef] ?? null;
+  }
+
+  refreshRuntimeStatus(projectRef: string) {
+    const project = this.projects().find((candidate) => candidate.id === projectRef || candidate.name === projectRef);
+    if (!project) {
+      return;
+    }
+
+    this.runtimeStatusLoading.update((statuses) => ({ ...statuses, [project.id]: true }));
+    this.api.getProjectStatus(project.id).subscribe({
+      next: (status) => {
+        this.runtimeStatuses.update((statuses) => ({ ...statuses, [project.id]: status }));
+        this.runtimeStatusLoading.update((statuses) => ({ ...statuses, [project.id]: false }));
+      },
+      error: () => {
+        this.runtimeStatuses.update((statuses) => ({
+          ...statuses,
+          [project.id]: {
+            status: 'error',
+            checkedAt: new Date().toISOString(),
+            services: [],
+            error: 'Could not inspect runtime status.',
+          },
+        }));
+        this.runtimeStatusLoading.update((statuses) => ({ ...statuses, [project.id]: false }));
+      },
+    });
+  }
+
+  setRuntimeStatus(projectRef: string, status: RuntimeStatus) {
+    const project = this.projects().find((candidate) => candidate.id === projectRef || candidate.name === projectRef);
+    this.runtimeStatuses.update((statuses) => ({ ...statuses, [project?.id ?? projectRef]: status }));
+  }
+
+  private loadRuntimeStatuses(projects: ProjectSummary[]) {
+    const currentIds = new Set(projects.map((project) => project.id));
+    this.runtimeStatuses.update((statuses) =>
+      Object.fromEntries(Object.entries(statuses).filter(([id]) => currentIds.has(id))),
+    );
+
+    for (const project of projects) {
+      this.refreshRuntimeStatus(project.id);
+    }
   }
 }

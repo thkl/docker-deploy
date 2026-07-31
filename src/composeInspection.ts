@@ -1,7 +1,7 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { ComposeInspection, ComposeMountInspection, ComposePortInspection, ComposeResourceInspection, ComposeServiceInspection, GlobalSettings, ProjectSettings } from "./types.js";
+import { ComposeInspection, ComposeMountInspection, ComposePortInspection, ComposeResourceInspection, ComposeServiceInspection, ComposeStorageMapping, GlobalSettings, ProjectSettings } from "./types.js";
 
 const execAsync = promisify(exec);
 const composeFileNames = ["docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml"];
@@ -17,7 +17,7 @@ export async function inspectCompose(projectName: string, appSettings: ProjectSe
     const output = composeOverride
         ? await inspectStoredOverride(projectName, appSettings, globalSettings, composeOverride)
         : await inspectRepositoryCompose(projectName, appSettings, globalSettings);
-    return normalizeComposeInspection(output, composeOverride ? "storedOverride" : "repository");
+    return normalizeComposeInspection(output, composeOverride ? "storedOverride" : "repository", projectName, globalSettings);
 }
 
 async function inspectStoredOverride(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, composeOverride: string) {
@@ -130,13 +130,15 @@ EOF`;
     return stdout;
 }
 
-function normalizeComposeInspection(output: string, source: ComposeInspection["source"]): ComposeInspection {
+function normalizeComposeInspection(output: string, source: ComposeInspection["source"], projectName: string, globalSettings: GlobalSettings): ComposeInspection {
     const composeFile = parseMarkerValue(output, composeFileMarker);
     const config = parseMarkedJson(output) as ComposeConfig;
     const services = Object.entries(config.services ?? {}).map(([name, service]) => normalizeService(name, service));
     const volumes = normalizeResources(config.volumes);
     const networks = normalizeResources(config.networks);
     const unsafeRelativeBindMounts = services.flatMap((service) => service.mounts).filter((mount) => !mount.safeForCleanup).length;
+    const storageMappings = buildStorageMappings(projectName, globalSettings, services);
+    const storageOverridePreview = renderStorageOverridePreview(storageMappings);
 
     return {
         composeFile,
@@ -145,8 +147,14 @@ function normalizeComposeInspection(output: string, source: ComposeInspection["s
         services,
         networks,
         volumes,
-        unsafeRelativeBindMounts
+        unsafeRelativeBindMounts,
+        storageMappings,
+        ...(storageOverridePreview ? { storageOverridePreview } : {})
     };
+}
+
+export function hasUnsafeRelativeBindMounts(inspection: ComposeInspection) {
+    return inspection.storageMappings.length > 0 || inspection.unsafeRelativeBindMounts > 0;
 }
 
 function normalizeService(name: string, service: ComposeServiceConfig): ComposeServiceInspection {
@@ -256,6 +264,68 @@ function normalizeResources(resources: unknown): ComposeResourceInspection[] {
         name,
         external: isRecord(value) ? Boolean(value.external) : false
     }));
+}
+
+function buildStorageMappings(projectName: string, globalSettings: GlobalSettings, services: ComposeServiceInspection[]): ComposeStorageMapping[] {
+    return services.flatMap((service) =>
+        service.mounts
+            .filter((mount) => mount.type === "bind" && mount.relative && mount.source && mount.target)
+            .map((mount) => {
+                const suggestedHostPath = joinPaths(globalSettings.dataRoot, projectName, sanitizeRelativeMountSource(mount.source ?? ""));
+                return {
+                    service: service.name,
+                    source: mount.source ?? "",
+                    target: mount.target ?? "",
+                    readOnly: mount.readOnly,
+                    suggestedHostPath,
+                    suggestedMount: `${suggestedHostPath}:${mount.target}${mount.readOnly ? ":ro" : ""}`
+                };
+            })
+    );
+}
+
+function renderStorageOverridePreview(mappings: ComposeStorageMapping[]) {
+    if (!mappings.length) {
+        return "";
+    }
+
+    const serviceGroups = new Map<string, ComposeStorageMapping[]>();
+    for (const mapping of mappings) {
+        serviceGroups.set(mapping.service, [...(serviceGroups.get(mapping.service) ?? []), mapping]);
+    }
+
+    return [
+        "services:",
+        ...[...serviceGroups.entries()].flatMap(([service, serviceMappings]) => [
+            `  ${yamlQuote(service)}:`,
+            "    volumes:",
+            ...serviceMappings.map((mapping) => `      - ${yamlQuote(mapping.suggestedMount)}`)
+        ])
+    ].join("\n");
+}
+
+function sanitizeRelativeMountSource(source: string) {
+    const normalized = source
+        .replace(/\\/g, "/")
+        .replace(/^\.\/?/, "")
+        .split("/")
+        .filter(Boolean)
+        .map((segment) => segment === ".." ? "up" : segment.replace(/[^a-zA-Z0-9._-]/g, "-"))
+        .filter(Boolean)
+        .join("/");
+
+    return normalized || "root";
+}
+
+function joinPaths(...parts: string[]) {
+    return parts
+        .map((part, index) => index === 0 ? part.replace(/\/+$/, "") : part.replace(/^\/+|\/+$/g, ""))
+        .filter(Boolean)
+        .join("/");
+}
+
+function yamlQuote(value: string) {
+    return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 function normalizeNameList(value: unknown): string[] {

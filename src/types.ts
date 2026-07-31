@@ -180,6 +180,8 @@ export interface ComposeInspection {
     networks: ComposeResourceInspection[];
     volumes: ComposeResourceInspection[];
     unsafeRelativeBindMounts: number;
+    storageMappings: ComposeStorageMapping[];
+    storageOverridePreview?: string;
 }
 
 export interface ComposeServiceInspection {
@@ -212,6 +214,15 @@ export interface ComposeMountInspection {
     relative: boolean;
     safeForCleanup: boolean;
     raw: string;
+}
+
+export interface ComposeStorageMapping {
+    service: string;
+    source: string;
+    target: string;
+    readOnly: boolean;
+    suggestedHostPath: string;
+    suggestedMount: string;
 }
 
 export interface ComposeResourceInspection {

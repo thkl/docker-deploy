@@ -119,6 +119,41 @@ code {
   color: var(--danger);
 }
 
+.runtime-chip {
+  align-items: center;
+  background: var(--button-subtle);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.78rem;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+}
+
+.runtime-chip.running {
+  background: color-mix(in srgb, var(--accent), transparent 84%);
+  color: var(--accent-strong);
+}
+
+.runtime-chip.partial {
+  background: color-mix(in srgb, var(--warning), transparent 84%);
+  color: var(--warning);
+}
+
+.runtime-chip.failed {
+  background: color-mix(in srgb, var(--danger), transparent 84%);
+  color: var(--danger);
+}
+
+.runtime-dot {
+  background: currentColor;
+  border-radius: 999px;
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
 @media (max-width: 720px) {
   .page-head {
     align-items: stretch;

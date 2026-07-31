@@ -31,7 +31,18 @@
               routerLinkActive="active"
               (click)="store.selectProject(project.id)"
             >
-              <span class="project-name">{{ project.name }}</span>
+              <span class="project-name-row">
+                @let runtime = store.runtimeStatusFor(project.id);
+                <span
+                  class="runtime-dot"
+                  [class.running]="runtime?.status === 'running'"
+                  [class.partial]="runtime?.status === 'partial'"
+                  [class.stopped]="runtime?.status === 'stopped'"
+                  [class.error]="runtime?.status === 'error'"
+                  [class.unknown]="!runtime || runtime.status === 'unknown'"
+                ></span>
+                <span class="project-name">{{ project.name }}</span>
+              </span>
               @if (project.traefik.enabled && project.traefik.hostname) {
                 <small>{{ project.traefik.hostname }}</small>
               } @else {
