@@ -47,6 +47,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeLogStreamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
   protected readonly streamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
   protected readonly autoScroll = signal(true);
+  protected readonly deploymentLogExpanded = signal(false);
   protected readonly runtimeLogAutoScroll = signal(true);
   protected readonly deleteProjectTarget = signal<ProjectSummary | null>(null);
   protected readonly deleting = signal(false);
@@ -200,6 +201,15 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
     this.autoScroll.set(distanceFromBottom < 48);
+  }
+
+  protected toggleDeploymentLog() {
+    this.deploymentLogExpanded.update((expanded) => !expanded);
+    if (!this.deploymentLogExpanded()) {
+      return;
+    }
+
+    this.queueLogScroll();
   }
 
   protected formatDate(value?: string) {
@@ -738,6 +748,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.deployMessage.set('');
     this.selectedRuntimeService.set('');
     this.runtimeLogTail.set(200);
+    this.deploymentLogExpanded.set(false);
     this.loadingDeployment.set(true);
     this.loadingRuntimeStatus.set(true);
     this.loadingRuntimeLogs.set(false);
@@ -747,11 +758,14 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
   private setLatestDeployment(deployment: DeploymentRecord | null) {
     this.latestDeployment.set(deployment);
+    if (deployment?.status === 'running') {
+      this.deploymentLogExpanded.set(true);
+    }
     this.queueLogScroll();
   }
 
   private queueLogScroll() {
-    if (!this.autoScroll()) {
+    if (!this.autoScroll() || !this.deploymentLogExpanded()) {
       return;
     }
 

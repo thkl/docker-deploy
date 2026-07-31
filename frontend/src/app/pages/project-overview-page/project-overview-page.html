@@ -383,10 +383,15 @@
         >
           {{ streamLabel() }}
         </span>
-        <label class="auto-scroll">
-          <input type="checkbox" [checked]="autoScroll()" (change)="toggleAutoScroll($event)" />
-          <span>Auto-scroll</span>
-        </label>
+        @if (deploymentLogExpanded()) {
+          <label class="auto-scroll">
+            <input type="checkbox" [checked]="autoScroll()" (change)="toggleAutoScroll($event)" />
+            <span>Auto-scroll</span>
+          </label>
+        }
+        <button type="button" class="secondary" (click)="toggleDeploymentLog()" [disabled]="!latestDeployment()">
+          {{ deploymentLogExpanded() ? 'Hide log' : 'Show log' }}
+        </button>
         <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingDeployment()">
           Refresh
         </button>
@@ -408,7 +413,9 @@
         }
       </div>
 
-      <pre #deployLog class="deploy-log" (scroll)="onLogScroll()">{{ deployment.log || 'Waiting for worker output...' }}</pre>
+      @if (deploymentLogExpanded()) {
+        <pre #deployLog class="deploy-log" (scroll)="onLogScroll()">{{ deployment.log || 'Waiting for worker output...' }}</pre>
+      }
     } @else {
       <div class="empty-log">Trigger a deployment to capture worker output here.</div>
     }
