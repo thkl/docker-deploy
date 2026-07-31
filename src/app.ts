@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import express, { NextFunction, Request, Response } from "express";
 import { AgentManager } from "./agentManager.js";
+import { AgentHealthService } from "./agentHealth.js";
 import { AgentRuntime } from "./agentRuntime.js";
 import { AdminAuth } from "./auth.js";
 import { AppDatabase } from "./database.js";
@@ -18,7 +19,6 @@ import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { AuthenticatedRequest } from "./types.js";
-import { appVersion } from "./version.js";
 
 /**
  * Express controller bootstrap.
@@ -40,6 +40,7 @@ class App {
     private readonly controllerKeys = ensureControllerKeys();
     private readonly localAgent = new LocalAgent();
     private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
+    private readonly agentHealth = new AgentHealthService(this.serverStore, this.deploymentStore, this.globalSettingsStore, this.agentManager);
     private readonly deploymentStreams = new DeploymentStreamHub(this.configStore, this.deploymentStore, this.adminAuth);
     private readonly runtimeLogStreams = new RuntimeLogStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.adminAuth);
     private readonly runtimeStatusStreams = new RuntimeStatusStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.adminAuth);
@@ -84,7 +85,8 @@ class App {
             agentManager: this.agentManager,
             controllerKeys: this.controllerKeys,
             serverStore: this.serverStore,
-            runtimeStatusStreams: this.runtimeStatusStreams
+            runtimeStatusStreams: this.runtimeStatusStreams,
+            agentHealth: this.agentHealth
         });
         this.registerErrorHandler();
 
@@ -94,6 +96,7 @@ class App {
         this.runtimeOperationStreams.register(server);
         this.runtimeStatusStreams.register(server);
         server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
+        this.agentHealth.startHeartbeat();
     }
 
     /**
@@ -101,12 +104,8 @@ class App {
      */
     private async warmLocalCapabilities() {
         const traefik = await this.localAgent.detectTraefik(this.globalSettingsStore.readSettings());
-        this.serverStore.updateHealth("local", {
-            status: "online",
-            agentVersion: appVersion(),
-            activeJobs: [],
-            capabilities: { traefik }
-        });
+        this.serverStore.updateCapabilities("local", { traefik });
+        this.agentHealth.refreshLocal();
     }
 
     /**

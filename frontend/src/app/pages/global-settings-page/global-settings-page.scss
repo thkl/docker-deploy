@@ -101,8 +101,8 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 7px;
   display: grid;
-  gap: 0.8rem;
-  grid-template-columns: minmax(190px, 1fr) minmax(280px, 1.4fr) auto;
+  gap: 0.72rem 1rem;
+  grid-template-columns: minmax(220px, 1fr) minmax(250px, auto);
   min-height: 54px;
   padding: 0.72rem 0.8rem;
 }
@@ -126,6 +126,7 @@ textarea {
   flex-wrap: wrap;
   gap: 0.55rem;
   justify-content: flex-end;
+  min-width: 250px;
 }
 
 .server-row strong {
@@ -160,6 +161,7 @@ textarea {
 .server-health {
   display: grid;
   gap: 0.5rem;
+  grid-column: 1 / -1;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -310,11 +312,13 @@ button.danger-action:hover {
     grid-template-columns: 1fr;
   }
 
+  .server-actions {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
   .server-health {
     grid-template-columns: 1fr;
   }
 
-  .server-actions {
-    justify-content: flex-start;
-  }
 }

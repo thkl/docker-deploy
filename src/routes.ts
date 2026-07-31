@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import express, { Express, NextFunction, Request, Response } from "express";
 import { AgentManager } from "./agentManager.js";
+import { AgentHealthService } from "./agentHealth.js";
 import { sealEnvelope } from "./agentCrypto.js";
 import { AdminAuth } from "./auth.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
@@ -15,9 +16,8 @@ import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
-import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerActiveJob, ServerCapabilities, ServerPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
-import { appVersion } from "./version.js";
 import { resolveWebhookProject } from "./webhookResolver.js";
 
 /**
@@ -34,13 +34,14 @@ export interface RouteDependencies {
     controllerKeys: ControllerKeyState;
     serverStore: ServerStore;
     runtimeStatusStreams: RuntimeStatusStreamHub;
+    agentHealth: AgentHealthService;
 }
 
 /**
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams } = dependencies;
+    const { adminAuth, configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -65,7 +66,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/servers", adminAuth.requireAuth);
 
     registerSettingsRoutes(app, globalSettingsStore);
-    registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore, deploymentStore });
+    registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth });
     registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams });
     registerWebhookRoute(app, { configStore, deploymentService });
     registerCiDeployRoute(app, { configStore, deploymentService });
@@ -93,11 +94,11 @@ function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSetting
 /**
  * Registers target-server read endpoints.
  */
-function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "controllerKeys" | "agentManager" | "globalSettingsStore" | "deploymentStore">) {
-    const { serverStore, controllerKeys, agentManager, globalSettingsStore, deploymentStore } = dependencies;
+function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "controllerKeys" | "agentManager" | "globalSettingsStore" | "agentHealth">) {
+    const { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth } = dependencies;
 
     app.get("/api/servers", (req: Request, res: Response) => {
-        refreshLocalHealth(serverStore, deploymentStore, globalSettingsStore);
+        agentHealth.refreshLocal();
         res.json(serverStore.list());
     });
 
@@ -132,32 +133,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
                 return;
             }
 
-            if (server.kind === "local") {
-                res.json(refreshLocalHealth(serverStore, deploymentStore, globalSettingsStore));
-                return;
-            }
-
-            if (!server.baseUrl) {
-                res.status(400).json({ error: "Remote agent URL is missing." });
-                return;
-            }
-
-            const health = await fetchAgentHealth(server.baseUrl, globalSettingsStore.readSettings());
-            if (!health.ok || !health.body) {
-                res.json(serverStore.updateHealth(server.id, {
-                    status: server.status === "unpaired" ? "unpaired" : "offline",
-                    activeJobs: [],
-                    lastHealthError: health.message
-                }));
-                return;
-            }
-
-            res.json(serverStore.updateHealth(server.id, {
-                status: health.body.paired ? "online" : "unpaired",
-                agentVersion: health.body.version,
-                activeJobs: health.body.activeJobs ?? [],
-                capabilities: health.body.capabilities
-            }));
+            res.json(await agentHealth.refreshServer(server.id));
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not refresh server health." });
         }
@@ -165,7 +141,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
 
     app.post("/api/servers", (req: Request, res: Response) => {
         try {
-            void createRemoteServer(req.body as ServerPayload, serverStore, globalSettingsStore, res);
+            void createRemoteServer(req.body as ServerPayload, serverStore, agentHealth, res);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
         }
@@ -206,7 +182,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             }
 
             const agentBaseUrl = server.baseUrl.replace(/\/+$/, "");
-            const health = await fetchAgentHealth(agentBaseUrl, globalSettingsStore.readSettings());
+            const health = await agentHealth.fetchAgentHealth(agentBaseUrl);
             if (!health.ok) {
                 res.status(400).json({
                     error: `Agent URL is not reaching an updater agent. ${health.message}`
@@ -254,10 +230,10 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
  * Creates a remote server and discovers public agent keys from `/agent/health`
  * when the UI only submits a base URL.
  */
-async function createRemoteServer(payload: ServerPayload, serverStore: ServerStore, globalSettingsStore: GlobalSettingsStore, res: Response) {
+async function createRemoteServer(payload: ServerPayload, serverStore: ServerStore, agentHealth: AgentHealthService, res: Response) {
     try {
         const baseUrl = String(payload.baseUrl || "").trim().replace(/\/+$/, "");
-        const health = await fetchAgentHealth(baseUrl, globalSettingsStore.readSettings());
+        const health = await agentHealth.fetchAgentHealth(baseUrl);
         if (!health.ok || !health.body) {
             res.status(400).json({ error: `Agent URL is not reaching an updater agent. ${health.message}` });
             return;
@@ -286,80 +262,6 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
     } catch (error) {
         res.status(400).json({ error: error instanceof Error ? error.message : "Could not create server." });
     }
-}
-
-/**
- * Refreshes the local controller-as-agent row without making an HTTP call.
- */
-function refreshLocalHealth(serverStore: ServerStore, deploymentStore: DeploymentStore, globalSettingsStore: GlobalSettingsStore) {
-    const activeJobs = deploymentStore
-        .listRunning()
-        .filter((deployment) => (deployment.serverId || "local") === "local")
-        .map((deployment) => ({
-            id: deployment.id,
-            type: `deploy:${deployment.trigger}`,
-            startedAt: deployment.startedAt
-        }));
-
-    return serverStore.updateHealth("local", {
-        status: "online",
-        agentVersion: appVersion(),
-        activeJobs,
-        capabilities: serverStore.get("local")?.capabilities ?? {
-            traefik: {
-                available: false,
-                containerCount: 0,
-                networkPresent: false,
-                checkedAt: new Date().toISOString()
-            }
-        }
-    });
-}
-
-/**
- * Checks that the configured URL points to the updater agent API, not a proxy
- * default site or another application.
- */
-async function fetchAgentHealth(agentBaseUrl: string, globalSettings: GlobalSettings) {
-    if (!agentBaseUrl) {
-        return { ok: false, message: "Agent URL is required." };
-    }
-
-    const healthUrl = `${agentBaseUrl}/agent/health?traefikNetwork=${encodeURIComponent(globalSettings.defaultTraefikNetwork)}`;
-    try {
-        const response = await fetch(healthUrl);
-        if (!response.ok) {
-            return {
-                ok: false,
-                message: `${healthUrl} returned HTTP ${response.status}. Configure the proxy/port so this URL reaches the agent container.`
-            };
-        }
-
-        const body = await response.json() as AgentHealthBody;
-        if (!body.serverId || !body.encryptionPublicKey || !body.signingPublicKey) {
-            return {
-                ok: false,
-                message: `${healthUrl} answered, but it did not look like an updater agent.`
-            };
-        }
-
-        return { ok: true, message: "", body };
-    } catch (error) {
-        return {
-            ok: false,
-            message: `${healthUrl} could not be reached: ${error instanceof Error ? error.message : String(error)}`
-        };
-    }
-}
-
-interface AgentHealthBody {
-    serverId?: string;
-    paired?: boolean;
-    version?: string;
-    activeJobs?: ServerActiveJob[];
-    encryptionPublicKey?: string;
-    signingPublicKey?: string;
-    capabilities?: ServerCapabilities;
 }
 
 /**
