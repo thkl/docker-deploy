@@ -10,6 +10,7 @@ import { DeploymentStore } from "./deploymentStore.js";
 import { DeploymentService } from "./deploymentService.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ControllerKeyState } from "./keyStore.js";
+import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
 import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerCapabilities, ServerPayload } from "./types.js";
@@ -24,6 +25,7 @@ export interface RouteDependencies {
     configStore: ConfigStore;
     deploymentService: DeploymentService;
     deploymentStore: DeploymentStore;
+    runtimeOperationStore: RuntimeOperationStore;
     globalSettingsStore: GlobalSettingsStore;
     agentManager: AgentManager;
     controllerKeys: ControllerKeyState;
@@ -34,7 +36,7 @@ export interface RouteDependencies {
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, configStore, deploymentService, deploymentStore, globalSettingsStore, agentManager, controllerKeys, serverStore } = dependencies;
+    const { adminAuth, configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -60,7 +62,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
 
     registerSettingsRoutes(app, globalSettingsStore);
     registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore });
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, globalSettingsStore, agentManager });
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager });
     registerWebhookRoute(app, { configStore, deploymentService });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
@@ -284,8 +286,8 @@ async function readResponseError(response: globalThis.Response) {
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "globalSettingsStore" | "agentManager">) {
-    const { configStore, deploymentService, deploymentStore, globalSettingsStore, agentManager } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager">) {
+    const { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager } = dependencies;
 
     app.get("/api/projects", async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -656,10 +658,52 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 return;
             }
 
-            const result = await agentManager.getClient(appSettings.serverId ?? "local").runtimeAction(projectName, appSettings, globalSettingsStore.readSettings(), service, action);
-            res.json(result);
+            const startedAt = new Date().toISOString();
+            try {
+                const result = await agentManager.getClient(appSettings.serverId ?? "local").runtimeAction(projectName, appSettings, globalSettingsStore.readSettings(), service, action);
+                const record = runtimeOperationStore.record(projectName, {
+                    serverId: appSettings.serverId ?? "local",
+                    service: result.service,
+                    action: result.action,
+                    status: "succeeded",
+                    startedAt,
+                    finishedAt: result.checkedAt,
+                    output: result.output
+                });
+                res.json({ ...result, operation: record });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "Could not run runtime action.";
+                const record = runtimeOperationStore.record(projectName, {
+                    serverId: appSettings.serverId ?? "local",
+                    service,
+                    action,
+                    status: "failed",
+                    startedAt,
+                    finishedAt: new Date().toISOString(),
+                    error: message,
+                    output: message
+                });
+                res.status(400).json({ error: message, operation: record });
+            }
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not run runtime action." });
+        }
+    });
+
+    app.get("/api/projects/:name/runtime-operations", (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+
+            if (!project) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            res.json(runtimeOperationStore.list(project.settings.id ?? project.name));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not load runtime operations." });
         }
     });
 
@@ -700,7 +744,17 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService">) {
     const { configStore, deploymentService } = dependencies;
 
+    app.post("/webhook/:name", (req: Request, res: Response) => {
+        const rawProjectName = req.params.name;
+        const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+        handleWebhook(req, res, configStore.resolveProject(projectRef));
+    });
+
     app.post("/webhook", (req: Request, res: Response) => {
+        handleWebhook(req, res, resolveWebhookProject(req.body, configStore.readConfig()));
+    });
+
+    function handleWebhook(req: Request, res: Response, webhookProject: { name?: string; projectName?: string; settings?: ProjectSettings; appSettings?: ProjectSettings } | null | undefined) {
         const event = req.headers["x-gitlab-event"];
 
         if (event !== "Push Hook") {
@@ -708,14 +762,16 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             return;
         }
 
-        // GitLab payload names can differ from the UI project key, so map the
-        // payload back to the configured project before recording logs.
-        const webhookProject = resolveWebhookProject(req.body, configStore.readConfig());
         if (!webhookProject) {
             throw new Error("No config for this repository");
         }
 
-        const { projectName, appSettings } = webhookProject;
+        const projectName = webhookProject.projectName ?? webhookProject.name;
+        const appSettings = webhookProject.appSettings ?? webhookProject.settings;
+        if (!projectName || !appSettings) {
+            throw new Error("No config for this repository");
+        }
+
         if (!appSettings.token) {
             res.status(403).send("Webhook secret token is not configured for this project.");
             return;
@@ -726,7 +782,7 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             console.log(`Webhook deployment dispatched for ${projectName} (${deployment.id}).`);
             res.status(200).send("Build worker dispatched");
         }
-    });
+    }
 }
 
 /**

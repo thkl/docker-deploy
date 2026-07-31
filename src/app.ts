@@ -13,6 +13,7 @@ import { ensureControllerKeys } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
 import { registerRoutes } from "./routes.js";
 import { RuntimeLogStreamHub } from "./runtimeLogStreams.js";
+import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { ServerStore } from "./serverStore.js";
 import { AuthenticatedRequest } from "./types.js";
 
@@ -30,6 +31,7 @@ class App {
     private readonly adminAuth = new AdminAuth();
     private readonly configStore = new ConfigStore(this.database.connection);
     private readonly deploymentStore = new DeploymentStore(this.database.connection);
+    private readonly runtimeOperationStore = new RuntimeOperationStore(this.database.connection);
     private readonly globalSettingsStore = new GlobalSettingsStore(this.database.connection);
     private readonly serverStore = new ServerStore(this.database.connection);
     private readonly controllerKeys = ensureControllerKeys();
@@ -64,6 +66,7 @@ class App {
             configStore: this.configStore,
             deploymentService: this.deploymentService,
             deploymentStore: this.deploymentStore,
+            runtimeOperationStore: this.runtimeOperationStore,
             globalSettingsStore: this.globalSettingsStore,
             agentManager: this.agentManager,
             controllerKeys: this.controllerKeys,

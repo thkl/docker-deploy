@@ -23,6 +23,14 @@ export function resolveWebhookProject(body: unknown, config: Record<string, Proj
         }
     }
 
+    for (const candidate of candidates) {
+        const idMatch = Object.entries(config).find(([, appSettings]) => appSettings.id === candidate);
+        if (idMatch) {
+            const [projectName, appSettings] = idMatch;
+            return { projectName, appSettings };
+        }
+    }
+
     const normalizedRepositoryCandidates = new Set(candidates.map(normalizeGitRepositoryIdentity).filter(Boolean));
     for (const [projectName, appSettings] of Object.entries(config)) {
         if (appSettings.repositoryUrl && normalizedRepositoryCandidates.has(normalizeGitRepositoryIdentity(appSettings.repositoryUrl))) {
@@ -45,11 +53,12 @@ function webhookProjectCandidates(body: unknown) {
     const repository = readRecord(payload.repository);
     const project = readRecord(payload.project);
     const candidates = [
+        readIdentifier(repository?.id),
         readString(repository?.name),
         readString(repository?.path),
         readString(project?.name),
         readString(project?.path),
-        readString(project?.id),
+        readIdentifier(project?.id),
         readString(project?.path_with_namespace),
         readString(repository?.git_http_url),
         readString(repository?.git_ssh_url),
@@ -72,6 +81,10 @@ function readRecord(value: unknown) {
  */
 function readString(value: unknown) {
     return typeof value === "string" ? value : "";
+}
+
+function readIdentifier(value: unknown) {
+    return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }
 
 /**

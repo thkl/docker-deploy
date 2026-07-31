@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { GlobalSettings, GlobalSettingsPayload, ProjectConfig, ProjectSettings, ServerRecord } from "./types.js";
 import type { DeploymentRecord } from "./deploymentStore.js";
 
-const schemaVersion = 2;
+const schemaVersion = 3;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     defaultTraefikNetwork: "proxy",
@@ -124,6 +124,19 @@ export class AppDatabase {
                 stream TEXT NOT NULL,
                 chunk TEXT NOT NULL,
                 created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS runtime_operations (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                server_id TEXT NOT NULL REFERENCES servers(id),
+                service TEXT NOT NULL,
+                action TEXT NOT NULL,
+                status TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT NOT NULL,
+                error TEXT,
+                output TEXT NOT NULL
             );
         `);
 

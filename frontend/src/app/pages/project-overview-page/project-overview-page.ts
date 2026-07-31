@@ -1,7 +1,7 @@
 import { Component, computed, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { ComposeInspection, ComposeMountInspection, ComposeServiceInspection, DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
+import { ComposeInspection, ComposeMountInspection, ComposeServiceInspection, DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
@@ -22,20 +22,24 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly latestDeployment = signal<DeploymentRecord | null>(null);
   protected readonly runtimeStatus = signal<RuntimeStatus | null>(null);
   protected readonly runtimeLogs = signal<RuntimeLogs | null>(null);
+  protected readonly runtimeOperations = signal<RuntimeOperationRecord[]>([]);
   protected readonly composeInspection = signal<ComposeInspection | null>(null);
   protected readonly loadingDeployment = signal(false);
   protected readonly loadingRuntimeStatus = signal(false);
   protected readonly loadingRuntimeLogs = signal(false);
+  protected readonly loadingRuntimeOperations = signal(false);
   protected readonly loadingComposeInspection = signal(false);
   protected readonly deploying = signal(false);
   protected readonly deployMessage = signal('');
   protected readonly deployError = signal('');
   protected readonly runtimeStatusError = signal('');
   protected readonly runtimeLogsError = signal('');
+  protected readonly runtimeOperationsError = signal('');
   protected readonly composeInspectionError = signal('');
   protected readonly runtimeActionMessage = signal('');
   protected readonly runtimeActionError = signal('');
   protected readonly runtimeActionKey = signal('');
+  protected readonly selectedRuntimeOperationId = signal('');
   protected readonly selectedRuntimeService = signal('');
   protected readonly runtimeLogTail = signal(200);
   protected readonly runtimeLogStreamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
@@ -68,6 +72,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.store.selectProject(projectRef);
         this.connectDeploymentStream(projectRef);
         this.loadRuntimeStatus(projectRef);
+        this.loadRuntimeOperations(projectRef);
       }
     });
   }
@@ -103,6 +108,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     const project = this.projectByRef(projectRef);
     this.loadLatestDeployment(project?.id ?? projectRef, project?.name ?? projectRef);
     this.loadRuntimeStatus(project?.id ?? projectRef);
+    this.loadRuntimeOperations(project?.id ?? projectRef);
   }
 
   protected openDelete(project: ProjectSummary) {
@@ -267,6 +273,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.runtimeActionMessage.set(`${this.runtimeActionLabel(action)} ${serviceName} finished.`);
         this.runtimeActionKey.set('');
         this.loadRuntimeStatus(projectRef);
+        this.loadRuntimeOperations(projectRef);
       },
       error: (error) => {
         if (this.activeProjectRef !== projectRef) {
@@ -276,6 +283,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.runtimeActionError.set(error?.error?.error || `Could not ${action} ${serviceName}.`);
         this.runtimeActionMessage.set('');
         this.runtimeActionKey.set('');
+        this.loadRuntimeOperations(projectRef);
       },
     });
   }
@@ -295,6 +303,20 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
           : action === 'recreate'
             ? 'Recreate'
             : 'Pull';
+  }
+
+  protected toggleRuntimeOperation(operation: RuntimeOperationRecord) {
+    this.selectedRuntimeOperationId.update((current) => current === operation.id ? '' : operation.id);
+  }
+
+  protected operationDuration(operation: RuntimeOperationRecord) {
+    const started = new Date(operation.startedAt).getTime();
+    const finished = new Date(operation.finishedAt).getTime();
+    if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) {
+      return '';
+    }
+
+    return `${Math.max(0, Math.round((finished - started) / 1000))}s`;
   }
 
   protected inspectCompose(projectRef: string) {
@@ -493,6 +515,30 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     });
   }
 
+  protected loadRuntimeOperations(projectRef: string) {
+    this.loadingRuntimeOperations.set(true);
+    this.runtimeOperationsError.set('');
+
+    this.api.listRuntimeOperations(projectRef).subscribe({
+      next: (operations) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.runtimeOperations.set(operations);
+        this.loadingRuntimeOperations.set(false);
+      },
+      error: (error) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.loadingRuntimeOperations.set(false);
+        this.runtimeOperationsError.set(error?.error?.error || 'Could not load runtime operation history.');
+      },
+    });
+  }
+
   private connectDeploymentStream(projectRef: string) {
     this.disconnectDeploymentStream();
     this.loadingDeployment.set(true);
@@ -617,13 +663,16 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.latestDeployment.set(null);
     this.runtimeStatus.set(null);
     this.runtimeLogs.set(null);
+    this.runtimeOperations.set([]);
     this.composeInspection.set(null);
     this.runtimeStatusError.set('');
     this.runtimeLogsError.set('');
+    this.runtimeOperationsError.set('');
     this.composeInspectionError.set('');
     this.runtimeActionMessage.set('');
     this.runtimeActionError.set('');
     this.runtimeActionKey.set('');
+    this.selectedRuntimeOperationId.set('');
     this.deployError.set('');
     this.deployMessage.set('');
     this.selectedRuntimeService.set('');
@@ -631,6 +680,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.loadingDeployment.set(true);
     this.loadingRuntimeStatus.set(true);
     this.loadingRuntimeLogs.set(false);
+    this.loadingRuntimeOperations.set(false);
     this.loadingComposeInspection.set(false);
   }
 

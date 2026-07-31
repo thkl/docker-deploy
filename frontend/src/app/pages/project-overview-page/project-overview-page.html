@@ -141,6 +141,59 @@
   <section class="deploy-panel">
     <div class="deploy-head">
       <div>
+        <h2>Runtime operations</h2>
+        <p>Recent service actions with status, timing, and command output.</p>
+      </div>
+      <button type="button" class="secondary" (click)="loadRuntimeOperations(project.id)" [disabled]="loadingRuntimeOperations()">
+        {{ loadingRuntimeOperations() ? 'Refreshing...' : 'Refresh history' }}
+      </button>
+    </div>
+
+    @if (runtimeOperationsError()) {
+      <p class="notice error">{{ runtimeOperationsError() }}</p>
+    }
+
+    @if (loadingRuntimeOperations()) {
+      <div class="status-skeleton" aria-label="Loading runtime operation history">
+        @for (row of [1, 2, 3]; track row) {
+          <div class="operation-row">
+            <span class="skeleton-line short"></span>
+            <span class="skeleton-line"></span>
+            <span class="skeleton-line"></span>
+            <span class="skeleton-line short"></span>
+          </div>
+        }
+      </div>
+    } @else if (runtimeOperations().length > 0) {
+      <div class="operation-list">
+        @for (operation of runtimeOperations(); track operation.id) {
+          <div class="operation-row" [class.failed]="operation.status === 'failed'">
+            <span class="status-chip" [class.failed]="operation.status === 'failed'">{{ operation.status }}</span>
+            <div class="service-item">
+              <strong>{{ runtimeActionLabel(operation.action) }} {{ operation.service }}</strong>
+              <small>{{ formatDate(operation.startedAt) }} · {{ operationDuration(operation) || 'duration unknown' }}</small>
+            </div>
+            <span>{{ operation.serverId }}</span>
+            <button type="button" class="secondary compact" (click)="toggleRuntimeOperation(operation)">
+              {{ selectedRuntimeOperationId() === operation.id ? 'Hide output' : 'Show output' }}
+            </button>
+            @if (operation.error) {
+              <small class="error-text">{{ operation.error }}</small>
+            }
+            @if (selectedRuntimeOperationId() === operation.id) {
+              <pre class="operation-output">{{ operation.output || 'No command output captured.' }}</pre>
+            }
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="empty-log">No runtime service actions have been recorded yet.</div>
+    }
+  </section>
+
+  <section class="deploy-panel">
+    <div class="deploy-head">
+      <div>
         <h2>Runtime status</h2>
         @if (loadingRuntimeStatus()) {
           <p>Checking Compose containers on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>

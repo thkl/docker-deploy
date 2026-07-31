@@ -159,6 +159,23 @@ export interface RuntimeActionResult {
   action: RuntimeServiceAction;
   checkedAt: string;
   output: string;
+  operation?: RuntimeOperationRecord;
+}
+
+export type RuntimeOperationStatus = 'succeeded' | 'failed';
+
+export interface RuntimeOperationRecord {
+  id: string;
+  projectId?: string;
+  projectName: string;
+  serverId: string;
+  service: string;
+  action: RuntimeServiceAction;
+  status: RuntimeOperationStatus;
+  startedAt: string;
+  finishedAt: string;
+  error?: string;
+  output: string;
 }
 
 export type TraefikDiagnosticStatus = 'pass' | 'warn' | 'fail';
