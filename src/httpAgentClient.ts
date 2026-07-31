@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeLogsJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -80,6 +80,17 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["detectTraefik"]>> }>({
             jobType: "detectTraefik",
             payload: { globalSettings } satisfies DetectTraefikJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
+     * Diagnoses Traefik routing through a remote target server.
+     */
+    async diagnoseTraefik(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["diagnoseTraefik"]>> }>({
+            jobType: "diagnoseTraefik",
+            payload: { projectName, appSettings, globalSettings } satisfies DiagnoseTraefikJobPayload
         });
         return accepted.result;
     }

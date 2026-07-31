@@ -1,9 +1,9 @@
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
-import { ComposeInspection, GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeStatus, ServerCapabilities } from "./types.js";
+import { ComposeInspection, GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeStatus, ServerCapabilities, TraefikDiagnostics } from "./types.js";
 
-export type AgentJobType = "deploy" | "importCompose" | "inspectCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow";
+export type AgentJobType = "deploy" | "importCompose" | "inspectCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow";
 
 export interface DeployJobPayload {
     projectName: string;
@@ -32,9 +32,11 @@ export interface DetectTraefikJobPayload {
     globalSettings: GlobalSettings;
 }
 
+export interface DiagnoseTraefikJobPayload extends DeployJobPayload {}
+
 export interface AgentJobRequest {
     jobType: AgentJobType;
-    payload: DeployJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload;
+    payload: DeployJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | DeleteCheckoutJobPayload | DetectTraefikJobPayload | DiagnoseTraefikJobPayload;
 }
 
 export interface AgentJobAccepted {
@@ -58,6 +60,7 @@ export interface AgentClient {
     inspectCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ComposeInspection>;
     deleteCheckout(checkoutPath: string): Promise<CheckoutCleanupResult>;
     detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]>;
+    diagnoseTraefik(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<TraefikDiagnostics>;
     inspectStatus(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<RuntimeStatus>;
     runtimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number): Promise<RuntimeLogs>;
     followRuntimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number, hooks?: RuntimeLogHooks): Promise<RuntimeLogStream>;

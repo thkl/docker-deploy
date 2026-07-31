@@ -1,7 +1,7 @@
 import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js";
 import { inspectCompose } from "./composeInspection.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { deleteCheckoutPath, detectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectProjectStatus, readRuntimeLogs, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectProjectStatus, readRuntimeLogs, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
@@ -53,6 +53,13 @@ export class LocalAgent implements AgentClient {
      */
     detectTraefik(globalSettings: GlobalSettings) {
         return detectTraefik(globalSettings);
+    }
+
+    /**
+     * Diagnoses Traefik routing for one deployed project.
+     */
+    diagnoseTraefik(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        return diagnoseProjectTraefik(projectName, appSettings, globalSettings);
     }
 
     /**

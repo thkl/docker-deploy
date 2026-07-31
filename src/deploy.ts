@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities } from "./types.js";
+import { GlobalSettings, ProjectSettings, RuntimeLogs, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 
 const execAsync = promisify(exec);
@@ -263,6 +263,142 @@ EOF`;
 }
 
 /**
+ * Checks the common Traefik 504 failure points for one deployed project.
+ */
+export async function diagnoseProjectTraefik(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<TraefikDiagnostics> {
+    const checkedAt = new Date().toISOString();
+    const traefik = appSettings.traefik;
+    const serviceName = traefik?.service || repoName;
+    const port = Number(traefik?.port || 80);
+    const network = traefik?.network || globalSettings.defaultTraefikNetwork || "proxy";
+
+    if (!traefik?.enabled) {
+        return {
+            status: "warn",
+            checkedAt,
+            checks: [{ key: "enabled", label: "Traefik enabled", status: "warn", detail: "Traefik is not enabled for this project." }]
+        };
+    }
+
+    const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const url = `http://${serviceName}:${port}/`;
+    const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli > /dev/null 2>&1
+                TRAEFIK_IDS="$(docker ps -q --filter label=org.opencontainers.image.title=Traefik)"
+                if [ -z "$TRAEFIK_IDS" ]; then
+                    TRAEFIK_IDS="$(docker ps --format '{{.ID}} {{.Image}} {{.Names}}' | grep -Ei '(^|[ /])traefik(:| |$)' | awk '{print $1}')"
+                fi
+                TARGET_ID="$(docker ps -q --filter ${shellQuote(`label=com.docker.compose.project=${composeProjectName}`)} --filter ${shellQuote(`label=com.docker.compose.service=${serviceName}`)} | head -n 1)"
+                NETWORK_PRESENT="$(docker network inspect ${shellQuote(network)} > /dev/null 2>&1 && echo true || echo false)"
+                TRAEFIK_ON_NETWORK=false
+                TARGET_ON_NETWORK=false
+                if [ -n "$TRAEFIK_IDS" ]; then
+                    for id in $TRAEFIK_IDS; do
+                        if docker inspect "$id" --format '{{json .NetworkSettings.Networks}}' | grep -q ${shellQuote(`"${network}"`)}; then
+                            TRAEFIK_ON_NETWORK=true
+                        fi
+                    done
+                fi
+                if [ -n "$TARGET_ID" ]; then
+                    if docker inspect "$TARGET_ID" --format '{{json .NetworkSettings.Networks}}' | grep -q ${shellQuote(`"${network}"`)}; then
+                        TARGET_ON_NETWORK=true
+                    fi
+                fi
+                REACHABLE=false
+                REACH_EXIT=125
+                REACH_OUTPUT=""
+                if [ "$NETWORK_PRESENT" = "true" ]; then
+                    REACH_OUTPUT="$(docker run --rm --network ${shellQuote(network)} alpine:latest wget -T 5 -qO- ${shellQuote(url)} >/dev/null 2>&1)"
+                    REACH_EXIT=$?
+                    if [ "$REACH_EXIT" -eq 0 ] || echo "$REACH_OUTPUT" | grep -Eiq 'server returned error|404|401|403|500'; then
+                        REACHABLE=true
+                    fi
+                fi
+                echo "traefikContainerCount=$(printf "%s\\n" "$TRAEFIK_IDS" | sed '/^$/d' | wc -l | tr -d ' ')"
+                echo "targetPresent=$([ -n "$TARGET_ID" ] && echo true || echo false)"
+                echo "networkPresent=$NETWORK_PRESENT"
+                echo "traefikOnNetwork=$TRAEFIK_ON_NETWORK"
+                echo "targetOnNetwork=$TARGET_ON_NETWORK"
+                echo "reachable=$REACHABLE"
+                echo "reachExit=$REACH_EXIT"
+                printf "reachOutput=%s\\n" "$REACH_OUTPUT"
+EOF`;
+
+    try {
+        const { stdout } = await execAsync(dockerRunCommand, { maxBuffer: 2 * 1024 * 1024 });
+        const raw = parseKeyValueOutput(stdout);
+        const traefikContainerCount = Number(raw.traefikContainerCount || 0);
+        const networkPresent = outputFlag(raw.networkPresent);
+        const traefikOnNetwork = outputFlag(raw.traefikOnNetwork);
+        const targetPresent = outputFlag(raw.targetPresent);
+        const targetOnNetwork = outputFlag(raw.targetOnNetwork);
+        const reachable = outputFlag(raw.reachable);
+        const checks: TraefikDiagnosticCheck[] = [
+            {
+                key: "traefik-container",
+                label: "Traefik container",
+                status: traefikContainerCount > 0 ? "pass" : "fail",
+                detail: traefikContainerCount > 0 ? `${traefikContainerCount} Traefik container(s) found.` : "No running Traefik container was found."
+            },
+            {
+                key: "network-present",
+                label: "Docker network",
+                status: networkPresent ? "pass" : "fail",
+                detail: networkPresent ? `${network} exists.` : `${network} does not exist on the target Docker host.`
+            },
+            {
+                key: "traefik-network",
+                label: "Traefik network membership",
+                status: traefikOnNetwork ? "pass" : "fail",
+                detail: traefikOnNetwork ? `Traefik is attached to ${network}.` : `Traefik is not attached to ${network}.`
+            },
+            {
+                key: "target-container",
+                label: "Target service container",
+                status: targetPresent ? "pass" : "fail",
+                detail: targetPresent ? `${serviceName} is running in Compose project ${composeProjectName}.` : `${serviceName} was not found in Compose project ${composeProjectName}.`
+            },
+            {
+                key: "target-network",
+                label: "Target network membership",
+                status: targetOnNetwork ? "pass" : "fail",
+                detail: targetOnNetwork ? `${serviceName} is attached to ${network}.` : `${serviceName} is not attached to ${network}.`
+            },
+            {
+                key: "target-reachability",
+                label: "Backend reachability",
+                status: reachable ? "pass" : "fail",
+                detail: reachable ? `${url} responds from ${network}.` : `${url} is not reachable from ${network}${raw.reachOutput ? `: ${raw.reachOutput}` : "."}`
+            }
+        ];
+
+        return {
+            status: summarizeDiagnosticStatus(checks),
+            checkedAt,
+            hostname: traefik.hostname,
+            service: serviceName,
+            port,
+            network,
+            checks
+        };
+    } catch (error) {
+        return {
+            status: "fail",
+            checkedAt,
+            hostname: traefik.hostname,
+            service: serviceName,
+            port,
+            network,
+            checks: [],
+            error: error instanceof Error ? error.message : "Could not diagnose Traefik."
+        };
+    }
+}
+
+/**
  * Reads recent runtime logs for one Compose service/container.
  */
 export async function readRuntimeLogs(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number): Promise<RuntimeLogs> {
@@ -458,12 +594,14 @@ interface DockerInspectContainer {
     };
     NetworkSettings?: {
         Ports?: DockerPortBindings;
+        Networks?: Record<string, unknown>;
     };
 }
 
 function parseRuntimeService(container: DockerInspectContainer): RuntimeServiceStatus {
     const ports = formatPublishedPorts(container.NetworkSettings?.Ports);
     const exposedPorts = Object.keys(container.Config?.ExposedPorts ?? {});
+    const networks = Object.keys(container.NetworkSettings?.Networks ?? {});
     const networkMode = container.HostConfig?.NetworkMode || "unknown";
     const containerName = container.Name?.replace(/^\/+/, "");
 
@@ -476,6 +614,7 @@ function parseRuntimeService(container: DockerInspectContainer): RuntimeServiceS
         ...(container.Config?.Image ? { image: container.Config.Image } : {}),
         ...(ports ? { ports } : {}),
         networkMode,
+        ...(networks.length ? { networks } : {}),
         ...(exposedPorts.length ? { exposedPorts } : {})
     };
 }
@@ -507,6 +646,35 @@ function summarizeRuntimeStatus(services: RuntimeServiceStatus[]) {
     }
 
     return "partial";
+}
+
+function parseKeyValueOutput(output: string) {
+    return Object.fromEntries(
+        output
+            .trim()
+            .split(/\r?\n/)
+            .map((line) => {
+                const separator = line.indexOf("=");
+                return separator === -1 ? ["", ""] : [line.slice(0, separator), line.slice(separator + 1)];
+            })
+            .filter(([key]) => key)
+    ) as Record<string, string>;
+}
+
+function outputFlag(value: string | undefined) {
+    return value === "true";
+}
+
+function summarizeDiagnosticStatus(checks: TraefikDiagnosticCheck[]) {
+    if (checks.some((check) => check.status === "fail")) {
+        return "fail";
+    }
+
+    if (checks.some((check) => check.status === "warn")) {
+        return "warn";
+    }
+
+    return "pass";
 }
 
 function runtimeError(error: string): RuntimeStatus {

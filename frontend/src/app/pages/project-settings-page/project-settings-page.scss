@@ -343,6 +343,42 @@ fieldset small {
   overflow-wrap: anywhere;
 }
 
+.traefik-diagnostics {
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 55%);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.7rem;
+}
+
+.traefik-diagnostics.fail {
+  border-color: color-mix(in srgb, var(--danger), transparent 45%);
+}
+
+.traefik-diagnostics.warn {
+  border-color: color-mix(in srgb, var(--accent), transparent 35%);
+}
+
+.traefik-diagnostics > div:first-child,
+.diagnostic-row {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.traefik-diagnostics span,
+.traefik-diagnostics p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.diagnostic-row.fail strong {
+  color: var(--danger);
+}
+
+.diagnostic-row.warn strong {
+  color: var(--accent-strong);
+}
+
 .switch,
 .check-row {
   align-items: center;

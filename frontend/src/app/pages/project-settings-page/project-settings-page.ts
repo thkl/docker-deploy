@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, GlobalSettings, ProjectPayload, ProjectSummary } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, GlobalSettings, ProjectPayload, ProjectSummary, TraefikDiagnostics } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -83,7 +83,9 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly saving = signal<'save' | 'deploy' | ''>('');
   protected readonly importingCompose = signal(false);
   protected readonly inspectingCompose = signal(false);
+  protected readonly diagnosingTraefik = signal(false);
   protected readonly composeInspection = signal<ComposeInspection | null>(null);
+  protected readonly traefikDiagnostics = signal<TraefikDiagnostics | null>(null);
   protected readonly composeMode = signal<'builder' | 'yaml'>('builder');
   protected readonly builderSection = signal<'services' | 'networks' | 'volumes' | 'traefik'>('services');
   protected readonly builderServices = signal<ComposeBuilderService[]>([]);
@@ -370,6 +372,29 @@ export class ProjectSettingsPage implements OnInit {
       error: (error) => {
         this.error.set(error?.error?.error || 'Could not inspect Docker Compose file.');
         this.inspectingCompose.set(false);
+      },
+    });
+  }
+
+  protected diagnoseTraefik() {
+    this.message.set('');
+    this.error.set('');
+
+    if (this.isNew()) {
+      this.error.set('Save the project before running Traefik diagnostics.');
+      return;
+    }
+
+    this.diagnosingTraefik.set(true);
+    this.traefikDiagnostics.set(null);
+    this.api.diagnoseTraefik(this.currentProjectRef).subscribe({
+      next: (diagnostics) => {
+        this.traefikDiagnostics.set(diagnostics);
+        this.diagnosingTraefik.set(false);
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not diagnose Traefik.');
+        this.diagnosingTraefik.set(false);
       },
     });
   }

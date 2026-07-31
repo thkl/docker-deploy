@@ -354,10 +354,15 @@
                     <strong>Traefik</strong>
                     <span>Labels and proxy network for one service</span>
                   </div>
-                  <label class="switch">
-                    <input type="checkbox" formControlName="traefikEnabled" />
-                    <span>Enabled</span>
-                  </label>
+                  <div class="builder-actions">
+                    <button type="button" class="secondary" (click)="diagnoseTraefik()" [disabled]="saving() !== '' || diagnosingTraefik() || !traefikEnabled()">
+                      {{ diagnosingTraefik() ? 'Checking...' : 'Run diagnostics' }}
+                    </button>
+                    <label class="switch">
+                      <input type="checkbox" formControlName="traefikEnabled" />
+                      <span>Enabled</span>
+                    </label>
+                  </div>
                 </div>
 
                 <div class="field-grid" [class.is-disabled]="!traefikEnabled()">
@@ -422,6 +427,24 @@
                     <span>Wildcard base domain</span>
                     <input formControlName="traefikWildcardDomain" placeholder="bla.network" />
                   </label>
+                }
+
+                @if (traefikDiagnostics(); as diagnostics) {
+                  <section class="traefik-diagnostics" [class.fail]="diagnostics.status === 'fail'" [class.warn]="diagnostics.status === 'warn'">
+                    <div>
+                      <strong>Diagnostics {{ diagnostics.status }}</strong>
+                      <span>{{ diagnostics.service }}:{{ diagnostics.port }} on {{ diagnostics.network }}</span>
+                    </div>
+                    @if (diagnostics.error) {
+                      <p>{{ diagnostics.error }}</p>
+                    }
+                    @for (check of diagnostics.checks; track check.key) {
+                      <div class="diagnostic-row" [class.fail]="check.status === 'fail'" [class.warn]="check.status === 'warn'">
+                        <strong>{{ check.label }}</strong>
+                        <span>{{ check.detail }}</span>
+                      </div>
+                    }
+                  </section>
                 }
               }
             }

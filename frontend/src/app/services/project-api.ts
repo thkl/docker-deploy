@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeLogs, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord } from '../models/project';
+import { ComposeInspection, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeLogs, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikDiagnostics } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -41,6 +41,10 @@ export class ProjectApi {
 
   getProjectStatus(projectRef: string): Observable<RuntimeStatus> {
     return this.http.get<RuntimeStatus>(`/api/projects/${encodeURIComponent(projectRef)}/status`);
+  }
+
+  diagnoseTraefik(projectRef: string): Observable<TraefikDiagnostics> {
+    return this.http.get<TraefikDiagnostics>(`/api/projects/${encodeURIComponent(projectRef)}/traefik/diagnostics`);
   }
 
   getRuntimeLogs(projectRef: string, service: string, tail: number): Observable<RuntimeLogs> {

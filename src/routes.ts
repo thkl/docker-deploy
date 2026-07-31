@@ -526,6 +526,26 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
         }
     });
 
+    app.get("/api/projects/:name/traefik/diagnostics", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            const diagnostics = await agentManager.getClient(appSettings.serverId ?? "local").diagnoseTraefik(projectName, appSettings, globalSettingsStore.readSettings());
+            res.json(diagnostics);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not diagnose Traefik." });
+        }
+    });
+
     app.get("/api/projects/:name/runtime-logs", async (req: Request, res: Response) => {
         try {
             const rawProjectName = req.params.name;

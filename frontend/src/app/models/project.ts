@@ -134,6 +134,7 @@ export interface RuntimeServiceStatus {
   ports?: string;
   networkMode?: string;
   exposedPorts?: string[];
+  networks?: string[];
 }
 
 export interface RuntimeStatus {
@@ -149,6 +150,26 @@ export interface RuntimeLogs {
   tail: number;
   checkedAt: string;
   output: string;
+}
+
+export type TraefikDiagnosticStatus = 'pass' | 'warn' | 'fail';
+
+export interface TraefikDiagnosticCheck {
+  key: string;
+  label: string;
+  status: TraefikDiagnosticStatus;
+  detail: string;
+}
+
+export interface TraefikDiagnostics {
+  status: TraefikDiagnosticStatus;
+  checkedAt: string;
+  hostname?: string;
+  service?: string;
+  port?: number;
+  network?: string;
+  checks: TraefikDiagnosticCheck[];
+  error?: string;
 }
 
 export interface ComposeInspection {
