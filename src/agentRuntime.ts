@@ -233,6 +233,20 @@ export class AgentRuntime {
             return { result: await this.localAgent.runtimeAction(payload.projectName, payload.appSettings, payload.globalSettings, payload.service, payload.action) };
         }
 
+        if (request.jobType === "runtimeActionFollow") {
+            const payload = request.payload as RuntimeActionJobPayload;
+            const stream = await this.localAgent.followRuntimeAction(payload.projectName, payload.appSettings, payload.globalSettings, payload.service, payload.action, {
+                onOutput: (stream, chunk) => this.emitFrame(accepted.jobId, { stream, chunk }),
+                onClose: () => this.emitFrame(accepted.jobId, { stream: "status", chunk: "Runtime action finished.", done: true, success: true }),
+                onFailure: (error) => this.emitFrame(accepted.jobId, { stream: "status", chunk: error.message, done: true, success: false, error: error.message })
+            }) as RuntimeLogStream;
+            const job = this.jobs.get(accepted.jobId);
+            if (job) {
+                job.cancel = () => stream.stop();
+            }
+            return {};
+        }
+
         const payload = request.payload as DeleteCheckoutJobPayload;
         return { result: await this.localAgent.deleteCheckout(payload.checkoutPath) };
     }

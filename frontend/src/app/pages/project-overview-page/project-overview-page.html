@@ -220,6 +220,10 @@
       <p class="notice error inline-notice">{{ runtimeActionError() }}</p>
     }
 
+    @if (runtimeActionOutput()) {
+      <pre class="operation-output live-output">{{ runtimeActionOutput() }}</pre>
+    }
+
     @if (loadingRuntimeStatus()) {
       <div class="status-skeleton" aria-label="Loading runtime service status">
         <div class="deploy-meta">
@@ -258,7 +262,7 @@
         <div class="service-list">
           @for (service of status.services; track service.containerId || service.containerName || service.service) {
             <div class="service-row">
-              <div  class="service-item">
+              <div class="service-item">
                 <strong>{{ service.service }}</strong>
                 <small>{{ service.containerName || service.containerId || 'container unavailable' }}</small>
               </div>

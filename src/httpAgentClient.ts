@@ -151,6 +151,17 @@ export class HttpAgentClient implements AgentClient {
     }
 
     /**
+     * Streams one runtime action through a remote target server until it ends.
+     */
+    async followRuntimeAction(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction, hooks: RuntimeLogHooks = {}): Promise<RuntimeLogStream> {
+        const accepted = await this.postJob({
+            jobType: "runtimeActionFollow",
+            payload: { projectName, appSettings, globalSettings, service, action } satisfies RuntimeActionJobPayload
+        });
+        return this.connectRuntimeLogStream(accepted, hooks);
+    }
+
+    /**
      * Sends one encrypted job command to the agent.
      */
     private async postJob<T extends object = object>(request: AgentJobRequest) {

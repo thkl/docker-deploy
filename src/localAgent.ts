@@ -2,7 +2,7 @@ import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js"
 import { inspectCompose } from "./composeInspection.js";
 import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { GlobalSettings, ProjectSettings, RuntimeServiceAction } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
@@ -96,5 +96,12 @@ export class LocalAgent implements AgentClient {
      */
     runtimeAction(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction) {
         return runRuntimeServiceAction(projectName, appSettings, globalSettings, service, action);
+    }
+
+    /**
+     * Streams one runtime action against a deployed Compose service.
+     */
+    followRuntimeAction(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction, hooks: RuntimeLogHooks = {}) {
+        return streamRuntimeServiceAction(projectName, appSettings, globalSettings, service, action, hooks);
     }
 }

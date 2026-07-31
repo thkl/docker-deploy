@@ -456,6 +456,27 @@ export async function followRuntimeLogs(repoName: string, appSettings: ProjectSe
  * Runs one service-level Docker Compose action for an already deployed project.
  */
 export async function runRuntimeServiceAction(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction): Promise<RuntimeActionResult> {
+    const serviceName = normalizeRuntimeActionInput(service, action);
+    const dockerRunCommand = renderRuntimeServiceActionCommand(repoName, appSettings, globalSettings, serviceName, action);
+    const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 4 * 1024 * 1024 });
+    return {
+        service: serviceName,
+        action,
+        checkedAt: new Date().toISOString(),
+        output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim()
+    };
+}
+
+/**
+ * Streams one service-level Docker Compose action as it runs.
+ */
+export function streamRuntimeServiceAction(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction, hooks: RuntimeLogHooks = {}): RuntimeLogStream {
+    const serviceName = normalizeRuntimeActionInput(service, action);
+    const worker = spawn("sh", ["-c", renderRuntimeServiceActionCommand(repoName, appSettings, globalSettings, serviceName, action)], { stdio: ["ignore", "pipe", "pipe"] });
+    return wireRuntimeLogWorker(worker, hooks);
+}
+
+function normalizeRuntimeActionInput(service: string, action: RuntimeServiceAction) {
     const serviceName = service.trim();
     if (!serviceName) {
         throw new Error("Service is required.");
@@ -465,6 +486,10 @@ export async function runRuntimeServiceAction(repoName: string, appSettings: Pro
         throw new Error("Unsupported runtime action.");
     }
 
+    return serviceName;
+}
+
+function renderRuntimeServiceActionCommand(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, serviceName: string, action: RuntimeServiceAction) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const projectPath = resolveHostPath(hostAppsPath);
     const composeOverride = appSettings.composeOverride?.trim();
@@ -472,7 +497,8 @@ export async function runRuntimeServiceAction(repoName: string, appSettings: Pro
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
     const actionScript = renderRuntimeServiceActionScript(serviceName, action);
-    const dockerRunCommand = `docker run -i --rm \
+
+    return `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${shellQuote(`${projectPath}:${projectPath}`)} \
             alpine:latest sh << 'EOF'
@@ -483,14 +509,6 @@ ${composeSelectionScript}
 ${traefikOverrideScript}
 ${actionScript}
 EOF`;
-
-    const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 4 * 1024 * 1024 });
-    return {
-        service: serviceName,
-        action,
-        checkedAt: new Date().toISOString(),
-        output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim()
-    };
 }
 
 /**

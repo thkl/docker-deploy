@@ -3,7 +3,7 @@ import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
 import { ComposeInspection, ComposeValidation, GlobalSettings, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, TraefikDiagnostics } from "./types.js";
 
-export type AgentJobType = "deploy" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow" | "runtimeAction";
+export type AgentJobType = "deploy" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "detectTraefik" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow" | "runtimeAction" | "runtimeActionFollow";
 
 export interface DeployJobPayload {
     projectName: string;
@@ -73,4 +73,5 @@ export interface AgentClient {
     runtimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number): Promise<RuntimeLogs>;
     followRuntimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number, hooks?: RuntimeLogHooks): Promise<RuntimeLogStream>;
     runtimeAction(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction): Promise<RuntimeActionResult>;
+    followRuntimeAction(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction, hooks?: RuntimeLogHooks): Promise<RuntimeLogStream> | RuntimeLogStream;
 }

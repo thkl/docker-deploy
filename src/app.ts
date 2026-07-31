@@ -14,6 +14,7 @@ import { LocalAgent } from "./localAgent.js";
 import { registerRoutes } from "./routes.js";
 import { RuntimeLogStreamHub } from "./runtimeLogStreams.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
+import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { AuthenticatedRequest } from "./types.js";
 
@@ -39,6 +40,7 @@ class App {
     private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
     private readonly deploymentStreams = new DeploymentStreamHub(this.configStore, this.deploymentStore, this.adminAuth);
     private readonly runtimeLogStreams = new RuntimeLogStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.adminAuth);
+    private readonly runtimeOperationStreams = new RuntimeOperationStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.runtimeOperationStore, this.adminAuth);
     private readonly deploymentService = new DeploymentService(
         this.deploymentStore,
         this.globalSettingsStore,
@@ -77,6 +79,7 @@ class App {
         const server = createServer(this.app);
         this.deploymentStreams.register(server);
         this.runtimeLogStreams.register(server);
+        this.runtimeOperationStreams.register(server);
         server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
     }
 

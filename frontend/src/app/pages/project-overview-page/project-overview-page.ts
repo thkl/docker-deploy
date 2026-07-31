@@ -5,6 +5,7 @@ import { ComposeInspection, ComposeMountInspection, ComposeServiceInspection, De
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
+import { RuntimeOperationStreamService } from '../../services/runtime-operation-stream';
 import { ProjectStore } from '../../state/project-store';
 
 @Component({
@@ -39,6 +40,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeActionMessage = signal('');
   protected readonly runtimeActionError = signal('');
   protected readonly runtimeActionKey = signal('');
+  protected readonly runtimeActionOutput = signal('');
   protected readonly selectedRuntimeOperationId = signal('');
   protected readonly selectedRuntimeService = signal('');
   protected readonly runtimeLogTail = signal(200);
@@ -57,8 +59,10 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
 
   private readonly deploymentStream = inject(DeploymentStreamService);
   private readonly runtimeLogStream = inject(RuntimeLogStreamService);
+  private readonly runtimeOperationStream = inject(RuntimeOperationStreamService);
   private streamSubscription: Subscription | undefined;
   private runtimeLogSubscription: Subscription | undefined;
+  private runtimeOperationSubscription: Subscription | undefined;
   private activeProjectRef = '';
 
   @ViewChild('deployLog') private deployLog?: ElementRef<HTMLElement>;
@@ -80,6 +84,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   ngOnDestroy() {
     this.disconnectDeploymentStream();
     this.disconnectRuntimeLogStream();
+    this.disconnectRuntimeOperationStream();
   }
 
   protected deploy(projectRef: string) {
@@ -260,20 +265,52 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     const serviceName = service.service;
     const actionKey = `${serviceName}:${action}`;
     this.disconnectRuntimeLogStream();
+    this.disconnectRuntimeOperationStream();
     this.runtimeActionKey.set(actionKey);
     this.runtimeActionMessage.set(`${this.runtimeActionLabel(action)} ${serviceName}...`);
     this.runtimeActionError.set('');
+    this.runtimeActionOutput.set('');
 
-    this.api.runRuntimeAction(projectRef, serviceName, action).subscribe({
-      next: () => {
+    this.runtimeOperationSubscription = this.runtimeOperationStream.run(projectRef, serviceName, action).subscribe({
+      next: (event) => {
         if (this.activeProjectRef !== projectRef) {
           return;
         }
 
-        this.runtimeActionMessage.set(`${this.runtimeActionLabel(action)} ${serviceName} finished.`);
+        if (event.type === 'status') {
+          if (event.status === 'live') {
+            this.runtimeActionMessage.set(`${this.runtimeActionLabel(action)} ${serviceName} is running...`);
+          } else if (event.status === 'closed') {
+            this.runtimeActionKey.set('');
+            this.loadRuntimeStatus(projectRef);
+          } else if (event.status === 'error') {
+            this.runtimeActionKey.set('');
+            this.loadRuntimeStatus(projectRef);
+          }
+          return;
+        }
+
+        if (event.type === 'log') {
+          this.runtimeActionOutput.update((output) => `${output}${event.stream === 'stderr' ? '[stderr] ' : ''}${event.chunk}`);
+          return;
+        }
+
+        if (event.type === 'operation') {
+          this.upsertRuntimeOperation(event.operation);
+          this.selectedRuntimeOperationId.set(event.operation.id);
+          if (event.operation.status === 'failed') {
+            this.runtimeActionError.set(event.operation.error || `Could not ${action} ${serviceName}.`);
+            this.runtimeActionMessage.set('');
+          } else {
+            this.runtimeActionMessage.set(`${this.runtimeActionLabel(action)} ${serviceName} finished.`);
+            this.runtimeActionError.set('');
+          }
+          return;
+        }
+
+        this.runtimeActionError.set(event.error);
+        this.runtimeActionMessage.set('');
         this.runtimeActionKey.set('');
-        this.loadRuntimeStatus(projectRef);
-        this.loadRuntimeOperations(projectRef);
       },
       error: (error) => {
         if (this.activeProjectRef !== projectRef) {
@@ -284,6 +321,17 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.runtimeActionMessage.set('');
         this.runtimeActionKey.set('');
         this.loadRuntimeOperations(projectRef);
+      },
+      complete: () => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        if (this.runtimeActionKey() === actionKey) {
+          this.runtimeActionKey.set('');
+          this.loadRuntimeStatus(projectRef);
+          this.loadRuntimeOperations(projectRef);
+        }
       },
     });
   }
@@ -657,6 +705,18 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeLogStreamState.set('closed');
   }
 
+  private disconnectRuntimeOperationStream() {
+    this.runtimeOperationSubscription?.unsubscribe();
+    this.runtimeOperationSubscription = undefined;
+  }
+
+  private upsertRuntimeOperation(operation: RuntimeOperationRecord) {
+    this.runtimeOperations.update((operations) => [
+      operation,
+      ...operations.filter((candidate) => candidate.id !== operation.id)
+    ].slice(0, 25));
+  }
+
   private resetProjectState(projectRef: string) {
     this.disconnectRuntimeLogStream();
     this.activeProjectRef = projectRef;
@@ -672,6 +732,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeActionMessage.set('');
     this.runtimeActionError.set('');
     this.runtimeActionKey.set('');
+    this.runtimeActionOutput.set('');
     this.selectedRuntimeOperationId.set('');
     this.deployError.set('');
     this.deployMessage.set('');
