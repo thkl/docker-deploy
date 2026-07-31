@@ -11,7 +11,7 @@
 
 h2 {
   font-size: clamp(1.45rem, 2.2vw, 2rem);
-  font-weight: 760;
+  font-weight: 560;
   margin: 0 0 0.35rem;
 }
 
@@ -123,7 +123,7 @@ textarea {
   border-radius: 999px;
   color: var(--accent-strong);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 520;
   padding: 0.2rem 0.55rem;
 }
 
@@ -192,7 +192,7 @@ button.danger-action:hover {
 
 .check-row span {
   color: var(--ink);
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .muted-copy {

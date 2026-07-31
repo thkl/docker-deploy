@@ -56,9 +56,20 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.45;
   margin: 0;
+}
+
+strong,
+b {
+  font-weight: 540;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 560;
 }
 
 a {
@@ -190,7 +201,7 @@ code {
 
 .delete-modal .check-row span {
   color: var(--ink);
-  font-weight: 650;
+  font-weight: 500;
   min-width: 0;
 }
 
