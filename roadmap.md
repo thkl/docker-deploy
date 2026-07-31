@@ -61,20 +61,20 @@ Replace JSON storage with SQLite before the agent model grows more state.
 
 Initial tables:
 
-- `settings`
-- `servers`
-- `agents`
-- `projects`
-- `project_traefik_settings`
-- `deployments`
-- `deployment_logs`
+- [x] `settings`
+- [x] `servers`
+- [ ] `agents`
+- [x] `projects`
+- [x] `project_traefik_settings`
+- [x] `deployments`
+- [x] `deployment_logs`
 
 Requirements:
 
-- Add a migration runner.
-- Import existing `config.json`, `settings.json`, and `deployments.json` on first startup.
-- Keep API response shapes stable during the migration.
-- Store project secrets carefully; encrypted storage can be added after the schema is stable.
+- [x] Add a migration runner.
+- [x] Import existing `config.json`, `settings.json`, and `deployments.json` on first startup.
+- [x] Keep API response shapes stable during the migration.
+- [ ] Store project secrets carefully; encrypted storage can be added after the schema is stable.
 
 ## Phase 1: Backend API Foundation
 
@@ -82,28 +82,32 @@ Create a structured API before migrating the UI.
 
 Endpoints:
 
-- `GET /api/projects`
-- `POST /api/projects`
-- `GET /api/projects/:name`
-- `PUT /api/projects/:name`
-- `POST /api/projects/:name/deploy`
-- `POST /api/deploy/:name`
-- `GET /api/projects/:name/deployments`
-- `GET /api/projects/:name/compose`
-- `GET /api/projects/:name/services`
-- `GET /api/projects/:name/logs?service=...`
+- [x] `GET /api/projects`
+- [x] `POST /api/projects`
+- [ ] `GET /api/projects/:name`
+- [x] `PUT /api/projects/:name`
+- [x] `POST /api/projects/:name/deploy`
+- [x] `POST /api/deploy/:name`
+- [x] `GET /api/projects/:name/deployments`
+- [x] `GET /api/projects/:name/compose/inspect`
+- [x] `GET /api/projects/:name/status`
+- [x] `GET /api/projects/:name/runtime-logs?service=...`
 
 Response shapes:
+
+- [ ] Standardize success responses as:
 
 ```json
 { "data": {} }
 ```
 
+- [ ] Standardize error responses as:
+
 ```json
 { "error": { "message": "...", "code": "..." } }
 ```
 
-Config should move toward grouped sections:
+- [ ] Config should move toward grouped sections:
 
 ```json
 {
@@ -115,7 +119,7 @@ Config should move toward grouped sections:
 }
 ```
 
-Each project must include a target server reference:
+- [x] Each project must include a target server reference:
 
 ```json
 {
@@ -134,18 +138,19 @@ Move project identity from repository/project name to a stable UUID.
 
 Requirements:
 
-- Add `projects.id` as the primary stable project identifier.
-- Keep `projects.name` editable and unique, but never use it as a foreign key.
-- Migrate existing projects by generating UUIDs.
-- Migrate existing deployment rows from `project_name` references to `project_id` references.
-- Link all future project-owned data by `project_id`, including deployments, deployment logs, runtime status, runtime logs, compose inspection cache, cleanup metadata, and future settings tables.
-- Keep compatibility aliases during migration so existing URLs by project name can redirect or resolve to the UUID-backed project.
-- After migration, project rename must not break deployment history, logs, status, or agent routing.
+- [x] Add `projects.id` as the primary stable project identifier.
+- [x] Keep `projects.name` editable and unique, but never use it as a foreign key.
+- [x] Migrate existing projects by generating UUIDs.
+- [x] Migrate existing deployment rows from `project_name` references to `project_id` references.
+- [x] Link deployments and runtime operations by `project_id`.
+- [ ] Link future cached runtime status, runtime logs, compose inspection cache, and cleanup metadata by `project_id` when those tables are added.
+- [x] Keep compatibility aliases during migration so existing URLs by project name can redirect or resolve to the UUID-backed project.
+- [x] After migration, project rename must not break deployment history, logs, status, or agent routing.
 
 API direction:
 
-- Prefer UUID routes for new UI navigation, for example `/api/projects/:id`.
-- Keep name-based webhook and CI lookup as resolver logic that maps repository payloads or path names to the internal project UUID.
+- [x] Prefer UUID routes for new UI navigation, for example `/api/projects/:id`.
+- [x] Keep name-based webhook and CI lookup as resolver logic that maps repository payloads or path names to the internal project UUID.
 
 ## Phase 2: Angular App Shell
 
@@ -153,20 +158,21 @@ Add an Angular frontend under `frontend/` and serve its production build from Ex
 
 Initial routes:
 
-- `/projects`
-- `/projects/:id/overview`
-- `/projects/:id/settings`
-- `/projects/:id/compose`
-- `/projects/:id/deployments`
-- `/projects/:id/logs`
+- [x] `/projects`
+- [x] `/projects/:id/overview`
+- [x] `/projects/:id/settings`
+- [x] Compose settings inside `/projects/:id/settings`
+- [x] Deployments/logs inside `/projects/:id/overview`
+- [ ] Dedicated `/projects/:id/compose`, `/projects/:id/deployments`, and `/projects/:id/logs` child routes.
 
 Layout:
 
-- Left navigation: Projects, Activity, Settings.
-- Project list entries should show the selected target agent/server.
-- Top bar: selected project, deploy action, latest status.
-- Main area: dense operational views.
-- Browser-driven dark mode via `prefers-color-scheme`.
+- [x] Left navigation: Projects and Settings.
+- [ ] Activity navigation.
+- [x] Project list entries show the selected target agent/server.
+- [x] Project overview has a status and command bar with deploy/runtime actions.
+- [x] Main area uses dense operational views.
+- [x] Browser-driven dark mode via `prefers-color-scheme`.
 
 ## Phase 3: Project Dashboard
 
@@ -174,14 +180,14 @@ Replace the current HTML table with an Angular project dashboard.
 
 Show:
 
-- Project name
-- Target agent/server
-- Host path
-- Proxy hostname
-- Compose source
-- Latest deployment state
-- Last deployment time
-- Actions: Deploy, Open, Settings
+- [x] Project name
+- [x] Target agent/server
+- [x] Host path
+- [x] Proxy hostname
+- [x] Compose source
+- [x] Latest deployment state
+- [x] Last deployment time
+- [x] Actions: Deploy, Open, Settings
 
 This becomes the main Coolify-lite landing screen.
 
@@ -189,11 +195,12 @@ This becomes the main Coolify-lite landing screen.
 
 Each project should have tabs or child routes:
 
-- **Overview:** status, hostname, configured path, latest deployment summary.
-- **Deployments:** deploy history and worker output.
-- **Compose:** detected compose file, generated overrides, services, networks, volumes.
-- **Proxy:** Traefik settings and generated label preview.
-- **Settings:** tokens, paths, CI trigger snippet.
+- [x] **Overview:** status, hostname, configured path, latest deployment summary.
+- [x] **Deployments:** deploy history and worker output in the overview log area.
+- [x] **Compose:** detected compose file, generated overrides, services, networks, volumes in settings.
+- [x] **Proxy:** Traefik settings and generated label preview in settings.
+- [x] **Settings:** tokens, paths, CI trigger snippet.
+- [ ] Split these into dedicated child routes if the UI grows again.
 
 ## Phase 5: Compose Intelligence
 
@@ -201,23 +208,23 @@ Add backend compose inspection.
 
 Detect:
 
-- Base compose file
-- Services
-- Exposed and published ports
-- Bind mounts
-- Named volumes
-- Networks
-- Relative bind mounts
+- [x] Base compose file
+- [x] Services
+- [x] Exposed and published ports
+- [x] Host-network ports/exposed-port behavior
+- [x] Bind mounts
+- [x] Named volumes
+- [x] Networks
+- [x] Relative bind mounts
+- [x] Compose storage mappings
 
 Manage generated files only:
 
-- `docker-compose.updater.yml`
-- `docker-compose.traefik.yml`
-- Future `docker-compose.storage.yml`
-
-The UI should preview generated overrides before deployment.
-
-Compose import and inspection must execute through the target server agent. The controller only receives structured results and file content from the agent.
+- [x] `docker-compose.updater.yml`
+- [x] Traefik settings merged into updater-owned compose output.
+- [ ] Separate `docker-compose.storage.yml`
+- [x] The UI should preview generated overrides before deployment.
+- [x] Compose import and inspection must execute through the target server agent. The controller only receives structured results and file content from the agent.
 
 ## Phase 6: Deployment History
 
@@ -239,20 +246,20 @@ Suggested shape:
 
 Supported triggers:
 
-- `webhook`
-- `ci`
-- `manual`
+- [x] `webhook`
+- [x] `ci`
+- [x] `manual`
 
 Supported statuses:
 
-- `queued`
-- `running`
-- `success`
-- `failed`
+- [ ] `queued`
+- [x] `running`
+- [x] `succeeded`
+- [x] `failed`
 
 This lets the UI show real deployment state instead of only "worker dispatched".
 
-Deployment history should be stored in SQLite and keyed by project and server/agent so the UI can show where a deployment ran.
+- [x] Deployment history should be stored in SQLite and keyed by project and server/agent so the UI can show where a deployment ran.
 
 ## Phase 6.5: Servers And Agents
 
@@ -260,20 +267,23 @@ Add servers as first-class configuration.
 
 Server UI:
 
-- List servers and online/offline state.
-- Show local agent by default.
-- Add remote agent install/connect instructions.
-- Show agent version, last heartbeat, and active job.
+- [x] List servers and online/offline state.
+- [x] Show local agent by default.
+- [x] Add remote agent install/connect instructions.
+- [x] Show agent version, last heartbeat, and active job.
+- [x] Push server health updates to the UI over the global event stream.
+- [x] Ping all configured remote agents every 5 minutes.
 
 Agent protocol:
 
-- Agent exposes HTTP endpoints for health, pairing, and encrypted job commands.
-- Controller authenticates with signed and encrypted command envelopes.
-- Controller sends jobs: import compose, deploy, stop, delete checkout, cleanup, inspect status, and runtime logs.
-- Agent exposes short-lived WebSocket streams for deployment logs and runtime container logs.
-- Controller persists deployment job events in SQLite and may cache latest runtime status.
+- [x] Agent exposes HTTP endpoints for health, pairing, and encrypted job commands.
+- [x] Controller authenticates with signed and encrypted command envelopes.
+- [x] Controller sends jobs: import compose, deploy, stop, delete checkout, cleanup, inspect status, runtime logs, and runtime actions.
+- [x] Agent exposes short-lived WebSocket streams for deployment logs and runtime container logs.
+- [x] Controller persists deployment job events in SQLite.
+- [x] Controller pushes latest runtime status to clients over the global event stream.
 
-Local execution should use the same protocol shape as remote execution, even if implemented in-process first.
+- [x] Local execution should use the same protocol shape as remote execution, even if implemented in-process first.
 
 ## Phase 6.6: Runtime Status And Logs
 
@@ -281,41 +291,42 @@ Add agent-side runtime inspection for deployed Docker Compose projects.
 
 Service status:
 
-- Controller asks the selected target agent for project status on demand.
-- Agent inspects containers through Docker Compose or Docker inspect on the target server.
+- [x] Controller asks the selected target agent for project status on demand.
+- [x] Agent inspects containers through Docker Compose or Docker inspect on the target server.
 - Return structured status:
-  - `running`
-  - `partial`
-  - `stopped`
-  - `unknown`
-  - `error`
-- Include service-level details: service name, container name/id, state, health, image, ports, and checked time.
-- UI shows status indicators in the project list and project overview.
-- Deploy success triggers one immediate status refresh.
-- Add a manual refresh button.
-- Do not poll in the background when the UI is not viewing the project.
+  - [x] `running`
+  - [x] `partial`
+  - [x] `stopped`
+  - [x] `unknown`
+  - [x] `error`
+- [x] Include service-level details: service name, container name/id, state, health, image, ports, and checked time.
+- [x] UI shows status indicators in the project list and project overview.
+- [x] Deploy success triggers one immediate status refresh.
+- [x] Add a manual refresh button.
+- [x] Keep runtime status event-driven or user-requested instead of adding broad UI polling.
 
 Runtime logs:
 
-- Keep deployment logs and runtime container logs separate.
-- Deployment logs remain the build/pull/up/down output for a deploy job.
-- Runtime logs come from running containers after deployment.
-- Runtime logs load only when the user opens the log panel or clicks live logs.
-- Agent should support tailing logs, for example `docker compose logs --tail <n> <service>`.
-- Agent should support short-lived live streams, for example `docker compose logs --follow`.
-- Stop runtime log streaming when the user leaves the page or stops live logs.
-- UI should support service selection, tail count, live toggle, and auto-scroll.
+- [x] Keep deployment logs and runtime container logs separate.
+- [x] Deployment logs remain the build/pull/up/down output for a deploy job.
+- [x] Runtime logs come from running containers after deployment.
+- [x] Runtime logs load only when the user opens the log panel or clicks live logs.
+- [x] Agent should support tailing logs, for example `docker compose logs --tail <n> <service>`.
+- [x] Agent should support short-lived live streams, for example `docker compose logs --follow`.
+- [x] Stop runtime log streaming when the user leaves the page or stops live logs.
+- [x] UI should support service selection, tail count, live toggle, and auto-scroll.
 
 Suggested API shape:
 
-- `GET /api/projects/:name/status`
-- `GET /api/projects/:name/runtime-logs?service=app&tail=200`
-- WebSocket stream for live runtime logs.
+- [x] `GET /api/projects/:name/status`
+- [x] `GET /api/projects/:name/runtime-logs?service=app&tail=200`
+- [x] WebSocket stream for live runtime logs.
 
 Agent job additions:
 
-- `inspectStatus`
-- `runtimeLogs`
+- [x] `inspectStatus`
+- [x] `runtimeLogs`
+- [x] `runtimeAction`
 
 ## Phase 7: Storage Cleanup And Data Mapping
 
@@ -323,11 +334,11 @@ Add advanced cleanup support only after compose inspection exists.
 
 Behavior:
 
-- Detect relative bind mounts such as `./data:/app/data`.
-- Offer rewrite to `/root/docker-data/<project>/...`.
-- Generate a storage override instead of changing the repository compose file.
-- Block repository cleanup if unsafe bind mounts remain.
-- Allow cleanup after deploy only when data paths are externalized.
+- [x] Detect relative bind mounts such as `./data:/app/data`.
+- [x] Offer rewrite to `/root/docker-data/<project>/...`.
+- [x] Generate updater-owned compose output instead of changing the repository compose file.
+- [x] Block repository cleanup if unsafe bind mounts remain.
+- [ ] Allow cleanup after deploy only when data paths are externalized.
 
 Example target layout:
 
@@ -341,19 +352,29 @@ Example target layout:
 
 ## First Implementation Slice
 
-1. Keep the Angular app and current API stable.
-2. Move backend persistence from JSON to SQLite with migrations.
-3. Add `servers` and create a default local server.
-4. Add a local agent abstraction and route compose import, deploy, stop, delete checkout, and cleanup through it.
-5. Add remote agent WebSocket connection support.
-6. Update project settings so each project selects a target server.
-7. Migrate projects to stable UUIDs and link deployments/logs by project ID.
-8. Show each project's target agent/server in the left project panel.
+1. [x] Keep the Angular app and current API stable.
+2. [x] Move backend persistence from JSON to SQLite with migrations.
+3. [x] Add `servers` and create a default local server.
+4. [x] Add a local agent abstraction and route compose import, deploy, stop, delete checkout, and cleanup through it.
+5. [x] Add remote agent WebSocket connection support.
+6. [x] Update project settings so each project selects a target server.
+7. [x] Migrate projects to stable UUIDs and link deployments/logs by project ID.
+8. [x] Show each project's target agent/server in the left project panel.
 
 ## Explicit Non-Goals For Now
 
-- Full Docker Compose editor.
-- Editing repository-owned compose files directly.
-- Polling GitLab for changes.
-- Multi-user permissions.
-- Controller-side direct filesystem access to project checkout paths.
+- [x] Full Docker Compose editor. Built as an updater-owned compose builder/editor instead of direct repository edits.
+- [x] Editing repository-owned compose files directly remains avoided.
+- [x] Polling GitLab for changes remains avoided.
+- [ ] Multi-user permissions.
+- [x] Controller-side direct filesystem access to project checkout paths remains avoided for project actions.
+
+## Current Remaining Work
+
+- [ ] Add an Activity page backed by the global controller event stream.
+- [ ] Show last webhook receipt/match/ignore/error details per project.
+- [ ] Finish moving page-specific live updates onto the global event stream where it makes sense, while keeping raw log streams separate if needed.
+- [ ] Add encrypted-at-rest storage for project secrets.
+- [ ] Add explicit `queued` deployment status if deployments become queued before workers start.
+- [ ] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
+- [ ] Add cleanup-after-deploy enforcement based on externalized storage mappings.

@@ -363,6 +363,42 @@
   word-break: break-word;
 }
 
+:host ::ng-deep :where(.deploy-log, .operation-output) .ansi-fg-black {
+  color: color-mix(in srgb, var(--ink), transparent 36%);
+}
+
+:host ::ng-deep :where(.deploy-log, .operation-output) :where(.ansi-fg-red, .ansi-fg-bright-red) {
+  color: var(--danger);
+}
+
+:host ::ng-deep :where(.deploy-log, .operation-output) :where(.ansi-fg-green, .ansi-fg-bright-green) {
+  color: var(--running);
+}
+
+:host ::ng-deep :where(.deploy-log, .operation-output) :where(.ansi-fg-yellow, .ansi-fg-bright-yellow) {
+  color: var(--warning);
+}
+
+:host ::ng-deep :where(.deploy-log, .operation-output) :where(.ansi-fg-blue, .ansi-fg-bright-blue) {
+  color: var(--accent);
+}
+
+:host ::ng-deep :where(.deploy-log, .operation-output) :where(.ansi-fg-magenta, .ansi-fg-bright-magenta) {
+  color: #a855f7;
+}
+
+:host ::ng-deep :where(.deploy-log, .operation-output) :where(.ansi-fg-cyan, .ansi-fg-bright-cyan) {
+  color: #0891b2;
+}
+
+:host ::ng-deep :where(.deploy-log, .operation-output) :where(.ansi-fg-white, .ansi-fg-bright-white) {
+  color: var(--ink);
+}
+
+:host ::ng-deep :where(.deploy-log, .operation-output) .ansi-fg-bright-black {
+  color: var(--muted);
+}
+
 .empty-log {
   color: var(--muted);
   padding: 2rem;

@@ -529,6 +529,10 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeLogAutoScroll.set(distanceFromBottom < 48);
   }
 
+  protected decodedAnsiLog(value: string | null | undefined, fallback = '') {
+    return ansiLogToHtml(value || fallback);
+  }
+
   private loadLatestDeployment(projectRef: string, projectName = projectRef) {
     this.loadingDeployment.set(true);
 
@@ -812,4 +816,99 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   private projectByRef(projectRef: string) {
     return this.store.projects().find((project) => project.id === projectRef || project.name === projectRef) ?? null;
   }
+}
+
+const ansiColorClasses: Record<number, string> = {
+  30: 'ansi-fg-black',
+  31: 'ansi-fg-red',
+  32: 'ansi-fg-green',
+  33: 'ansi-fg-yellow',
+  34: 'ansi-fg-blue',
+  35: 'ansi-fg-magenta',
+  36: 'ansi-fg-cyan',
+  37: 'ansi-fg-white',
+  90: 'ansi-fg-bright-black',
+  91: 'ansi-fg-bright-red',
+  92: 'ansi-fg-bright-green',
+  93: 'ansi-fg-bright-yellow',
+  94: 'ansi-fg-bright-blue',
+  95: 'ansi-fg-bright-magenta',
+  96: 'ansi-fg-bright-cyan',
+  97: 'ansi-fg-bright-white',
+};
+
+const ansi256ColorClasses: Record<number, string> = {
+  0: 'ansi-fg-black',
+  1: 'ansi-fg-red',
+  2: 'ansi-fg-green',
+  3: 'ansi-fg-yellow',
+  4: 'ansi-fg-blue',
+  5: 'ansi-fg-magenta',
+  6: 'ansi-fg-cyan',
+  7: 'ansi-fg-white',
+  8: 'ansi-fg-bright-black',
+  9: 'ansi-fg-bright-red',
+  10: 'ansi-fg-bright-green',
+  11: 'ansi-fg-bright-yellow',
+  12: 'ansi-fg-bright-blue',
+  13: 'ansi-fg-bright-magenta',
+  14: 'ansi-fg-bright-cyan',
+  15: 'ansi-fg-bright-white',
+};
+
+function ansiLogToHtml(value: string) {
+  const tokenPattern = /(?:\u001b\[[0-9;]*m|\[[0-9;]*m)/g;
+  let cursor = 0;
+  let foreground = '';
+  let html = '';
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(value)) !== null) {
+    html += wrapAnsiSegment(value.slice(cursor, match.index), foreground);
+    foreground = applyAnsiCodes(match[0], foreground);
+    cursor = match.index + match[0].length;
+  }
+
+  html += wrapAnsiSegment(value.slice(cursor), foreground);
+  return html;
+}
+
+function applyAnsiCodes(token: string, foreground: string) {
+  const rawCodes = token.replace(/^\u001b?\[/, '').replace(/m$/, '');
+  const codes = rawCodes ? rawCodes.split(';').map((code) => Number(code)) : [0];
+  let nextForeground = foreground;
+
+  for (let index = 0; index < codes.length; index += 1) {
+    const code = codes[index];
+    if (code === 0 || code === 39) {
+      nextForeground = '';
+    } else if (ansiColorClasses[code]) {
+      nextForeground = ansiColorClasses[code];
+    } else if (code === 38 && codes[index + 1] === 5) {
+      nextForeground = ansi256ColorClasses[codes[index + 2]] || '';
+      index += 2;
+    } else if (code === 38 && codes[index + 1] === 2) {
+      index += 4;
+    }
+  }
+
+  return nextForeground;
+}
+
+function wrapAnsiSegment(value: string, foreground: string) {
+  if (!value) {
+    return '';
+  }
+
+  const escaped = escapeHtml(value);
+  return foreground ? `<span class="${foreground}">${escaped}</span>` : escaped;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

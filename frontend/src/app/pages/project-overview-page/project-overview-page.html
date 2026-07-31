@@ -117,7 +117,7 @@
     }
 
     @if (runtimeActionOutput()) {
-      <pre class="operation-output live-output">{{ runtimeActionOutput() }}</pre>
+      <pre class="operation-output live-output" [innerHTML]="decodedAnsiLog(runtimeActionOutput())"></pre>
     }
 
     @if (loadingRuntimeStatus()) {
@@ -218,7 +218,7 @@
       @if (loadingRuntimeLogs()) {
         <div class="empty-log">Loading runtime logs...</div>
       } @else if (runtimeLogs(); as logs) {
-        <pre #runtimeLog class="deploy-log" (scroll)="onRuntimeLogScroll()">{{ logs.output || 'No runtime log output returned.' }}</pre>
+        <pre #runtimeLog class="deploy-log" (scroll)="onRuntimeLogScroll()" [innerHTML]="decodedAnsiLog(logs.output, 'No runtime log output returned.')"></pre>
       } @else {
         <div class="empty-log">Select a service and load recent runtime logs.</div>
       }
@@ -238,7 +238,7 @@
             <span class="error-text">{{ deployment.error }}</span>
           }
         </div>
-        <pre #deployLog class="deploy-log" (scroll)="onLogScroll()">{{ deployment.log || 'Waiting for worker output...' }}</pre>
+        <pre #deployLog class="deploy-log" (scroll)="onLogScroll()" [innerHTML]="decodedAnsiLog(deployment.log, 'Waiting for worker output...')"></pre>
       } @else {
         <div class="empty-log">Trigger a deployment to capture worker output here.</div>
       }
@@ -273,7 +273,7 @@
                 <small class="error-text">{{ operation.error }}</small>
               }
               @if (selectedRuntimeOperationId() === operation.id) {
-                <pre class="operation-output">{{ operation.output || 'No command output captured.' }}</pre>
+                <pre class="operation-output" [innerHTML]="decodedAnsiLog(operation.output, 'No command output captured.')"></pre>
               }
             </div>
           }
