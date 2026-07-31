@@ -54,6 +54,7 @@ export class AppDatabase {
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 kind TEXT NOT NULL,
+                agent_server_id TEXT,
                 base_url TEXT,
                 agent_public_encryption_key TEXT,
                 agent_public_signing_key TEXT,
@@ -144,6 +145,7 @@ export class AppDatabase {
         `);
 
         this.ensureColumn("servers", "base_url", "TEXT");
+        this.ensureColumn("servers", "agent_server_id", "TEXT");
         this.ensureColumn("servers", "agent_public_encryption_key", "TEXT");
         this.ensureColumn("servers", "agent_public_signing_key", "TEXT");
         this.ensureColumn("servers", "controller_public_encryption_key", "TEXT");
@@ -315,7 +317,7 @@ export class AppDatabase {
                  VALUES ('local', 'Local Server', 'local', 'online', ?, ?)`
             )
             .run(now, now);
-        this.connection.prepare("UPDATE servers SET status = 'online' WHERE id = 'local'").run();
+        this.connection.prepare("UPDATE servers SET status = 'online', agent_server_id = COALESCE(agent_server_id, 'local') WHERE id = 'local'").run();
 
         this.connection
             .prepare(
@@ -390,6 +392,7 @@ export function listServers(database: DatabaseSync): ServerRecord[] {
                 id,
                 name,
                 kind,
+                agent_server_id AS agentServerId,
                 base_url AS baseUrl,
                 agent_public_encryption_key AS agentPublicEncryptionKey,
                 agent_public_signing_key AS agentPublicSigningKey,
@@ -413,6 +416,7 @@ export function listServers(database: DatabaseSync): ServerRecord[] {
         id: row.id,
         name: row.name,
         kind: row.kind,
+        ...(row.agentServerId ? { agentServerId: row.agentServerId } : {}),
         ...(row.baseUrl ? { baseUrl: row.baseUrl } : {}),
         ...(row.agentPublicEncryptionKey ? { agentPublicEncryptionKey: row.agentPublicEncryptionKey } : {}),
         ...(row.agentPublicSigningKey ? { agentPublicSigningKey: row.agentPublicSigningKey } : {}),
@@ -434,6 +438,7 @@ interface ServerRow {
     id: string;
     name: string;
     kind: "local" | "remote";
+    agentServerId: string | null;
     baseUrl: string | null;
     agentPublicEncryptionKey: string | null;
     agentPublicSigningKey: string | null;

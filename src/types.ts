@@ -81,6 +81,7 @@ export interface ServerRecord {
     id: string;
     name: string;
     kind: "local" | "remote";
+    agentServerId?: string;
     baseUrl?: string;
     agentPublicEncryptionKey?: string;
     agentPublicSigningKey?: string;
@@ -100,6 +101,7 @@ export interface ServerRecord {
 export interface ServerPayload {
     id?: string;
     name?: string;
+    agentServerId?: string;
     baseUrl?: string;
     agentPublicEncryptionKey?: string;
     agentPublicSigningKey?: string;

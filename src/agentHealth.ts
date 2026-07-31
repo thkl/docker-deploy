@@ -124,6 +124,7 @@ export class AgentHealthService {
 
         return this.serverStore.updateHealth(server.id, {
             status: health.body.paired ? "online" : "unpaired",
+            agentServerId: health.body.serverId,
             agentVersion: health.body.version,
             activeJobs: health.body.activeJobs ?? [],
             capabilities: health.body.capabilities

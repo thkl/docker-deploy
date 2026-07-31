@@ -199,7 +199,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
                     controllerPublicSigningKey: controllerKeys.signingPublicKey,
                     envelope: sealEnvelope({ pairingToken }, {
                         senderId: controllerKeys.controllerId,
-                        recipientId: server.id,
+                        recipientId: server.agentServerId || server.id,
                         messageType: "pair.request"
                     }, {
                         senderSigningPrivateKey: controllerKeys.signingPrivateKey,
@@ -216,6 +216,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             const paired = serverStore.markPaired(server.id, controllerKeys.encryptionPublicKey, controllerKeys.signingPublicKey);
             res.json(serverStore.updateHealth(server.id, {
                 status: "online",
+                agentServerId: health.body?.serverId,
                 agentVersion: health.body?.version,
                 activeJobs: health.body?.activeJobs ?? [],
                 capabilities: health.body?.capabilities
@@ -239,18 +240,13 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
             return;
         }
 
-        const serverId = payload.id || health.body.serverId;
-        const existing = serverId ? serverStore.get(serverId) : undefined;
-        if (existing) {
-            res.status(409).json({
-                error: `Agent ${serverId} is already registered as ${existing.name}. Use Pair or Check on the existing agent instead of adding it again.`
-            });
-            return;
-        }
+        const baseServerId = payload.id || health.body.serverId || "server";
+        const serverId = serverStore.nextAvailableId(baseServerId);
 
         const created = serverStore.createRemote({
             ...payload,
             id: serverId,
+            agentServerId: health.body.serverId,
             name: payload.name || health.body.serverId,
             baseUrl,
             agentPublicEncryptionKey: health.body.encryptionPublicKey,
@@ -264,6 +260,7 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
 
         res.status(201).json(serverStore.updateHealth(created.id, {
             status: health.body.paired ? "online" : "unpaired",
+            agentServerId: health.body.serverId,
             agentVersion: health.body.version,
             activeJobs: health.body.activeJobs ?? [],
             capabilities: health.body.capabilities

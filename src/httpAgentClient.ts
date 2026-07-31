@@ -299,7 +299,7 @@ export class HttpAgentClient implements AgentClient {
 
         return sealEnvelope(payload, {
             senderId: this.controllerKeys.controllerId,
-            recipientId: this.server.id,
+            recipientId: this.server.agentServerId || this.server.id,
             messageType
         }, {
             senderSigningPrivateKey: this.controllerKeys.signingPrivateKey,

@@ -3,6 +3,7 @@ import { ServerActiveJob, ServerCapabilities, ServerPayload, ServerRecord } from
 
 export interface ServerHealthSnapshot {
     status: "online" | "offline" | "unpaired";
+    agentServerId?: string;
     agentVersion?: string;
     activeJobs?: ServerActiveJob[];
     lastHealthError?: string;
@@ -38,12 +39,13 @@ export class ServerStore {
         this.database
             .prepare(
                 `INSERT INTO servers
-                 (id, name, kind, base_url, agent_public_encryption_key, agent_public_signing_key, status, capabilities_json, created_at, updated_at)
-                 VALUES (?, ?, 'remote', ?, ?, ?, 'unpaired', ?, ?, ?)`
+                 (id, name, kind, agent_server_id, base_url, agent_public_encryption_key, agent_public_signing_key, status, capabilities_json, created_at, updated_at)
+                 VALUES (?, ?, 'remote', ?, ?, ?, ?, 'unpaired', ?, ?, ?)`
             )
             .run(
                 id,
                 payload.name?.trim() || id,
+                payload.agentServerId?.trim() || id,
                 normalizeBaseUrl(payload.baseUrl),
                 payload.agentPublicEncryptionKey?.trim() || null,
                 payload.agentPublicSigningKey?.trim() || null,
@@ -137,6 +139,7 @@ export class ServerStore {
                  SET status = ?,
                      last_seen_at = CASE WHEN ? = 'offline' THEN last_seen_at ELSE ? END,
                      updated_at = ?,
+                     agent_server_id = COALESCE(?, agent_server_id),
                      agent_version = ?,
                      active_jobs_json = ?,
                      last_health_error = ?,
@@ -148,6 +151,7 @@ export class ServerStore {
                 health.status,
                 now,
                 now,
+                health.agentServerId ?? null,
                 health.agentVersion ?? null,
                 JSON.stringify(health.activeJobs ?? []),
                 health.lastHealthError ?? null,
@@ -155,6 +159,25 @@ export class ServerStore {
                 serverId
             );
         return this.get(serverId);
+    }
+
+    /**
+     * Returns a unique server id for controller-owned server rows.
+     */
+    nextAvailableId(baseId: string) {
+        const normalized = normalizeServerId(baseId);
+        if (!this.get(normalized)) {
+            return normalized;
+        }
+
+        for (let index = 2; index < 10_000; index += 1) {
+            const candidate = `${normalized}-${index}`;
+            if (!this.get(candidate)) {
+                return candidate;
+            }
+        }
+
+        throw new Error("Could not allocate a unique server ID.");
     }
 
     /**

@@ -93,6 +93,7 @@ export interface ServerRecord {
   id: string;
   name: string;
   kind: 'local' | 'remote';
+  agentServerId?: string;
   baseUrl?: string;
   agentPublicEncryptionKey?: string;
   agentPublicSigningKey?: string;

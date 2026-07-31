@@ -38,7 +38,7 @@
                 <strong>{{ server.name }}</strong>
                 <span class="server-chip" [class.unpaired]="server.status === 'unpaired'" [class.offline]="server.status === 'offline'">{{ server.status || server.kind }}</span>
               </div>
-              <span>{{ server.id }} @if (server.baseUrl) { · {{ server.baseUrl }} }</span>
+              <span>{{ server.id }} @if (server.agentServerId && server.agentServerId !== server.id) { · agent {{ server.agentServerId }} } @if (server.baseUrl) { · {{ server.baseUrl }} }</span>
               @if (server.lastHealthError) {
                 <small class="health-error">{{ server.lastHealthError }}</small>
               }
