@@ -79,6 +79,25 @@ export interface ProjectPayload {
     traefikWildcardCertificate?: boolean;
     traefikWildcardDomain?: string;
     traefikRemovePublishedPorts?: boolean;
+    project?: {
+        name?: string;
+        serverId?: string;
+        path?: string;
+    };
+    git?: {
+        repositoryUrl?: string;
+        token?: string;
+    };
+    deployment?: {
+        deployToken?: string;
+    };
+    compose?: {
+        override?: string;
+        envSecrets?: ProjectEnvironmentSecret[];
+    };
+    traefik?: Partial<TraefikSettings> & {
+        port?: string | number;
+    };
 }
 
 export interface DeleteProjectPayload {

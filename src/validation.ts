@@ -67,11 +67,14 @@ function normalizeOptionalName(name?: string) {
  * defaults.
  */
 export function normalizeTraefikSettings(body: ProjectPayload, globalSettings?: GlobalSettings): TraefikSettings | undefined {
-    if (!body.traefikEnabled) {
+    const grouped = body.traefik;
+    const enabled = grouped?.enabled ?? body.traefikEnabled;
+
+    if (!enabled) {
         return undefined;
     }
 
-    const hostname = body.traefikHostname?.trim();
+    const hostname = (grouped?.hostname ?? body.traefikHostname)?.trim();
     if (!hostname) {
         throw new Error("Traefik hostname is required when Traefik is enabled.");
     }
@@ -80,16 +83,16 @@ export function normalizeTraefikSettings(body: ProjectPayload, globalSettings?: 
         throw new Error("Traefik hostname can only contain letters, numbers, dots, and hyphens.");
     }
 
-    const port = Number(body.traefikPort);
+    const port = Number(grouped?.port ?? body.traefikPort);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
         throw new Error("Traefik service port must be a number between 1 and 65535.");
     }
 
-    const entryPoints = body.traefikEntryPoints?.trim() || globalSettings?.defaultTraefikEntryPoints || "websecure";
-    const certResolver = body.traefikCertResolver?.trim() || globalSettings?.defaultTraefikCertResolver || "letsencrypt";
-    const network = body.traefikNetwork?.trim() || globalSettings?.defaultTraefikNetwork || "proxy";
-    const service = normalizeOptionalName(body.traefikService);
-    const wildcardDomain = body.traefikWildcardDomain?.trim();
+    const entryPoints = (grouped?.entryPoints ?? body.traefikEntryPoints)?.trim() || globalSettings?.defaultTraefikEntryPoints || "websecure";
+    const certResolver = (grouped?.certResolver ?? body.traefikCertResolver)?.trim() || globalSettings?.defaultTraefikCertResolver || "letsencrypt";
+    const network = (grouped?.network ?? body.traefikNetwork)?.trim() || globalSettings?.defaultTraefikNetwork || "proxy";
+    const service = normalizeOptionalName(grouped?.service ?? body.traefikService);
+    const wildcardDomain = (grouped?.wildcardDomain ?? body.traefikWildcardDomain)?.trim();
 
     if (!/^[a-zA-Z0-9._,-]+$/.test(entryPoints)) {
         throw new Error("Traefik entry points can only contain letters, numbers, dots, underscores, hyphens, and commas.");
@@ -103,7 +106,8 @@ export function normalizeTraefikSettings(body: ProjectPayload, globalSettings?: 
         throw new Error("Traefik network can only contain letters, numbers, dots, underscores, and hyphens.");
     }
 
-    if (body.traefikWildcardCertificate && !wildcardDomain) {
+    const wildcardCertificate = grouped?.wildcardCertificate ?? body.traefikWildcardCertificate;
+    if (wildcardCertificate && !wildcardDomain) {
         throw new Error("Wildcard certificate domain is required when wildcard certificates are enabled.");
     }
 
@@ -119,9 +123,9 @@ export function normalizeTraefikSettings(body: ProjectPayload, globalSettings?: 
         entryPoints,
         certResolver,
         network,
-        websocket: Boolean(body.traefikWebsocket),
-        wildcardCertificate: Boolean(body.traefikWildcardCertificate),
+        websocket: Boolean(grouped?.websocket ?? body.traefikWebsocket),
+        wildcardCertificate: Boolean(wildcardCertificate),
         ...(wildcardDomain ? { wildcardDomain } : {}),
-        removePublishedPorts: body.traefikRemovePublishedPorts !== false
+        removePublishedPorts: (grouped?.removePublishedPorts ?? body.traefikRemovePublishedPorts) !== false
     };
 }

@@ -107,7 +107,7 @@ Response shapes:
 { "error": { "message": "...", "code": "..." } }
 ```
 
-- [ ] Config should move toward grouped sections:
+- [x] Config should move toward grouped sections:
 
 ```json
 {

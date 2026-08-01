@@ -42,6 +42,25 @@ export interface ProjectSummary {
   hasComposeOverride: boolean;
   traefik: TraefikSettings;
   lastDeployment?: DeploymentRecord | null;
+  project?: {
+    id?: string;
+    name: string;
+    serverId?: string;
+    path: string;
+  };
+  git?: {
+    repositoryUrl: string;
+    token: string;
+  };
+  deployment?: {
+    deployToken: string;
+    lastDeployment?: DeploymentRecord | null;
+  };
+  compose?: {
+    override: string;
+    envSecrets?: ProjectEnvironmentSecret[];
+    hasOverride: boolean;
+  };
 }
 
 export type ProjectEnvironmentSecretMode = 'docker_secret' | 'env';
@@ -73,6 +92,23 @@ export interface ProjectPayload {
   traefikWildcardDomain: string;
   traefikWebsocket: boolean;
   traefikRemovePublishedPorts: boolean;
+  project?: {
+    name: string;
+    serverId: string;
+    path: string;
+  };
+  git?: {
+    repositoryUrl: string;
+    token: string;
+  };
+  deployment?: {
+    deployToken: string;
+  };
+  compose?: {
+    override: string;
+    envSecrets?: ProjectEnvironmentSecret[];
+  };
+  traefik?: TraefikSettings;
 }
 
 export interface DeleteProjectPayload {

@@ -830,17 +830,21 @@ export class ProjectSettingsPage implements OnInit {
 
   private patchFromProject(project: ProjectSummary) {
     const traefik = project.traefik ?? { enabled: false };
+    const projectSection = project.project;
+    const gitSection = project.git;
+    const deploymentSection = project.deployment;
+    const composeSection = project.compose;
     this.patchedProjectName = project.name;
     this.traefikEnabled.set(Boolean(traefik.enabled));
     this.wildcardCertificate.set(Boolean(traefik.wildcardCertificate));
     this.form.reset({
-      name: project.name,
-      serverId: project.serverId ?? 'local',
-      repositoryUrl: project.repositoryUrl ?? '',
+      name: projectSection?.name ?? project.name,
+      serverId: projectSection?.serverId ?? project.serverId ?? 'local',
+      repositoryUrl: gitSection?.repositoryUrl ?? project.repositoryUrl ?? '',
       token: '',
       deployToken: '',
-      path: project.path ?? '',
-      composeOverride: project.composeOverride ?? '',
+      path: projectSection?.path ?? project.path ?? '',
+      composeOverride: composeSection?.override ?? project.composeOverride ?? '',
       traefikEnabled: Boolean(traefik.enabled),
       traefikHostname: traefik.hostname ?? '',
       traefikService: traefik.service ?? '',
@@ -854,8 +858,8 @@ export class ProjectSettingsPage implements OnInit {
       traefikRemovePublishedPorts: traefik.removePublishedPorts !== false,
     });
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
-    this.loadBuilderFromCompose(project.composeOverride ?? '');
-    this.applyProjectEnvSecrets(project.envSecrets ?? []);
+    this.loadBuilderFromCompose(composeSection?.override ?? project.composeOverride ?? '');
+    this.applyProjectEnvSecrets(composeSection?.envSecrets ?? project.envSecrets ?? []);
   }
 
   private applyProjectEnvSecrets(secrets: ProjectEnvironmentSecret[]) {
@@ -899,6 +903,22 @@ export class ProjectSettingsPage implements OnInit {
 
     this.form.controls.composeOverride.setValue(composeOverride, { emitEvent: false });
 
+    const envSecrets = this.composeMode() === 'builder' ? collectBuilderEnvSecrets(this.builderServices()) : this.currentProject()?.compose?.envSecrets ?? this.currentProject()?.envSecrets ?? [];
+    const traefikPortNumber = Number(value.traefikPort.trim());
+    const groupedTraefik = {
+      enabled: this.traefikAvailable() && value.traefikEnabled,
+      hostname: value.traefikHostname.trim(),
+      service: value.traefikService.trim(),
+      port: Number.isFinite(traefikPortNumber) ? traefikPortNumber : undefined,
+      entryPoints: value.traefikEntryPoints.trim(),
+      certResolver: value.traefikCertResolver.trim(),
+      network: value.traefikNetwork.trim(),
+      wildcardCertificate: value.traefikWildcardCertificate,
+      wildcardDomain: value.traefikWildcardDomain.trim(),
+      websocket: value.traefikWebsocket,
+      removePublishedPorts: value.traefikRemovePublishedPorts,
+    };
+
     return {
       name: value.name.trim(),
       serverId: value.serverId.trim() || 'local',
@@ -907,8 +927,8 @@ export class ProjectSettingsPage implements OnInit {
       deployToken: value.deployToken.trim(),
       path: value.path.trim(),
       composeOverride: composeOverride.trim(),
-      envSecrets: this.composeMode() === 'builder' ? collectBuilderEnvSecrets(this.builderServices()) : this.currentProject()?.envSecrets ?? [],
-      traefikEnabled: this.traefikAvailable() && value.traefikEnabled,
+      envSecrets,
+      traefikEnabled: groupedTraefik.enabled,
       traefikHostname: value.traefikHostname.trim(),
       traefikService: value.traefikService.trim(),
       traefikPort: value.traefikPort.trim(),
@@ -919,6 +939,23 @@ export class ProjectSettingsPage implements OnInit {
       traefikWildcardDomain: value.traefikWildcardDomain.trim(),
       traefikWebsocket: value.traefikWebsocket,
       traefikRemovePublishedPorts: value.traefikRemovePublishedPorts,
+      project: {
+        name: value.name.trim(),
+        serverId: value.serverId.trim() || 'local',
+        path: value.path.trim(),
+      },
+      git: {
+        repositoryUrl: value.repositoryUrl.trim(),
+        token: value.token.trim(),
+      },
+      deployment: {
+        deployToken: value.deployToken.trim(),
+      },
+      compose: {
+        override: composeOverride.trim(),
+        envSecrets,
+      },
+      traefik: groupedTraefik,
     };
   }
 

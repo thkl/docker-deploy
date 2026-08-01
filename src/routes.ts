@@ -332,6 +332,38 @@ function buildTraefikImpactProjects(config: Record<string, ProjectSettings>, ser
         .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+function payloadProjectName(payload: ProjectPayload) {
+    return payload.project?.name?.trim() || payload.name?.trim();
+}
+
+function payloadServerId(payload: ProjectPayload) {
+    return payload.project?.serverId?.trim() || payload.serverId?.trim();
+}
+
+function payloadProjectPath(payload: ProjectPayload) {
+    return payload.project?.path?.trim() || payload.path?.trim() || "";
+}
+
+function payloadRepositoryUrl(payload: ProjectPayload) {
+    return payload.git?.repositoryUrl?.trim() || payload.repositoryUrl?.trim();
+}
+
+function payloadGitToken(payload: ProjectPayload) {
+    return payload.git?.token?.trim() || payload.token?.trim();
+}
+
+function payloadDeployToken(payload: ProjectPayload) {
+    return payload.deployment?.deployToken?.trim() || payload.deployToken?.trim();
+}
+
+function payloadComposeOverride(payload: ProjectPayload) {
+    return payload.compose?.override?.trim() || payload.composeOverride?.trim();
+}
+
+function payloadEnvSecrets(payload: ProjectPayload) {
+    return payload.compose?.envSecrets ?? payload.envSecrets;
+}
+
 /**
  * Creates a remote server and discovers public agent keys from `/agent/health`
  * when the UI only submits a base URL.
@@ -434,13 +466,13 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
     app.post("/api/projects", (req: Request, res: Response) => {
         try {
             const payload = req.body as ProjectPayload;
-            const repoName = normalizeProjectName(payload.name);
-            const repoToken = payload.token?.trim();
-            const repositoryUrl = normalizeRepositoryUrl(payload.repositoryUrl);
-            const deployToken = payload.deployToken?.trim();
-            const repoPath = payload.path?.trim();
-            const composeOverride = payload.composeOverride?.trim();
-            const envSecrets = normalizeEnvSecrets(payload.envSecrets);
+            const repoName = normalizeProjectName(payloadProjectName(payload));
+            const repoToken = payloadGitToken(payload);
+            const repositoryUrl = normalizeRepositoryUrl(payloadRepositoryUrl(payload));
+            const deployToken = payloadDeployToken(payload);
+            const repoPath = payloadProjectPath(payload);
+            const composeOverride = payloadComposeOverride(payload);
+            const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload));
             const globalSettings = globalSettingsStore.readSettings();
             const traefik = normalizeTraefikSettings(payload, globalSettings);
 
@@ -451,7 +483,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             }
 
             config[repoName] = {
-                serverId: payload.serverId?.trim() || "local",
+                serverId: payloadServerId(payload) || "local",
                 ...(repoToken ? { token: repoToken } : {}),
                 ...(repositoryUrl ? { repositoryUrl } : {}),
                 ...(deployToken ? { deployToken } : {}),
@@ -475,18 +507,18 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const rawCurrentName = req.params.name;
             const currentRef = normalizeProjectName(Array.isArray(rawCurrentName) ? rawCurrentName[0] : rawCurrentName);
             const payload = req.body as ProjectPayload;
-            const nextName = normalizeProjectName(payload.name);
-            const nextToken = payload.token?.trim();
-            const nextRepositoryUrl = normalizeRepositoryUrl(payload.repositoryUrl);
-            const nextDeployToken = payload.deployToken?.trim();
-            const nextPath = payload.path?.trim();
-            const composeOverride = payload.composeOverride?.trim();
+            const nextName = normalizeProjectName(payloadProjectName(payload));
+            const nextToken = payloadGitToken(payload);
+            const nextRepositoryUrl = normalizeRepositoryUrl(payloadRepositoryUrl(payload));
+            const nextDeployToken = payloadDeployToken(payload);
+            const nextPath = payloadProjectPath(payload);
+            const composeOverride = payloadComposeOverride(payload);
             const globalSettings = globalSettingsStore.readSettings();
             const traefik = normalizeTraefikSettings(payload, globalSettings);
             const config = configStore.readConfig();
             const existingProject = configStore.resolveProject(currentRef);
             const existing = existingProject?.settings;
-            const envSecrets = normalizeEnvSecrets(payload.envSecrets, existing?.envSecrets);
+            const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), existing?.envSecrets);
             const currentName = existingProject?.name ?? currentRef;
 
             if (!existing) {
@@ -505,7 +537,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
             config[nextName] = {
                 id: existing.id,
-                serverId: payload.serverId?.trim() || existing.serverId || "local",
+                serverId: payloadServerId(payload) || existing.serverId || "local",
                 token: nextToken || existing.token,
                 ...(nextRepositoryUrl ? { repositoryUrl: nextRepositoryUrl } : {}),
                 ...(nextDeployToken || existing.deployToken ? { deployToken: nextDeployToken || existing.deployToken } : {}),
@@ -697,17 +729,17 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
             const payload = req.body as ProjectPayload;
             const globalSettings = globalSettingsStore.readSettings();
-            const projectName = normalizeProjectName(payload.name || project?.name || currentRef);
-            const repositoryUrl = normalizeRepositoryUrl(payload.repositoryUrl);
-            const composeOverride = payload.composeOverride?.trim();
+            const projectName = normalizeProjectName(payloadProjectName(payload) || project?.name || currentRef);
+            const repositoryUrl = normalizeRepositoryUrl(payloadRepositoryUrl(payload));
+            const composeOverride = payloadComposeOverride(payload);
             const traefik = normalizeTraefikSettings(payload, globalSettings);
             const appSettings: ProjectSettings = {
                 id: existing.id,
-                serverId: payload.serverId?.trim() || existing.serverId || "local",
+                serverId: payloadServerId(payload) || existing.serverId || "local",
                 token: existing.token,
                 deployToken: existing.deployToken,
                 ...(repositoryUrl ? { repositoryUrl } : existing.repositoryUrl ? { repositoryUrl: existing.repositoryUrl } : {}),
-                ...(payload.path?.trim() ? { path: payload.path.trim() } : existing.path ? { path: existing.path } : {}),
+                ...(payloadProjectPath(payload) ? { path: payloadProjectPath(payload) } : existing.path ? { path: existing.path } : {}),
                 ...(composeOverride ? { composeOverride } : {}),
                 ...(traefik ? { traefik } : {})
             };
@@ -1063,19 +1095,48 @@ function readHeader(value: string | string[] | undefined) {
 }
 
 function projectSummary(name: string, settings: ProjectSettings, globalSettings: ReturnType<GlobalSettingsStore["readSettings"]>, deploymentStore: DeploymentStore) {
+    const serverId = settings.serverId ?? "local";
+    const repositoryUrl = settings.repositoryUrl ?? "";
+    const path = settings.path ?? defaultProjectPath(globalSettings, name);
+    const token = settings.token ? maskToken(settings.token) : "";
+    const deployToken = settings.deployToken ? maskToken(settings.deployToken) : "";
+    const composeOverride = settings.composeOverride ?? "";
+    const envSecrets = maskEnvSecrets(settings.envSecrets);
+    const traefik = settings.traefik ?? { enabled: false };
+    const lastDeployment = deploymentStore.latest(settings.id ?? name);
+
     return {
         id: settings.id,
         name,
-        serverId: settings.serverId ?? "local",
-        repositoryUrl: settings.repositoryUrl ?? "",
-        path: settings.path ?? defaultProjectPath(globalSettings, name),
-        token: settings.token ? maskToken(settings.token) : "",
-        deployToken: settings.deployToken ? maskToken(settings.deployToken) : "",
-        composeOverride: settings.composeOverride ?? "",
-        envSecrets: maskEnvSecrets(settings.envSecrets),
-        hasComposeOverride: Boolean(settings.composeOverride),
-        traefik: settings.traefik ?? { enabled: false },
-        lastDeployment: deploymentStore.latest(settings.id ?? name)
+        serverId,
+        repositoryUrl,
+        path,
+        token,
+        deployToken,
+        composeOverride,
+        envSecrets,
+        hasComposeOverride: Boolean(composeOverride),
+        traefik,
+        lastDeployment,
+        project: {
+            id: settings.id,
+            name,
+            serverId,
+            path
+        },
+        git: {
+            repositoryUrl,
+            token
+        },
+        deployment: {
+            deployToken,
+            lastDeployment
+        },
+        compose: {
+            override: composeOverride,
+            envSecrets,
+            hasOverride: Boolean(composeOverride)
+        }
     };
 }
 

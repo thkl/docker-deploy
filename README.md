@@ -51,6 +51,20 @@ Errors use:
 
 Legacy webhook routes keep their plain text responses for GitLab compatibility.
 
+Project create/update payloads and summaries use grouped sections for new clients:
+
+```json
+{
+  "project": { "name": "my-app", "serverId": "local", "path": "/root/docker-apps/my-app" },
+  "git": { "repositoryUrl": "https://git.example.com/team/my-app.git", "token": "..." },
+  "deployment": { "deployToken": "..." },
+  "compose": { "override": "services:\n  app:\n    image: nginx", "envSecrets": [] },
+  "traefik": { "enabled": true, "hostname": "my-app.example.com", "service": "app", "port": 80 }
+}
+```
+
+Flat project fields are still accepted and returned as compatibility aliases while the UI and API transition.
+
 Project webhook secrets and CI deploy tokens are encrypted in SQLite with a controller-local AES-256-GCM key stored at:
 
 ```text
