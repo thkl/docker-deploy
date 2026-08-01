@@ -284,6 +284,26 @@
 
                     <section class="list-editor">
                       <div class="list-editor-head">
+                        <span>Sensitive environment</span>
+                        <button type="button" class="secondary compact" (click)="addBuilderSecretEnvironmentEntry(service.id)">Add</button>
+                      </div>
+                      @for (entry of service.secretEnvironment; track $index) {
+                        <div class="list-row secret-env-row">
+                          <input [value]="entry.key" (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'key', $event)" placeholder="DB_PASS" />
+                          <input [value]="entry.value" (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'value', $event)" placeholder="secret value" />
+                          <select [value]="entry.mode" (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'mode', $event)">
+                            <option value="docker_secret">Docker secret file</option>
+                            <option value="env">Runtime env</option>
+                          </select>
+                          <button type="button" class="secondary compact" (click)="removeBuilderSecretEnvironmentEntry(service.id, $index)">Remove</button>
+                        </div>
+                      } @empty {
+                        <small>No sensitive environment variables configured.</small>
+                      }
+                    </section>
+
+                    <section class="list-editor">
+                      <div class="list-editor-head">
                         <span>Volumes</span>
                         <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'volumes', './data:/data')">Add</button>
                       </div>

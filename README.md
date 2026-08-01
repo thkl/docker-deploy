@@ -11,6 +11,7 @@ Docker Deploy is a lightweight Docker Compose deployment panel. It connects a co
 - Docker Compose import and inspection through the target agent.
 - Docker Compose validation with effective YAML preview before deployment.
 - Visual Compose builder with services, networks, volumes, host bind mounts, dependencies, restart policy, environment, ports, healthcheck-preserving advanced YAML, and raw YAML mode.
+- Sensitive environment values stored encrypted and deployed as Docker secret files or compatibility runtime env values.
 - Traefik integration that writes labels and proxy-network membership into the stored override YAML.
 - Traefik availability checks, cached server capabilities, and on-demand routing diagnostics.
 - Runtime status, published/exposed ports, host-network detection, recent logs, and live log streaming.
@@ -73,7 +74,7 @@ The target path is a persistent project root on the selected Docker server, not 
 
 Use Project settings -> Docker Compose -> Builder.
 
-- **Services:** image/build, restart policy, ports, environment, service volumes, networks, dependencies, profiles, command, advanced YAML.
+- **Services:** image/build, restart policy, ports, environment, sensitive environment, service volumes, networks, dependencies, profiles, command, advanced YAML.
 - **Networks:** define the networks services may select.
 - **Volumes:** define named volumes and review host bind mappings such as `./data:/data`.
 - **Traefik:** select the target service and Docker network from the builder-defined lists.
@@ -81,6 +82,8 @@ Use Project settings -> Docker Compose -> Builder.
 The builder prevents removing services, networks, or named volumes while another setting references them. It also warns about missing references, duplicates, `network_mode` conflicts, missing Traefik host/port values, and Traefik targeting host-networked services.
 
 Raw YAML mode remains available for Compose options the builder cannot safely edit.
+
+Sensitive environment variables are kept outside the raw Compose YAML. In **Docker secret file** mode, Deploy sets `KEY_FILE=/run/secrets/<service>_<key>` and mounts the value as a Compose secret file. The application must read the `_FILE` variable. In **Runtime env** mode, Deploy injects `KEY=value` during deployment for legacy apps that only read normal environment variables; this is less secure because Docker can expose container environment values.
 
 ## Compose Validation
 

@@ -26,6 +26,7 @@ export class ConfigStore {
                     p.deploy_token AS deployToken,
                     p.path,
                     p.compose_override AS composeOverride,
+                    p.env_secrets_json AS envSecretsJson,
                     t.enabled AS traefikEnabled,
                     t.hostname AS traefikHostname,
                     t.service AS traefikService,
@@ -98,6 +99,7 @@ export class ConfigStore {
                     p.deploy_token AS deployToken,
                     p.path,
                     p.compose_override AS composeOverride,
+                    p.env_secrets_json AS envSecretsJson,
                     t.enabled AS traefikEnabled,
                     t.hostname AS traefikHostname,
                     t.service AS traefikService,
@@ -129,6 +131,7 @@ interface ProjectRow {
     deployToken: string | null;
     path: string | null;
     composeOverride: string | null;
+    envSecretsJson: string | null;
     traefikEnabled: number | null;
     traefikHostname: string | null;
     traefikService: string | null;
@@ -154,6 +157,7 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
         ...(row.deployToken ? { deployToken: decryptSecret(row.deployToken) } : {}),
         ...(row.path ? { path: row.path } : {}),
         ...(row.composeOverride ? { composeOverride: row.composeOverride } : {}),
+        ...(row.envSecretsJson ? { envSecrets: parseProjectEnvSecrets(row.envSecretsJson) } : {}),
         ...(row.traefikEnabled === null
             ? {}
             : {
@@ -174,6 +178,22 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
     };
 }
 
+function parseProjectEnvSecrets(value: string) {
+    try {
+        const parsed = JSON.parse(value) as NonNullable<ProjectSettings["envSecrets"]>;
+        return parsed
+            .map((secret) => ({
+                service: secret.service,
+                key: secret.key,
+                value: decryptSecret(secret.value) ?? "",
+                mode: secret.mode === "env" ? "env" as const : "docker_secret" as const
+            }))
+            .filter((secret) => secret.service && secret.key);
+    } catch {
+        return [];
+    }
+}
+
 /**
  * Masks a stored token for API responses so the UI can show that a secret
  * exists without exposing it.
@@ -184,4 +204,8 @@ export function maskToken(token: string) {
     }
 
     return `${token.slice(0, 6)}...${token.slice(-4)}`;
+}
+
+export function maskSecretValue(value: string) {
+    return maskToken(value);
 }

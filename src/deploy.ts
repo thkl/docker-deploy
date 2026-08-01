@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CheckoutBindMountInspection, GlobalSettings, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
+import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -52,23 +52,17 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
+    const secretOverlayScript = renderSecretComposeOverlayScript(appSettings.envSecrets);
     const projectRootEnvFileScript = renderProjectRootEnvFileScript();
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
     const projectRootBindMountRewriteScript = renderProjectRootBindMountRewriteScript();
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const quotedHostAppsPath = shellQuote(hostAppsPath);
-    const quotedHostAppsVolume = shellQuote(`${hostAppsPath}:${hostAppsPath}`);
-    const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
 
     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
-    // Keep the deployment logic inside the worker so the host only needs Docker.
-    const dockerRunCommand = `docker run -i --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v ${quotedHostAppsVolume} \
-            -v ${quotedSshKeyPath} \
-            alpine:latest sh << 'EOF'
+    const workerScript = `
                 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
 
                 PROJECT_ROOT=${quotedHostAppsPath}
@@ -99,6 +93,7 @@ ${projectRootBindMountRewriteScript}
 ${composeSelectionScript}
 ${projectRootEnvFileScript}
 ${traefikOverrideScript}
+${secretOverlayScript}
 
                 echo "--> Rendering persistent Compose deployment file..."
                 docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --no-interpolate > "$COMPOSE_WORKSPACE/docker-compose.deploy.yml"
@@ -117,19 +112,42 @@ ${persistedEnvFileRewriteScript}
                 else
                     echo "--> CRITICAL: Build failed! Keeping the old container running."
                     exit 1
-                fi
-EOF`;
+                fi`;
     
-    const worker = exec(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
-        if (error) {
-            console.error(`Deployment Aborted: ${error.message}`);
-            if (stderr) console.error(`Worker Inner Error (stderr):\n${stderr}`);
-            if (stdout) console.log(`Worker Partial Output (stdout):\n${stdout}`);
-            hooks.onFailure?.(error);
+    const worker = spawn("docker", [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock",
+        "-v",
+        `${hostAppsPath}:${hostAppsPath}`,
+        "-v",
+        `${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`,
+        "alpine:latest",
+        "sh"
+    ], { stdio: ["pipe", "pipe", "pipe"] });
+    let failed = false;
+
+    worker.on("error", (error) => {
+        failed = true;
+        const safeError = redactProjectSecrets(error, appSettings.envSecrets);
+        console.error(`Deployment Aborted: ${safeError.message}`);
+        hooks.onFailure?.(safeError);
+    });
+
+    worker.on("close", (code, signal) => {
+        if (failed) {
             return;
         }
-        console.log(`Worker output:\n${stdout}`);
-        hooks.onSuccess?.();
+        if (code === 0) {
+            hooks.onSuccess?.();
+            return;
+        }
+
+        const error = new Error(signal ? `Deployment worker stopped by ${signal}.` : `Deployment worker exited with code ${code ?? "unknown"}.`) as Error & { code?: number | string };
+        error.code = code ?? signal ?? "unknown";
+        hooks.onFailure?.(redactProjectSecrets(error, appSettings.envSecrets));
     });
 
     worker.stdout?.on("data", (chunk: Buffer | string) => {
@@ -140,6 +158,8 @@ EOF`;
         hooks.onOutput?.("stderr", String(chunk));
     });
 
+    worker.stdin?.end(workerScript);
+
     return {
         stop() {
             if (!worker.killed) {
@@ -148,6 +168,105 @@ EOF`;
             }
         }
     };
+}
+
+function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | undefined) {
+    const validSecrets = (secrets ?? [])
+        .map((secret) => ({
+            service: secret.service.trim(),
+            key: secret.key.trim(),
+            value: secret.value,
+            mode: secret.mode === "env" ? "env" as const : "docker_secret" as const
+        }))
+        .filter((secret) => secret.service && secret.key && secret.value);
+
+    if (!validSecrets.length) {
+        return "";
+    }
+
+    const secretDir = "$COMPOSE_WORKSPACE/secrets";
+    const lines = [
+        "",
+        "                echo \"--> Preparing sensitive environment values.\"",
+        `                mkdir -p "${secretDir}"`,
+        "                chmod 700 \"$COMPOSE_WORKSPACE/secrets\"",
+        "                cat > \"$COMPOSE_WORKSPACE/docker-compose.secrets.yml\" << 'DEPLOY_SECRETS_EOF'",
+        "services:"
+    ];
+    const services = [...new Set(validSecrets.map((secret) => secret.service))];
+    const dockerSecrets = validSecrets.filter((secret) => secret.mode === "docker_secret");
+
+    for (const service of services) {
+        const serviceSecrets = validSecrets.filter((secret) => secret.service === service);
+        lines.push(`  ${yamlKey(service)}:`);
+        lines.push("    environment:");
+        for (const secret of serviceSecrets) {
+            const secretName = composeSecretName(service, secret.key);
+            if (secret.mode === "env") {
+                lines.push(`      ${yamlKey(secret.key)}: ${yamlScalar(secret.value)}`);
+            } else {
+                lines.push(`      ${yamlKey(`${secret.key}_FILE`)}: ${yamlScalar(`/run/secrets/${secretName}`)}`);
+            }
+        }
+        if (serviceSecrets.some((secret) => secret.mode === "docker_secret")) {
+            lines.push("    secrets:");
+            for (const secret of serviceSecrets.filter((entry) => entry.mode === "docker_secret")) {
+                lines.push(`      - ${yamlKey(composeSecretName(service, secret.key))}`);
+            }
+        }
+    }
+
+    if (dockerSecrets.length) {
+        lines.push("secrets:");
+        for (const secret of dockerSecrets) {
+            const secretName = composeSecretName(secret.service, secret.key);
+            lines.push(`  ${yamlKey(secretName)}:`);
+            lines.push(`    file: ${yamlScalar(`${secretDir}/${secretName}`)}`);
+        }
+    }
+
+    lines.push("DEPLOY_SECRETS_EOF");
+
+    for (const secret of dockerSecrets) {
+        const secretName = composeSecretName(secret.service, secret.key);
+        lines.push(`                cat > "$COMPOSE_WORKSPACE/secrets/${secretName}" << 'DEPLOY_SECRET_VALUE_EOF'`);
+        lines.push(secret.value);
+        lines.push("DEPLOY_SECRET_VALUE_EOF");
+        lines.push(`                chmod 600 "$COMPOSE_WORKSPACE/secrets/${secretName}"`);
+    }
+
+    lines.push("                COMPOSE_FILES=\"$COMPOSE_FILES -f $COMPOSE_WORKSPACE/docker-compose.secrets.yml\"");
+    return lines.join("\n");
+}
+
+function composeSecretName(service: string, key: string) {
+    return `${service}_${key}`.toLowerCase().replace(/[^a-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "") || "deploy_secret";
+}
+
+function yamlKey(value: string) {
+    return /^[a-zA-Z0-9._-]+$/.test(value.trim()) ? value.trim() : yamlScalar(value.trim());
+}
+
+function yamlScalar(value: string) {
+    const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return `"${escaped}"`;
+}
+
+function redactProjectSecrets(error: Error & { code?: number | string }, secrets: ProjectEnvironmentSecret[] | undefined) {
+    const values = (secrets ?? []).map((secret) => secret.value).filter((value) => value.length >= 3);
+    if (!values.length) {
+        return error;
+    }
+
+    const safeError = new Error(redactValues(error.message, values)) as Error & { code?: number | string };
+    safeError.name = error.name;
+    safeError.stack = error.stack ? redactValues(error.stack, values) : error.stack;
+    safeError.code = error.code;
+    return safeError;
+}
+
+function redactValues(value: string, secrets: string[]) {
+    return secrets.reduce((current, secret) => current.split(secret).join("[secret]"), value);
 }
 
 /**

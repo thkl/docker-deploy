@@ -93,6 +93,7 @@ export class AppDatabase {
                 deploy_token TEXT,
                 path TEXT,
                 compose_override TEXT,
+                env_secrets_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -172,6 +173,7 @@ export class AppDatabase {
         this.ensureColumn("servers", "active_jobs_json", "TEXT");
         this.ensureColumn("servers", "last_health_error", "TEXT");
         this.ensureColumn("servers", "capabilities_json", "TEXT");
+        this.ensureColumn("projects", "env_secrets_json", "TEXT");
         this.migrateProjectsToStableIds();
         this.connection.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)").run(String(schemaVersion));
     }
@@ -219,6 +221,7 @@ export class AppDatabase {
                         deploy_token TEXT,
                         path TEXT,
                         compose_override TEXT,
+                        env_secrets_json TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
@@ -260,8 +263,8 @@ export class AppDatabase {
                     this.connection
                         .prepare(
                             `INSERT INTO projects_next
-                             (id, name, server_id, token, repository_url, deploy_token, path, compose_override, created_at, updated_at)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             (id, name, server_id, token, repository_url, deploy_token, path, compose_override, env_secrets_json, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                         )
                         .run(
                             projectId,
@@ -272,6 +275,7 @@ export class AppDatabase {
                             project.deployToken,
                             project.path,
                             project.composeOverride,
+                            null,
                             project.createdAt,
                             project.updatedAt
                         );
@@ -401,15 +405,16 @@ export class AppDatabase {
      * is available. Reads stay backward-compatible through ConfigStore.
      */
     private encryptStoredProjectSecrets() {
-        const rows = this.connection.prepare("SELECT id, token, deploy_token AS deployToken FROM projects").all() as unknown as Array<{ id: string; token: string | null; deployToken: string | null }>;
-        const update = this.connection.prepare("UPDATE projects SET token = ?, deploy_token = ? WHERE id = ?");
+        const rows = this.connection.prepare("SELECT id, token, deploy_token AS deployToken, env_secrets_json AS envSecretsJson FROM projects").all() as unknown as Array<{ id: string; token: string | null; deployToken: string | null; envSecretsJson: string | null }>;
+        const update = this.connection.prepare("UPDATE projects SET token = ?, deploy_token = ?, env_secrets_json = ? WHERE id = ?");
 
         runDatabaseTransaction(this.connection, () => {
             for (const row of rows) {
                 const token = row.token && !isEncryptedSecret(row.token) ? encryptSecret(row.token) : row.token;
                 const deployToken = row.deployToken && !isEncryptedSecret(row.deployToken) ? encryptSecret(row.deployToken) : row.deployToken;
-                if (token !== row.token || deployToken !== row.deployToken) {
-                    update.run(token ?? null, deployToken ?? null, row.id);
+                const envSecretsJson = encryptProjectEnvSecretsJson(row.envSecretsJson);
+                if (token !== row.token || deployToken !== row.deployToken || envSecretsJson !== row.envSecretsJson) {
+                    update.run(token ?? null, deployToken ?? null, envSecretsJson, row.id);
                 }
             }
         });
@@ -526,8 +531,8 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
     database
         .prepare(
             `INSERT INTO projects
-             (id, name, server_id, token, repository_url, deploy_token, path, compose_override, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             (id, name, server_id, token, repository_url, deploy_token, path, compose_override, env_secrets_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 server_id = excluded.server_id,
@@ -536,9 +541,10 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
                 deploy_token = excluded.deploy_token,
                 path = excluded.path,
                 compose_override = excluded.compose_override,
+                env_secrets_json = excluded.env_secrets_json,
                 updated_at = excluded.updated_at`
         )
-        .run(projectId, name, serverId, encryptSecret(settings.token), settings.repositoryUrl ?? null, encryptSecret(settings.deployToken), settings.path ?? null, settings.composeOverride ?? null, existing?.createdAt ?? now, now);
+        .run(projectId, name, serverId, encryptSecret(settings.token), settings.repositoryUrl ?? null, encryptSecret(settings.deployToken), settings.path ?? null, settings.composeOverride ?? null, encryptedProjectEnvSecretsJson(settings.envSecrets), existing?.createdAt ?? now, now);
 
     database.prepare("DELETE FROM project_traefik_settings WHERE project_id = ?").run(projectId);
     if (!settings.traefik) {
@@ -639,6 +645,32 @@ interface LegacyProjectRow {
     composeOverride: string | null;
     createdAt: string;
     updatedAt: string;
+}
+
+function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] = []) {
+    const normalized = secrets
+        .map((secret) => ({
+            service: secret.service.trim(),
+            key: secret.key.trim(),
+            value: encryptSecret(secret.value.trim()) ?? "",
+            mode: secret.mode === "env" ? "env" : "docker_secret"
+        }))
+        .filter((secret) => secret.service && secret.key && secret.value);
+
+    return normalized.length ? JSON.stringify(normalized) : null;
+}
+
+function encryptProjectEnvSecretsJson(value: string | null) {
+    if (!value) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(value) as NonNullable<ProjectSettings["envSecrets"]>;
+        return encryptedProjectEnvSecretsJson(parsed);
+    } catch {
+        return value;
+    }
 }
 
 interface LegacyTraefikRow {

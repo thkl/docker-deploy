@@ -26,10 +26,20 @@ export interface ProjectSettings {
     deployToken?: string;
     path?: string;
     composeOverride?: string;
+    envSecrets?: ProjectEnvironmentSecret[];
     traefik?: TraefikSettings;
 }
 
 export type ProjectConfig = Record<string, ProjectSettings>;
+
+export type ProjectEnvironmentSecretMode = "docker_secret" | "env";
+
+export interface ProjectEnvironmentSecret {
+    service: string;
+    key: string;
+    value: string;
+    mode: ProjectEnvironmentSecretMode;
+}
 
 export interface GlobalSettings {
     dataRoot: string;
@@ -57,6 +67,7 @@ export interface ProjectPayload {
     deployToken?: string;
     path?: string;
     composeOverride?: string;
+    envSecrets?: ProjectEnvironmentSecret[];
     traefikEnabled?: boolean;
     traefikHostname?: string;
     traefikService?: string;

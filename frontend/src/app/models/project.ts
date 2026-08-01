@@ -38,9 +38,19 @@ export interface ProjectSummary {
   token: string;
   deployToken: string;
   composeOverride: string;
+  envSecrets?: ProjectEnvironmentSecret[];
   hasComposeOverride: boolean;
   traefik: TraefikSettings;
   lastDeployment?: DeploymentRecord | null;
+}
+
+export type ProjectEnvironmentSecretMode = 'docker_secret' | 'env';
+
+export interface ProjectEnvironmentSecret {
+  service: string;
+  key: string;
+  value: string;
+  mode: ProjectEnvironmentSecretMode;
 }
 
 export interface ProjectPayload {
@@ -51,6 +61,7 @@ export interface ProjectPayload {
   deployToken: string;
   path: string;
   composeOverride: string;
+  envSecrets?: ProjectEnvironmentSecret[];
   traefikEnabled: boolean;
   traefikHostname: string;
   traefikService: string;

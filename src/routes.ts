@@ -7,7 +7,7 @@ import { sealEnvelope } from "./agentCrypto.js";
 import { AdminAuth } from "./auth.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
 import { countBindMountsInsidePath, hasUnsafeRelativeBindMounts } from "./composeInspection.js";
-import { ConfigStore, maskToken } from "./configStore.js";
+import { ConfigStore, maskSecretValue, maskToken } from "./configStore.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { DeploymentService } from "./deploymentService.js";
 import { EventBus } from "./eventBus.js";
@@ -18,7 +18,7 @@ import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
-import { DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject, webhookProjectCandidates } from "./webhookResolver.js";
 import { WebhookStore } from "./webhookStore.js";
@@ -330,6 +330,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                     token: settings.token ? maskToken(settings.token) : "",
                     deployToken: settings.deployToken ? maskToken(settings.deployToken) : "",
                     composeOverride: settings.composeOverride ?? "",
+                    envSecrets: maskEnvSecrets(settings.envSecrets),
                     hasComposeOverride: Boolean(settings.composeOverride),
                     traefik: settings.traefik ?? { enabled: false },
                     lastDeployment: deploymentStore.latest(settings.id ?? name)
@@ -350,6 +351,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const deployToken = payload.deployToken?.trim();
             const repoPath = payload.path?.trim();
             const composeOverride = payload.composeOverride?.trim();
+            const envSecrets = normalizeEnvSecrets(payload.envSecrets);
             const globalSettings = globalSettingsStore.readSettings();
             const traefik = normalizeTraefikSettings(payload, globalSettings);
 
@@ -366,6 +368,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(deployToken ? { deployToken } : {}),
                 ...(repoPath ? { path: repoPath } : {}),
                 ...(composeOverride ? { composeOverride } : {}),
+                ...(envSecrets.length ? { envSecrets } : {}),
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
@@ -394,6 +397,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const config = configStore.readConfig();
             const existingProject = configStore.resolveProject(currentRef);
             const existing = existingProject?.settings;
+            const envSecrets = normalizeEnvSecrets(payload.envSecrets, existing?.envSecrets);
             const currentName = existingProject?.name ?? currentRef;
 
             if (!existing) {
@@ -418,6 +422,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(nextDeployToken || existing.deployToken ? { deployToken: nextDeployToken || existing.deployToken } : {}),
                 ...(nextPath ? { path: nextPath } : {}),
                 composeOverride: composeOverride || undefined,
+                ...(envSecrets.length ? { envSecrets } : {}),
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
@@ -966,6 +971,40 @@ function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {
 
 function readHeader(value: string | string[] | undefined) {
     return Array.isArray(value) ? value[0] : value ?? "";
+}
+
+function maskEnvSecrets(secrets: ProjectEnvironmentSecret[] | undefined) {
+    return (secrets ?? []).map((secret) => ({
+        service: secret.service,
+        key: secret.key,
+        value: maskSecretValue(secret.value),
+        mode: secret.mode
+    }));
+}
+
+function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, existing: ProjectEnvironmentSecret[] = []) {
+    if (!Array.isArray(payload)) {
+        return [];
+    }
+
+    return payload
+        .map((secret) => {
+            const service = String(secret.service ?? "").trim();
+            const key = String(secret.key ?? "").trim();
+            const value = String(secret.value ?? "").trim();
+            const existingSecret = existing.find((candidate) => candidate.service === service && candidate.key === key);
+            return {
+                service,
+                key,
+                value: isMaskedSecretValue(value) ? existingSecret?.value ?? "" : value,
+                mode: secret.mode === "env" ? "env" as const : "docker_secret" as const
+            };
+        })
+        .filter((secret) => secret.service && secret.key && secret.value);
+}
+
+function isMaskedSecretValue(value: string) {
+    return /^\*+$/.test(value) || /^[^*]+?\.\.\.[^*]+$/.test(value);
 }
 
 /**

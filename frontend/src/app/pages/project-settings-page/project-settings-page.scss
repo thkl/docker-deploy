@@ -371,6 +371,11 @@ fieldset small {
   grid-template-columns: minmax(110px, 0.7fr) minmax(140px, 1fr) auto;
 }
 
+.secret-env-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.6fr) minmax(120px, 1fr) minmax(130px, 0.75fr) auto;
+}
+
 .inline-list-editor {
   align-self: stretch;
 }
@@ -530,7 +535,8 @@ button.secondary:hover {
     grid-template-columns: 1fr;
   }
 
-  .env-row {
+  .env-row,
+  .secret-env-row {
     grid-template-columns: 1fr;
   }
 

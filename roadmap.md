@@ -217,6 +217,7 @@ Detect:
 - [x] Networks
 - [x] Relative bind mounts
 - [x] Compose storage mappings
+- [x] Sensitive environment values stored encrypted and rendered as Docker secrets or compatibility runtime env injection.
 
 Manage generated files only:
 

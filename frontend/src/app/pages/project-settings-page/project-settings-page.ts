@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, ComposeValidation, GlobalSettings, ProjectPayload, ProjectSummary, TraefikDiagnostics } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, ComposeValidation, GlobalSettings, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectPayload, ProjectSummary, TraefikDiagnostics } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -22,6 +22,7 @@ interface ComposeBuilderService {
   ports: string;
   expose: string;
   environment: string;
+  secretEnvironment: ComposeSecretEnvironmentEntry[];
   volumes: string;
   networks: string;
   dependsOn: string;
@@ -54,6 +55,10 @@ type ComposeBuilderRenderableVolume = Omit<ComposeBuilderVolume, 'id'> & { id?: 
 interface ComposeEnvironmentEntry {
   key: string;
   value: string;
+}
+
+interface ComposeSecretEnvironmentEntry extends ComposeEnvironmentEntry {
+  mode: ProjectEnvironmentSecretMode;
 }
 
 interface ComposeTraefikSettings {
@@ -516,6 +521,7 @@ export class ProjectSettingsPage implements OnInit {
         ports: '',
         expose: '',
         environment: '',
+        secretEnvironment: [],
         volumes: '',
         networks: serviceNetwork,
         dependsOn: '',
@@ -643,6 +649,44 @@ export class ProjectSettingsPage implements OnInit {
       const entries = parseEnvironmentEntries(service.environment);
       entries.splice(index, 1);
       return { ...service, environment: renderEnvironmentEntries(entries) };
+    }));
+  }
+
+  protected addBuilderSecretEnvironmentEntry(id: number) {
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      return {
+        ...service,
+        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret' }]
+      };
+    }));
+  }
+
+  protected updateBuilderSecretEnvironmentEntry(id: number, index: number, field: keyof ComposeSecretEnvironmentEntry, event: Event) {
+    const target = event.target as HTMLInputElement | HTMLSelectElement;
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      const entries = [...service.secretEnvironment];
+      entries[index] = { ...(entries[index] ?? { key: '', value: '', mode: 'docker_secret' }), [field]: target.value };
+      return { ...service, secretEnvironment: entries };
+    }));
+  }
+
+  protected removeBuilderSecretEnvironmentEntry(id: number, index: number) {
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      const entries = [...service.secretEnvironment];
+      entries.splice(index, 1);
+      return { ...service, secretEnvironment: entries };
     }));
   }
 
@@ -811,6 +855,21 @@ export class ProjectSettingsPage implements OnInit {
     });
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.loadBuilderFromCompose(project.composeOverride ?? '');
+    this.applyProjectEnvSecrets(project.envSecrets ?? []);
+  }
+
+  private applyProjectEnvSecrets(secrets: ProjectEnvironmentSecret[]) {
+    if (!secrets.length) {
+      return;
+    }
+
+    this.builderServices.update((services) => services.map((service) => ({
+      ...service,
+      environment: removeGeneratedSecretFileEntries(service.environment, secrets.filter((secret) => secret.service === service.name)),
+      secretEnvironment: secrets
+        .filter((secret) => secret.service === service.name)
+        .map((secret) => ({ key: secret.key, value: secret.value, mode: secret.mode }))
+    })));
   }
 
   private currentProject() {
@@ -848,6 +907,7 @@ export class ProjectSettingsPage implements OnInit {
       deployToken: value.deployToken.trim(),
       path: value.path.trim(),
       composeOverride: composeOverride.trim(),
+      envSecrets: this.composeMode() === 'builder' ? collectBuilderEnvSecrets(this.builderServices()) : this.currentProject()?.envSecrets ?? [],
       traefikEnabled: this.traefikAvailable() && value.traefikEnabled,
       traefikHostname: value.traefikHostname.trim(),
       traefikService: value.traefikService.trim(),
@@ -1010,7 +1070,7 @@ function renderComposeBuilder(
     }
     appendList(lines, 'ports', service.ports);
     appendList(lines, 'expose', service.expose);
-    appendEnvironment(lines, service.environment);
+    appendEnvironment(lines, mergeEnvironmentWithSecretPlaceholders(service.name, service.environment, service.secretEnvironment));
     appendList(lines, 'volumes', service.volumes);
     appendList(lines, 'networks', service.networks);
     if (service.dependsOnAdvanced.trim()) {
@@ -1190,6 +1250,55 @@ function appendEnvironment(lines: string[], value: string) {
   for (const entry of entries) {
     lines.push(`      ${yamlKey(entry.key)}: ${yamlScalar(entry.value)}`);
   }
+}
+
+function mergeEnvironmentWithSecretPlaceholders(serviceName: string, environment: string, entries: ComposeSecretEnvironmentEntry[]) {
+  const dockerSecretEntries = entries
+    .map((entry) => ({ key: entry.key.trim(), mode: entry.mode }))
+    .filter((entry) => entry.key && entry.mode === 'docker_secret');
+
+  if (!dockerSecretEntries.length) {
+    return environment;
+  }
+
+  return renderEnvironmentEntries([
+    ...parseEnvironmentEntries(environment),
+    ...dockerSecretEntries.map((entry) => ({
+      key: `${entry.key}_FILE`,
+      value: `/run/secrets/${composeSecretName(serviceName, entry.key)}`
+    }))
+  ]);
+}
+
+function composeSecretName(service: string, key: string) {
+  return `${service}_${key}`.toLowerCase().replace(/[^a-z0-9_.-]+/g, '_').replace(/^_+|_+$/g, '') || 'deploy_secret';
+}
+
+function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): ProjectEnvironmentSecret[] {
+  return services.flatMap((service) =>
+    service.secretEnvironment
+      .map((secret) => ({
+        service: service.name.trim(),
+        key: secret.key.trim(),
+        value: secret.value.trim(),
+        mode: secret.mode === 'env' ? 'env' as const : 'docker_secret' as const
+      }))
+      .filter((secret) => secret.service && secret.key && secret.value)
+  );
+}
+
+function removeGeneratedSecretFileEntries(environment: string, secrets: ProjectEnvironmentSecret[]) {
+  const generatedKeys = new Set(
+    secrets
+      .filter((secret) => secret.mode === 'docker_secret')
+      .map((secret) => `${secret.key}_FILE`)
+  );
+
+  if (!generatedKeys.size) {
+    return environment;
+  }
+
+  return renderEnvironmentEntries(parseEnvironmentEntries(environment).filter((entry) => !generatedKeys.has(entry.key)));
 }
 
 function appendTopLevelResources(
@@ -1515,6 +1624,7 @@ function blankBuilderService(name: string, build: string, networks: string): Omi
     ports: '',
     expose: '',
     environment: '',
+    secretEnvironment: [],
     volumes: '',
     networks,
     dependsOn: '',
