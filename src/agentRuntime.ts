@@ -15,6 +15,7 @@ interface AgentJobState {
     type: string;
     startedAt: string;
     active: boolean;
+    cancelOnDisconnect: boolean;
     streamToken: string;
     frames: AgentLogFrame[];
     sockets: Set<WebSocket>;
@@ -141,6 +142,22 @@ export class AgentRuntime {
                 res.status(400).json({ error: error instanceof Error ? error.message : "Job failed." });
             }
         });
+
+        this.app.get("/agent/jobs/:id/logs", (req: Request, res: Response) => {
+            const jobId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            const job = this.jobs.get(jobId);
+            if (!job || req.query.streamToken !== job.streamToken) {
+                res.status(404).json({ error: "Job log stream was not found." });
+                return;
+            }
+
+            const after = Math.max(0, parseInt(String(req.query.after ?? "0"), 10) || 0);
+            res.json({
+                active: job.active,
+                next: job.frames.length,
+                frames: job.frames.slice(after).map((frame) => this.sealControllerEnvelope(frame, "job.log"))
+            });
+        });
     }
 
     /**
@@ -163,12 +180,13 @@ export class AgentRuntime {
 
             wss.handleUpgrade(request, socket, head, (ws) => {
                 job.sockets.add(ws);
-                for (const frame of job.frames) {
+                const after = Math.max(0, parseInt(String(url.searchParams.get("after") ?? "0"), 10) || 0);
+                for (const frame of job.frames.slice(after)) {
                     ws.send(JSON.stringify(this.sealControllerEnvelope(frame, "job.log")));
                 }
                 ws.on("close", () => {
                     job.sockets.delete(ws);
-                    if (job.cancel && job.sockets.size === 0) {
+                    if (job.cancelOnDisconnect && job.cancel && job.sockets.size === 0) {
                         job.active = false;
                         job.cancel();
                     }
@@ -296,6 +314,7 @@ export class AgentRuntime {
             type: jobType,
             startedAt: new Date().toISOString(),
             active: true,
+            cancelOnDisconnect: jobType !== "deploy",
             streamToken: randomUUID(),
             frames: [],
             sockets: new Set()

@@ -222,52 +222,101 @@ export class HttpAgentClient implements AgentClient {
         streamUrl.protocol = streamUrl.protocol === "https:" ? "wss:" : "ws:";
         streamUrl.searchParams.set("streamToken", accepted.streamToken);
 
-        const socket = new WebSocket(streamUrl);
+        let socket: WebSocket | undefined;
         let finished = false;
-        let failed = false;
-        socket.on("message", (raw) => {
-            try {
-                const frame = this.openAgentEnvelope<AgentLogFrame>(JSON.parse(String(raw)) as SecureEnvelope);
-                if (frame.stream === "stdout" || frame.stream === "stderr") {
-                    hooks.onOutput?.(frame.stream, frame.chunk);
-                }
+        let stopped = false;
+        let socketOpen = false;
+        let pollOffset = 0;
+        let reconnects = 0;
+        let pollTimer: NodeJS.Timeout | undefined;
+        const handleFrame = (frame: AgentLogFrame) => {
+            if (frame.stream === "stdout" || frame.stream === "stderr") {
+                hooks.onOutput?.(frame.stream, frame.chunk);
+            }
 
-                if (frame.done) {
-                    finished = true;
-                    if (frame.success) {
-                        hooks.onSuccess?.();
-                    } else {
-                        const error = new Error(frame.error || frame.chunk) as Error & { code?: string };
-                        error.code = "remote-agent";
-                        hooks.onFailure?.(error);
-                    }
-                    socket.close();
+            if (frame.done) {
+                finished = true;
+                if (frame.success) {
+                    hooks.onSuccess?.();
+                } else {
+                    const error = new Error(frame.error || frame.chunk) as Error & { code?: string };
+                    error.code = "remote-agent";
+                    hooks.onFailure?.(error);
                 }
+                socket?.close();
+            }
+        };
+        const pollLogs = async () => {
+            if (finished || stopped) {
+                return;
+            }
+
+            try {
+                if (socketOpen) {
+                    return;
+                }
+                const pollUrl = new URL(`${this.requireBaseUrl()}/agent/jobs/${accepted.jobId}/logs`);
+                pollUrl.searchParams.set("streamToken", accepted.streamToken);
+                pollUrl.searchParams.set("after", String(pollOffset));
+                const response = await fetch(pollUrl);
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+                const body = await response.json() as { next?: number; frames?: SecureEnvelope[] };
+                for (const envelope of body.frames ?? []) {
+                    handleFrame(this.openAgentEnvelope<AgentLogFrame>(envelope));
+                }
+                pollOffset = typeof body.next === "number" ? body.next : pollOffset + (body.frames?.length ?? 0);
             } catch (error) {
-                const failure = new Error(error instanceof Error ? error.message : "Could not read remote agent log frame.") as Error & { code?: string };
-                failure.code = "remote-agent-stream";
-                hooks.onFailure?.(failure);
-                socket.close();
+                hooks.onOutput?.("stderr", `--> Remote agent log polling failed: ${error instanceof Error ? error.message : "unknown error"}\n`);
+            } finally {
+                if (!finished && !stopped) {
+                    pollTimer = setTimeout(pollLogs, 2000);
+                }
             }
-        });
-        socket.on("error", (error) => {
-            failed = true;
-            const failure = new Error(error.message) as Error & { code?: string };
-            failure.code = "remote-agent-stream";
-            hooks.onFailure?.(failure);
-        });
-        socket.on("close", () => {
-            if (!finished && !failed) {
-                const failure = new Error("Remote agent log stream closed before the job finished.") as Error & { code?: string };
-                failure.code = "remote-agent-stream";
-                hooks.onFailure?.(failure);
+        };
+        const connect = () => {
+            if (finished || stopped) {
+                return;
             }
-        });
+
+            streamUrl.searchParams.set("after", String(pollOffset));
+            const nextSocket = new WebSocket(streamUrl);
+            socket = nextSocket;
+            nextSocket.on("open", () => {
+                socketOpen = true;
+            });
+            nextSocket.on("message", (raw) => {
+                try {
+                    handleFrame(this.openAgentEnvelope<AgentLogFrame>(JSON.parse(String(raw)) as SecureEnvelope));
+                    pollOffset += 1;
+                } catch (error) {
+                    hooks.onOutput?.("stderr", `--> Remote agent log frame failed: ${error instanceof Error ? error.message : "unknown error"}\n`);
+                    nextSocket.close();
+                }
+            });
+            nextSocket.on("error", (error) => {
+                hooks.onOutput?.("stderr", `--> Remote agent log stream interrupted: ${error.message}\n`);
+            });
+            nextSocket.on("close", () => {
+                socketOpen = false;
+                if (!finished && !stopped && reconnects < 5) {
+                    reconnects += 1;
+                    setTimeout(connect, 1000 * reconnects);
+                }
+            });
+        };
+        connect();
+        pollTimer = setTimeout(pollLogs, 2000);
 
         return {
             stop() {
+                stopped = true;
+                if (pollTimer) {
+                    clearTimeout(pollTimer);
+                }
                 finished = true;
-                socket.close();
+                socket?.close();
             }
         };
     }
