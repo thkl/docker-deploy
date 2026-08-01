@@ -59,6 +59,16 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly deleteCheckout = signal(true);
   protected readonly deleteDeploymentHistory = signal(true);
   protected readonly selectedServer = computed(() => this.store.selectedProjectServer());
+  protected readonly targetServerLabel = computed(() => {
+    const project = this.store.selectedProject();
+    if (!project) {
+      return 'local';
+    }
+
+    const ids = project.serverIds?.length ? project.serverIds : [project.serverId || 'local'];
+    const names = ids.map((id) => this.store.servers().find((server) => server.id === id)?.name || id);
+    return names.length > 1 ? `${names.length} deploy targets` : names[0] || 'local';
+  });
 
   private readonly deploymentStream = inject(DeploymentStreamService);
   private readonly runtimeLogStream = inject(RuntimeLogStreamService);

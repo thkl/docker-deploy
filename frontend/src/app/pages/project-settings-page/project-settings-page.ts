@@ -110,6 +110,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly wildcardCertificate = signal(false);
   private readonly traefikFormRevision = signal(0);
   protected readonly selectedServerId = signal('local');
+  protected readonly selectedServerIds = signal<string[]>(['local']);
   protected readonly servers = this.store.servers;
   protected readonly traefikAvailable = computed(() => {
     const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
@@ -238,6 +239,7 @@ export class ProjectSettingsPage implements OnInit {
     }
     this.form.controls.serverId.valueChanges.pipe(takeUntilDestroyed()).subscribe((serverId) => {
       this.selectedServerId.set(serverId || 'local');
+      this.selectedServerIds.update((serverIds) => ensureServerSelected(serverIds, serverId || 'local'));
     });
 
     effect(() => {
@@ -466,6 +468,23 @@ export class ProjectSettingsPage implements OnInit {
     }
     this.form.controls.traefikEnabled.setValue(true);
     this.message.set(`Traefik target set to ${service.name}${port ? ` on port ${port}` : ''}.`);
+  }
+
+  protected serverSelected(serverId: string) {
+    return this.selectedServerIds().includes(serverId);
+  }
+
+  protected toggleServerTarget(serverId: string, event: Event) {
+    const checked = (event.target as HTMLInputElement).checked;
+    const current = this.selectedServerIds();
+    const next = checked
+      ? ensureServerSelected(current, serverId)
+      : current.filter((id) => id !== serverId);
+    const normalized = next.length ? next : [this.form.controls.serverId.value || 'local'];
+    this.selectedServerIds.set(normalized);
+    if (!normalized.includes(this.form.controls.serverId.value)) {
+      this.form.controls.serverId.setValue(normalized[0] || 'local');
+    }
   }
 
   protected primaryServicePort(service: ComposeServiceInspection) {
@@ -825,6 +844,7 @@ export class ProjectSettingsPage implements OnInit {
       traefikRemovePublishedPorts: true,
     });
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
+    this.selectedServerIds.set([this.form.controls.serverId.value || 'local']);
     this.resetComposeBuilder();
   }
 
@@ -834,12 +854,13 @@ export class ProjectSettingsPage implements OnInit {
     const gitSection = project.git;
     const deploymentSection = project.deployment;
     const composeSection = project.compose;
+    const serverIds = projectSection?.serverIds?.length ? projectSection.serverIds : project.serverIds?.length ? project.serverIds : [projectSection?.serverId ?? project.serverId ?? 'local'];
     this.patchedProjectName = project.name;
     this.traefikEnabled.set(Boolean(traefik.enabled));
     this.wildcardCertificate.set(Boolean(traefik.wildcardCertificate));
     this.form.reset({
       name: projectSection?.name ?? project.name,
-      serverId: projectSection?.serverId ?? project.serverId ?? 'local',
+      serverId: serverIds[0] ?? 'local',
       repositoryUrl: gitSection?.repositoryUrl ?? project.repositoryUrl ?? '',
       token: '',
       deployToken: '',
@@ -858,6 +879,7 @@ export class ProjectSettingsPage implements OnInit {
       traefikRemovePublishedPorts: traefik.removePublishedPorts !== false,
     });
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
+    this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
     this.loadBuilderFromCompose(composeSection?.override ?? project.composeOverride ?? '');
     this.applyProjectEnvSecrets(composeSection?.envSecrets ?? project.envSecrets ?? []);
   }
@@ -891,6 +913,7 @@ export class ProjectSettingsPage implements OnInit {
       }
     }
     const value = this.form.getRawValue();
+    const serverIds = ensureServerSelected(this.selectedServerIds(), value.serverId.trim() || 'local');
     const traefikSettings = this.currentTraefikComposeSettings();
     const composeOverride = this.composeMode() === 'builder'
       ? renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes(), traefikSettings)
@@ -922,6 +945,7 @@ export class ProjectSettingsPage implements OnInit {
     return {
       name: value.name.trim(),
       serverId: value.serverId.trim() || 'local',
+      serverIds,
       repositoryUrl: value.repositoryUrl.trim(),
       token: value.token.trim(),
       deployToken: value.deployToken.trim(),
@@ -942,6 +966,7 @@ export class ProjectSettingsPage implements OnInit {
       project: {
         name: value.name.trim(),
         serverId: value.serverId.trim() || 'local',
+        serverIds,
         path: value.path.trim(),
       },
       git: {
@@ -1322,6 +1347,12 @@ function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): 
       }))
       .filter((secret) => secret.service && secret.key && secret.value)
   );
+}
+
+function ensureServerSelected(serverIds: string[], serverId: string) {
+  const ids = serverIds.map((id) => id.trim()).filter(Boolean);
+  const selected = serverId.trim() || 'local';
+  return [...new Set(ids.includes(selected) ? ids : [selected, ...ids])];
 }
 
 function removeGeneratedSecretFileEntries(environment: string, secrets: ProjectEnvironmentSecret[]) {

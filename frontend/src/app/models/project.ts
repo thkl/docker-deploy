@@ -33,6 +33,7 @@ export interface ProjectSummary {
   id: string;
   name: string;
   serverId?: string;
+  serverIds?: string[];
   repositoryUrl: string;
   path: string;
   token: string;
@@ -46,6 +47,7 @@ export interface ProjectSummary {
     id?: string;
     name: string;
     serverId?: string;
+    serverIds?: string[];
     path: string;
   };
   git?: {
@@ -75,6 +77,7 @@ export interface ProjectEnvironmentSecret {
 export interface ProjectPayload {
   name: string;
   serverId?: string;
+  serverIds?: string[];
   repositoryUrl: string;
   token: string;
   deployToken: string;
@@ -95,6 +98,7 @@ export interface ProjectPayload {
   project?: {
     name: string;
     serverId: string;
+    serverIds: string[];
     path: string;
   };
   git?: {

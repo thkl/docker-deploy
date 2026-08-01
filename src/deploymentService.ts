@@ -30,19 +30,24 @@ export class DeploymentService {
      * into persisted deployment history plus WebSocket broadcasts.
      */
     startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
-        const deployment = this.deploymentStore.start(projectName, trigger, appSettings.serverId ?? "local");
+        return targetServerIds(appSettings).map((serverId) => this.startDeploymentOnServer(projectName, appSettings, trigger, serverId));
+    }
+
+    private startDeploymentOnServer(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger, serverId: string) {
+        const targetSettings = { ...appSettings, serverId };
+        const deployment = this.deploymentStore.start(projectName, trigger, serverId);
         const globalSettings = this.globalSettingsStore.readSettings();
         this.broadcastDeploymentUpdate(projectName, deployment);
-        void this.refreshServerHealth(appSettings.serverId ?? "local");
+        void this.refreshServerHealth(serverId);
 
-        const agent = this.agentManager.getClient(appSettings.serverId ?? "local");
-        const deploymentRun = agent.deployProject(projectName, appSettings, globalSettings, {
+        const agent = this.agentManager.getClient(serverId);
+        const deploymentRun = agent.deployProject(projectName, targetSettings, globalSettings, {
             onOutput: (stream, chunk) => {
                 this.deploymentStore.append(projectName, deployment.id, stream, chunk);
                 this.broadcastDeploymentUpdate(projectName);
             },
             onSuccess: () => {
-                void this.finishSuccessfulDeployment(projectName, deployment.id, appSettings, globalSettings);
+                void this.finishSuccessfulDeployment(projectName, deployment.id, targetSettings, globalSettings);
             },
             onFailure: (error) => {
                 if (!this.activeDeployments.has(deployment.id)) {
@@ -54,7 +59,7 @@ export class DeploymentService {
                     exitCode: error.code
                 });
                 this.broadcastDeploymentUpdate(projectName);
-                void this.refreshServerHealth(appSettings.serverId ?? "local");
+                void this.refreshServerHealth(serverId);
             }
         });
 
@@ -74,7 +79,7 @@ export class DeploymentService {
                 exitCode: "dispatch"
             });
             this.broadcastDeploymentUpdate(projectName);
-            void this.refreshServerHealth(appSettings.serverId ?? "local");
+            void this.refreshServerHealth(serverId);
         });
 
         return deployment;
@@ -204,7 +209,7 @@ export class DeploymentService {
                 continue;
             }
 
-            await this.reconcileDeployment(deployment.projectName, deployment.id, appSettings, globalSettings);
+            await this.reconcileDeployment(deployment.projectName, deployment.id, { ...appSettings, serverId: deployment.serverId || appSettings.serverId || "local" }, globalSettings);
         }
     }
 
@@ -274,6 +279,13 @@ export class DeploymentService {
         this.broadcastDeployment(projectName);
         this.publishDeployment(projectName, deployment);
     }
+}
+
+function targetServerIds(appSettings: ProjectSettings) {
+    const ids = (appSettings.serverIds?.length ? appSettings.serverIds : [appSettings.serverId ?? "local"])
+        .map((serverId) => serverId.trim())
+        .filter(Boolean);
+    return [...new Set(ids.length ? ids : ["local"])];
 }
 
 function isRuntimeLogStream(value: RuntimeLogStream | Promise<RuntimeLogStream | void> | void): value is RuntimeLogStream {

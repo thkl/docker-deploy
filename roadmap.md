@@ -277,6 +277,7 @@ Server UI:
 - [x] Show host diagnostics from agents: CPU load, memory, disk, and metric timestamp when available.
 - [x] Push server health updates to the UI over the global event stream.
 - [x] Ping all configured remote agents every 5 minutes.
+- [x] Allow one project to deploy to multiple target servers for agent/app fan-out updates.
 
 Agent protocol:
 

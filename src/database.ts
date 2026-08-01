@@ -106,6 +106,7 @@ export class AppDatabase {
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 server_id TEXT NOT NULL REFERENCES servers(id),
+                server_ids_json TEXT,
                 token TEXT,
                 repository_url TEXT,
                 deploy_token TEXT,
@@ -192,6 +193,7 @@ export class AppDatabase {
         this.ensureColumn("servers", "last_health_error", "TEXT");
         this.ensureColumn("servers", "capabilities_json", "TEXT");
         this.ensureColumn("projects", "env_secrets_json", "TEXT");
+        this.ensureColumn("projects", "server_ids_json", "TEXT");
         this.migrateProjectsToStableIds();
         this.connection.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)").run(String(schemaVersion));
     }
@@ -234,6 +236,7 @@ export class AppDatabase {
                         id TEXT PRIMARY KEY,
                         name TEXT NOT NULL UNIQUE,
                         server_id TEXT NOT NULL REFERENCES servers(id),
+                        server_ids_json TEXT,
                         token TEXT,
                         repository_url TEXT,
                         deploy_token TEXT,
@@ -281,13 +284,14 @@ export class AppDatabase {
                     this.connection
                         .prepare(
                             `INSERT INTO projects_next
-                             (id, name, server_id, token, repository_url, deploy_token, path, compose_override, env_secrets_json, created_at, updated_at)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                         )
                         .run(
                             projectId,
                             project.name,
                             project.serverId,
+                            JSON.stringify([project.serverId || "local"]),
                             project.token,
                             project.repositoryUrl,
                             project.deployToken,
@@ -666,16 +670,18 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
         ? (database.prepare("SELECT id, created_at AS createdAt FROM projects WHERE id = ?").get(settings.id) as { id: string; createdAt: string } | undefined)
         : (database.prepare("SELECT id, created_at AS createdAt FROM projects WHERE name = ?").get(name) as { id: string; createdAt: string } | undefined);
     const projectId = existing?.id ?? settings.id ?? randomUUID();
-    const serverId = settings.serverId ?? "local";
+    const serverIds = normalizeServerIds(settings.serverIds, settings.serverId);
+    const serverId = serverIds[0] ?? "local";
 
     database
         .prepare(
             `INSERT INTO projects
-             (id, name, server_id, token, repository_url, deploy_token, path, compose_override, env_secrets_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 server_id = excluded.server_id,
+                server_ids_json = excluded.server_ids_json,
                 token = excluded.token,
                 repository_url = excluded.repository_url,
                 deploy_token = excluded.deploy_token,
@@ -684,7 +690,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
                 env_secrets_json = excluded.env_secrets_json,
                 updated_at = excluded.updated_at`
         )
-        .run(projectId, name, serverId, encryptSecret(settings.token), settings.repositoryUrl ?? null, encryptSecret(settings.deployToken), settings.path ?? null, settings.composeOverride ?? null, encryptedProjectEnvSecretsJson(settings.envSecrets), existing?.createdAt ?? now, now);
+        .run(projectId, name, serverId, JSON.stringify(serverIds), encryptSecret(settings.token), settings.repositoryUrl ?? null, encryptSecret(settings.deployToken), settings.path ?? null, settings.composeOverride ?? null, encryptedProjectEnvSecretsJson(settings.envSecrets), existing?.createdAt ?? now, now);
 
     database.prepare("DELETE FROM project_traefik_settings WHERE project_id = ?").run(projectId);
     if (!settings.traefik) {
@@ -757,10 +763,19 @@ function readLegacyJson<T>(path: string): T | undefined {
  * Ensures imported legacy project records have required new fields.
  */
 function normalizeProjectForDatabase(settings: ProjectSettings): ProjectSettings {
+    const serverIds = normalizeServerIds(settings.serverIds, settings.serverId);
     return {
         ...settings,
-        serverId: settings.serverId ?? "local"
+        serverId: serverIds[0] ?? "local",
+        serverIds
     };
+}
+
+function normalizeServerIds(serverIds: string[] | undefined, fallback?: string) {
+    const ids = (serverIds?.length ? serverIds : [fallback ?? "local"])
+        .map((serverId) => serverId.trim())
+        .filter(Boolean);
+    return [...new Set(ids.length ? ids : ["local"])];
 }
 
 /**

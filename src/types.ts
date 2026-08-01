@@ -21,6 +21,7 @@ export interface TraefikSettings {
 export interface ProjectSettings {
     id?: string;
     serverId?: string;
+    serverIds?: string[];
     token?: string;
     repositoryUrl?: string;
     deployToken?: string;
@@ -62,6 +63,7 @@ export interface GlobalSettingsPayload {
 export interface ProjectPayload {
     name?: string;
     serverId?: string;
+    serverIds?: string[];
     token?: string;
     repositoryUrl?: string;
     deployToken?: string;
@@ -82,6 +84,7 @@ export interface ProjectPayload {
     project?: {
         name?: string;
         serverId?: string;
+        serverIds?: string[];
         path?: string;
     };
     git?: {

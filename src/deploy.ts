@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
-import { renderPersistedEnvFileRewriteScript, renderProjectRootEnvFileScript, renderProjectRootStorageOverlayScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderProjectRootEnvFileScript, renderProjectRootStorageOverlayScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 
@@ -57,6 +57,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
     const projectRootStorageOverlayScript = renderProjectRootStorageOverlayScript();
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
+    const persistedStorageGuardScript = renderPersistedStorageGuardScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
 
@@ -98,6 +99,7 @@ ${secretOverlayScript}
                 echo "--> Rendering persistent Compose deployment file..."
                 docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --no-interpolate > "$COMPOSE_WORKSPACE/docker-compose.deploy.yml"
 ${persistedEnvFileRewriteScript}
+${persistedStorageGuardScript}
                 COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
                 
                 echo "--> Testing build for new changes..."

@@ -105,12 +105,14 @@ In the controller UI, open global settings, add the agent URL, paste the pairing
 
 1. Open the UI.
 2. Create a project.
-3. Select the target server.
+3. Select the primary target server and any additional deploy targets.
 4. Set the repository URL and host checkout path.
 5. Configure either repository Compose usage or a stored Compose override.
 6. Save or Save & deploy.
 
 The target path is a persistent project root on the selected Docker server, not the controller machine. Deployments clone into a temporary checkout managed by Deploy below that root.
+
+When multiple deploy targets are selected, manual deploys, webhooks, and CI deploys start one deployment job per server. Compose import, validation, runtime status, runtime actions, and logs use the primary target server.
 
 ## Compose Builder
 
@@ -255,7 +257,7 @@ Deploy writes those data-path rewrites as a separate generated overlay at:
 .updater/compose/docker-compose.storage.yml
 ```
 
-The repository compose file and stored Deploy compose file stay unchanged; deployment and validation include the storage overlay when temporary-checkout bind mounts need to point back at persistent project data.
+The repository compose file and stored Deploy compose file stay unchanged; deployment and validation include the storage overlay when temporary-checkout bind mounts need to point back at persistent project data. The persisted deploy file is checked before build/start, and deployment fails before replacing containers if any bind mount still points into `.updater/tmpdeploy`.
 
 Use the Compose builder storage mapping preview to move relative data paths to an external host path such as `/root/docker-apps/<project>/data`. If unsafe mounts remain, the deploy still succeeds and the deployment log explains why checkout cleanup was skipped.
 

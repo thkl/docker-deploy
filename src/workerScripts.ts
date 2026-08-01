@@ -75,9 +75,12 @@ export function renderProjectRootStorageOverlayScript() {
                                 . as $service |
                                 ($service.value.volumes // []) as $volumes |
                                 ($volumes | map(
-                                    if .type == "bind"
-                                       and (.source | type) == "string"
-                                       and (.source == $tmp or (.source | startswith($tmp + "/")))
+                                    if type == "string" and (. == $tmp or startswith($tmp + ":") or startswith($tmp + "/"))
+                                    then ($root + (.[($tmp | length):]))
+                                    elif type == "object"
+                                         and .type == "bind"
+                                         and (.source | type) == "string"
+                                         and (.source == $tmp or (.source | startswith($tmp + "/")))
                                     then .source = ($root + (.source[($tmp | length):]))
                                     else .
                                     end
@@ -94,6 +97,37 @@ export function renderProjectRootStorageOverlayScript() {
                         fi
                     else
                         cat /tmp/deploy-compose-storage-error.txt >&2
+                    fi
+                fi`;
+}
+
+/**
+ * Fails deployment before build/down/up when the persisted deployment Compose
+ * file still points a bind mount at the temporary checkout.
+ */
+export function renderPersistedStorageGuardScript(targetFile: string) {
+    return `
+                if [ -f ${targetFile} ] && [ -n "$TMP_DEPLOY" ]; then
+                    TMP_DEPLOY_NO_SLASH="\${TMP_DEPLOY%/}"
+                    if docker compose -f ${targetFile} config --format json > /tmp/deploy-compose-persisted.json 2> /tmp/deploy-compose-persisted-error.txt; then
+                        if jq -e --arg tmp "$TMP_DEPLOY_NO_SLASH" '
+                            [
+                                (.services // {})[]?.volumes[]? |
+                                if type == "string" then
+                                    (. == $tmp or startswith($tmp + ":") or startswith($tmp + "/"))
+                                elif type == "object" and .type == "bind" and (.source | type) == "string" then
+                                    (.source == $tmp or (.source | startswith($tmp + "/")))
+                                else
+                                    false
+                                end
+                            ] | any
+                        ' /tmp/deploy-compose-persisted.json > /dev/null; then
+                            echo "--> CRITICAL: Persistent Compose file still contains temporary checkout bind mounts." >&2
+                            exit 1
+                        fi
+                    else
+                        cat /tmp/deploy-compose-persisted-error.txt >&2
+                        exit 1
                     fi
                 fi`;
 }

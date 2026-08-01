@@ -332,7 +332,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
 
 function buildTraefikImpactProjects(config: Record<string, ProjectSettings>, serverId: string, globalSettings: GlobalSettings): TraefikAffectedProject[] {
     return Object.entries(config)
-        .filter(([, settings]) => (settings.serverId || "local") === serverId && settings.traefik?.enabled)
+        .filter(([, settings]) => targetServerIds(settings).includes(serverId) && settings.traefik?.enabled)
         .map(([name, settings]) => {
             const traefik = settings.traefik;
             const network = traefik?.network || globalSettings.defaultTraefikNetwork;
@@ -361,8 +361,15 @@ function payloadProjectName(payload: ProjectPayload) {
     return payload.project?.name?.trim() || payload.name?.trim();
 }
 
-function payloadServerId(payload: ProjectPayload) {
-    return payload.project?.serverId?.trim() || payload.serverId?.trim();
+function payloadServerId(payload: ProjectPayload, fallback = "local") {
+    return payloadServerIds(payload, [fallback])[0] || fallback;
+}
+
+function payloadServerIds(payload: ProjectPayload, fallback = ["local"]) {
+    const ids = (payload.project?.serverIds?.length ? payload.project.serverIds : payload.serverIds?.length ? payload.serverIds : payload.project?.serverId || payload.serverId ? [payload.project?.serverId ?? payload.serverId ?? "local"] : fallback)
+        .map((serverId) => serverId.trim())
+        .filter(Boolean);
+    return [...new Set(ids.length ? ids : ["local"])];
 }
 
 function payloadProjectPath(payload: ProjectPayload) {
@@ -508,7 +515,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             }
 
             config[repoName] = {
-                serverId: payloadServerId(payload) || "local",
+                serverId: payloadServerId(payload),
+                serverIds: payloadServerIds(payload),
                 ...(repoToken ? { token: repoToken } : {}),
                 ...(repositoryUrl ? { repositoryUrl } : {}),
                 ...(deployToken ? { deployToken } : {}),
@@ -562,7 +570,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
             config[nextName] = {
                 id: existing.id,
-                serverId: payloadServerId(payload) || existing.serverId || "local",
+                serverId: payloadServerId(payload, existing.serverId || "local"),
+                serverIds: payloadServerIds(payload, existing.serverIds?.length ? existing.serverIds : [existing.serverId || "local"]),
                 token: nextToken || existing.token,
                 ...(nextRepositoryUrl ? { repositoryUrl: nextRepositoryUrl } : {}),
                 ...(nextDeployToken || existing.deployToken ? { deployToken: nextDeployToken || existing.deployToken } : {}),
@@ -618,8 +627,10 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             }
 
             if (payload.stopContainers) {
-                await agent.stopProject(projectName, appSettings, globalSettings);
-                actions.push("containers stopped");
+                for (const serverId of targetServerIds(appSettings)) {
+                    await agentManager.getClient(serverId).stopProject(projectName, { ...appSettings, serverId }, globalSettings);
+                    actions.push(`containers stopped on ${serverId}`);
+                }
             }
 
             if (payload.deleteCheckout) {
@@ -657,8 +668,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             return;
         }
 
-        const deployment = deploymentService.startDeployment(projectName, appSettings, "manual");
-        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id });
+        const deployments = deploymentService.startDeployment(projectName, appSettings, "manual");
+        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployments[0]?.id, deploymentIds: deployments.map((deployment) => deployment.id) });
     });
 
     app.post("/api/projects/:name/deployments/cancel", (req: Request, res: Response) => {
@@ -760,7 +771,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const traefik = normalizeTraefikSettings(payload, globalSettings);
             const appSettings: ProjectSettings = {
                 id: existing.id,
-                serverId: payloadServerId(payload) || existing.serverId || "local",
+                serverId: payloadServerId(payload, existing.serverId || "local"),
+                serverIds: payloadServerIds(payload, existing.serverIds?.length ? existing.serverIds : [existing.serverId || "local"]),
                 token: existing.token,
                 deployToken: existing.deployToken,
                 ...(repositoryUrl ? { repositoryUrl } : existing.repositoryUrl ? { repositoryUrl: existing.repositoryUrl } : {}),
@@ -1060,7 +1072,7 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             return;
         }
 
-        const deployment = deploymentService.startDeployment(projectName, appSettings, "webhook");
+        const deployments = deploymentService.startDeployment(projectName, appSettings, "webhook");
         webhookStore.record({
             projectId: appSettings.id,
             projectName,
@@ -1069,9 +1081,9 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             status: "dispatched",
             reason: "Webhook matched project and dispatched deployment.",
             candidates,
-            deploymentId: deployment.id
+            deploymentId: deployments[0]?.id
         });
-        console.log(`Webhook deployment dispatched for ${projectName} (${deployment.id}).`);
+        console.log(`Webhook deployment dispatched for ${projectName} (${deployments.map((deployment) => deployment.id).join(", ")}).`);
         res.status(200).send("Build worker dispatched");
     }
 }
@@ -1106,8 +1118,8 @@ function registerCiDeployRoute(app: Express, dependencies: Pick<RouteDependencie
             return;
         }
 
-        const deployment = deploymentService.startDeployment(projectName, appSettings, "ci");
-        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id });
+        const deployments = deploymentService.startDeployment(projectName, appSettings, "ci");
+        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployments[0]?.id, deploymentIds: deployments.map((deployment) => deployment.id) });
     });
 }
 
@@ -1120,7 +1132,8 @@ function readHeader(value: string | string[] | undefined) {
 }
 
 function projectSummary(name: string, settings: ProjectSettings, globalSettings: ReturnType<GlobalSettingsStore["readSettings"]>, deploymentStore: DeploymentStore) {
-    const serverId = settings.serverId ?? "local";
+    const serverIds = targetServerIds(settings);
+    const serverId = serverIds[0] ?? "local";
     const repositoryUrl = settings.repositoryUrl ?? "";
     const path = settings.path ?? defaultProjectPath(globalSettings, name);
     const token = settings.token ? maskToken(settings.token) : "";
@@ -1134,6 +1147,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         id: settings.id,
         name,
         serverId,
+        serverIds,
         repositoryUrl,
         path,
         token,
@@ -1147,6 +1161,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
             id: settings.id,
             name,
             serverId,
+            serverIds,
             path
         },
         git: {
@@ -1163,6 +1178,13 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
             hasOverride: Boolean(composeOverride)
         }
     };
+}
+
+function targetServerIds(settings: ProjectSettings) {
+    const ids = (settings.serverIds?.length ? settings.serverIds : [settings.serverId ?? "local"])
+        .map((serverId) => serverId.trim())
+        .filter(Boolean);
+    return [...new Set(ids.length ? ids : ["local"])];
 }
 
 function maskEnvSecrets(secrets: ProjectEnvironmentSecret[] | undefined) {

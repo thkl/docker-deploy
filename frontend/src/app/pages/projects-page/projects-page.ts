@@ -41,6 +41,12 @@ export class ProjectsPage {
             : 'Unknown';
   }
 
+  protected targetServerLabel(project: { serverId?: string; serverIds?: string[] }) {
+    const ids = project.serverIds?.length ? project.serverIds : [project.serverId || 'local'];
+    const names = ids.map((id) => this.store.servers().find((server) => server.id === id)?.name || id);
+    return names.length > 1 ? `${names.length} servers: ${names.join(', ')}` : names[0] || 'local';
+  }
+
   protected formatDate(value?: string) {
     if (!value) {
       return '';

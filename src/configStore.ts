@@ -21,6 +21,7 @@ export class ConfigStore {
                     p.name,
                     p.id,
                     p.server_id AS serverId,
+                    p.server_ids_json AS serverIdsJson,
                     p.token,
                     p.repository_url AS repositoryUrl,
                     p.deploy_token AS deployToken,
@@ -94,6 +95,7 @@ export class ConfigStore {
                     p.id,
                     p.name,
                     p.server_id AS serverId,
+                    p.server_ids_json AS serverIdsJson,
                     p.token,
                     p.repository_url AS repositoryUrl,
                     p.deploy_token AS deployToken,
@@ -126,6 +128,7 @@ interface ProjectRow {
     id: string;
     name: string;
     serverId: string;
+    serverIdsJson: string | null;
     token: string | null;
     repositoryUrl: string | null;
     deployToken: string | null;
@@ -149,9 +152,11 @@ interface ProjectRow {
  * Converts a project join row into the API-facing settings shape.
  */
 function rowToProjectSettings(row: ProjectRow): ProjectSettings {
+    const serverIds = parseServerIds(row.serverIdsJson, row.serverId);
     return {
         id: row.id,
-        serverId: row.serverId || "local",
+        serverId: serverIds[0] || "local",
+        serverIds,
         ...(row.token ? { token: decryptSecret(row.token) } : {}),
         ...(row.repositoryUrl ? { repositoryUrl: row.repositoryUrl } : {}),
         ...(row.deployToken ? { deployToken: decryptSecret(row.deployToken) } : {}),
@@ -176,6 +181,20 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
                   }
               })
     };
+}
+
+function parseServerIds(value: string | null, fallback: string) {
+    if (value) {
+        try {
+            const parsed = JSON.parse(value) as unknown[];
+            const ids = parsed.map((id) => String(id).trim()).filter(Boolean);
+            return [...new Set(ids.length ? ids : [fallback || "local"])];
+        } catch {
+            return [fallback || "local"];
+        }
+    }
+
+    return [fallback || "local"];
 }
 
 function parseProjectEnvSecrets(value: string) {

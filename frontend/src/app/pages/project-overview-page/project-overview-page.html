@@ -22,6 +22,7 @@
     </div>
     <div class="status-facts">
       <span>{{ selectedServer()?.name || project.serverId || 'local' }}</span>
+      <span>{{ targetServerLabel() }}</span>
       <span>{{ project.hasComposeOverride ? 'Stored override' : 'Repository compose' }}</span>
       <span>{{ project.traefik.enabled && project.traefik.hostname ? project.traefik.hostname : 'No proxy' }}</span>
       <span>{{ project.path || '/root/docker-apps/' + project.name }}</span>

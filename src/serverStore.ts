@@ -107,7 +107,9 @@ export class ServerStore {
      */
     deleteRemote(serverId: string) {
         const server = this.requireRemote(serverId);
-        const projectCount = this.database.prepare("SELECT COUNT(*) AS count FROM projects WHERE server_id = ?").get(server.id) as { count: number };
+        const projectCount = this.database
+            .prepare("SELECT COUNT(*) AS count FROM projects WHERE server_id = ? OR server_ids_json LIKE ?")
+            .get(server.id, `%"${server.id.replace(/"/g, "\"\"")}"%`) as { count: number };
         if (projectCount.count > 0) {
             throw new Error("Cannot remove this agent while projects still target it.");
         }

@@ -33,7 +33,7 @@
       </label>
 
       <label>
-        <span>Target server</span>
+        <span>Primary target server</span>
         <select formControlName="serverId">
           @for (server of servers(); track server.id) {
           <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
@@ -42,6 +42,21 @@
           }
         </select>
       </label>
+
+      <fieldset class="target-server-list">
+        <legend>Deploy to servers</legend>
+        @for (server of servers(); track server.id) {
+          <label class="check-row">
+            <input type="checkbox" [checked]="serverSelected(server.id)" (change)="toggleServerTarget(server.id, $event)" />
+            <span>{{ server.name }} · {{ server.kind }}</span>
+          </label>
+        } @empty {
+          <label class="check-row">
+            <input type="checkbox" checked disabled />
+            <span>Local Server · local</span>
+          </label>
+        }
+      </fieldset>
 
       <label>
         <span>Repository URL</span>

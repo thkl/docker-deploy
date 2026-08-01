@@ -34,6 +34,7 @@
           <tr>
             <td>
               <strong>{{ project.name }}</strong>
+              <small>{{ targetServerLabel(project) }}</small>
               <small>
                 @if (project.deployToken && project.token) {
                   CI and webhook ready
