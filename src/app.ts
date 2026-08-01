@@ -104,7 +104,9 @@ class App {
      */
     private async start() {
         await this.warmLocalCapabilities();
-        await this.deploymentService.reconcileRunningDeployments(this.configStore.readConfig());
+        const config = this.configStore.readConfig();
+        await this.deploymentService.reconcileRunningDeployments(config);
+        await this.deploymentService.cleanupStaleTempDeployments(config);
         this.configureBodyParsing();
         registerRoutes(this.app, {
             adminAuth: this.adminAuth,

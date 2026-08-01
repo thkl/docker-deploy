@@ -206,14 +206,12 @@ export class DeploymentService {
 
             await this.reconcileDeployment(deployment.projectName, deployment.id, appSettings, globalSettings);
         }
-
-        await this.cleanupStaleTempDeployments(projects, globalSettings);
     }
 
     /**
      * Removes leftover temp checkouts after controller restarts.
      */
-    private async cleanupStaleTempDeployments(projects: Record<string, ProjectSettings>, globalSettings: GlobalSettings) {
+    async cleanupStaleTempDeployments(projects: Record<string, ProjectSettings>, globalSettings = this.globalSettingsStore.readSettings()) {
         if (!globalSettings.cleanupAfterDeploy) {
             return;
         }
