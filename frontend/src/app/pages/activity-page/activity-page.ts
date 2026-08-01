@@ -5,6 +5,7 @@ import { ControllerEvent, EventBusService } from '../../services/event-bus';
 
 interface ActivityItem {
   id: string;
+  dedupeKey: string;
   type: ControllerEvent['type'];
   title: string;
   detail: string;
@@ -30,7 +31,7 @@ export class ActivityPage implements OnInit, OnDestroy {
     this.subscription = this.eventBus.stream().subscribe({
       next: (event) => {
         this.streamState.set('live');
-        this.events.update((events) => [this.toActivityItem(event), ...events].slice(0, 200));
+        this.upsertActivityItem(this.toActivityItem(event));
       },
       error: () => {
         this.streamState.set('error');
@@ -61,10 +62,23 @@ export class ActivityPage implements OnInit, OnDestroy {
     return value.replace(/\./g, ' ');
   }
 
+  private upsertActivityItem(item: ActivityItem) {
+    this.events.update((events) => {
+      const existing = events.findIndex((event) => event.dedupeKey === item.dedupeKey);
+      if (existing === -1) {
+        return [item, ...events].slice(0, 200);
+      }
+
+      const next = events.filter((event) => event.dedupeKey !== item.dedupeKey);
+      return [item, ...next].slice(0, 200);
+    });
+  }
+
   private toActivityItem(event: ControllerEvent): ActivityItem {
     if (event.type === 'connected') {
       return {
         id: this.eventId(event.type, event.connectedAt),
+        dedupeKey: 'connected',
         type: event.type,
         title: 'Event stream connected',
         detail: 'Controller events are flowing to this browser.',
@@ -76,6 +90,7 @@ export class ActivityPage implements OnInit, OnDestroy {
     if (event.type === 'projects.updated') {
       return {
         id: this.eventId(event.type, event.changedAt),
+        dedupeKey: 'projects.updated',
         type: event.type,
         title: 'Projects changed',
         detail: 'Project configuration was updated.',
@@ -87,6 +102,7 @@ export class ActivityPage implements OnInit, OnDestroy {
     if (event.type === 'servers.updated') {
       return {
         id: this.eventId(event.type, event.changedAt),
+        dedupeKey: 'servers.updated',
         type: event.type,
         title: 'Servers changed',
         detail: 'Server or agent configuration was updated.',
@@ -98,6 +114,7 @@ export class ActivityPage implements OnInit, OnDestroy {
     if (event.type === 'server.health') {
       return {
         id: this.eventId(event.type, event.server.id, event.server.updatedAt),
+        dedupeKey: `server.health:${event.server.id}`,
         type: event.type,
         title: `${event.server.name} is ${event.server.status || 'unknown'}`,
         detail: [
@@ -117,7 +134,8 @@ export class ActivityPage implements OnInit, OnDestroy {
     if (event.type === 'deployment.updated') {
       const deployment = event.deployment;
       return {
-        id: this.eventId(event.type, event.projectId || event.projectName, deployment?.id || 'none', deployment?.finishedAt || deployment?.startedAt || new Date().toISOString()),
+        id: this.eventId(event.type, event.projectId || event.projectName, deployment?.id || 'none'),
+        dedupeKey: `deployment.updated:${deployment?.id || event.projectId || event.projectName}`,
         type: event.type,
         title: deployment ? `${deployment.projectName} deployment ${deployment.status}` : `${event.projectName} deployment updated`,
         detail: deployment
@@ -136,6 +154,7 @@ export class ActivityPage implements OnInit, OnDestroy {
     if (event.type === 'runtime.status') {
       return {
         id: this.eventId(event.type, event.projectId || event.projectName, event.status.checkedAt),
+        dedupeKey: `runtime.status:${event.projectId || event.projectName}`,
         type: event.type,
         title: `${event.projectName} runtime ${event.status.status}`,
         detail: `${event.status.services.length} services checked${event.status.error ? ` · ${event.status.error}` : ''}`,
@@ -153,6 +172,7 @@ export class ActivityPage implements OnInit, OnDestroy {
 
     return {
       id: this.eventId(event.type, event.operation.id, event.operation.finishedAt),
+      dedupeKey: `runtime.operation.updated:${event.operation.id}`,
       type: event.type,
       title: `${event.projectName} ${event.operation.action} ${event.operation.status}`,
       detail: `${event.operation.service} on ${event.operation.serverId}${event.operation.error ? ` · ${event.operation.error}` : ''}`,
@@ -163,6 +183,6 @@ export class ActivityPage implements OnInit, OnDestroy {
   }
 
   private eventId(...parts: string[]) {
-    return `${parts.join(':')}:${Math.random().toString(36).slice(2)}`;
+    return parts.join(':');
   }
 }

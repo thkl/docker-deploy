@@ -116,10 +116,15 @@ p {
   justify-items: end;
 }
 
-.activity-meta time {
+.activity-meta time,
+.activity-meta span {
   color: var(--muted);
   font-size: 0.82rem;
   white-space: nowrap;
+}
+
+.activity-meta span {
+  color: color-mix(in srgb, var(--muted), transparent 24%);
 }
 
 .activity-meta a {

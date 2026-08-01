@@ -23,6 +23,7 @@
           </div>
           <div class="activity-meta">
             <time>{{ formatDate(event.time) }}</time>
+            <span>latest update</span>
             @if (event.projectId) {
               <a [routerLink]="['/projects', event.projectId, 'overview']">Open project</a>
             }
