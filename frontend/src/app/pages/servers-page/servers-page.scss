@@ -214,7 +214,8 @@ meter {
 }
 
 .traefik-paths,
-.traefik-containers {
+.traefik-containers,
+.validation-checks {
   display: grid;
   gap: 0.5rem;
 }
@@ -229,6 +230,77 @@ meter {
   display: grid;
   gap: 0.6rem;
   grid-template-columns: minmax(180px, 0.45fr) minmax(0, 1fr);
+}
+
+.traefik-validation {
+  background: color-mix(in srgb, var(--running), transparent 92%);
+  border: 1px solid color-mix(in srgb, var(--running), transparent 58%);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.65rem;
+}
+
+.traefik-validation.warn {
+  background: color-mix(in srgb, var(--warning), transparent 92%);
+  border-color: color-mix(in srgb, var(--warning), transparent 52%);
+}
+
+.traefik-validation.fail {
+  background: color-mix(in srgb, var(--danger), transparent 94%);
+  border-color: color-mix(in srgb, var(--danger), transparent 56%);
+}
+
+.validation-head {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.validation-check {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.55rem;
+}
+
+.validation-check strong {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.42rem;
+}
+
+.validation-dot {
+  background: var(--running);
+  border-radius: 999px;
+  display: inline-block;
+  height: 0.48rem;
+  width: 0.48rem;
+}
+
+.validation-check.warn .validation-dot {
+  background: var(--warning);
+}
+
+.validation-check.fail .validation-dot {
+  background: var(--danger);
+}
+
+.validation-check pre {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.78rem;
+  margin: 0.25rem 0 0;
+  max-height: 11rem;
+  overflow: auto;
+  padding: 0.55rem;
+  white-space: pre-wrap;
 }
 
 .managed-panel {

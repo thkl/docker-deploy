@@ -52,6 +52,9 @@
           <button type="button" class="secondary" (click)="backupTraefik(server)" [disabled]="backingUpTraefik() !== '' || !server.capabilities?.traefik?.available">
             {{ backingUpTraefik() === server.id ? 'Exporting...' : 'Export Traefik' }}
           </button>
+          <button type="button" class="secondary" (click)="validateTraefik(server)" [disabled]="validatingTraefik() !== '' || !server.capabilities?.traefik?.available">
+            {{ validatingTraefik() === server.id ? 'Validating...' : 'Validate Traefik' }}
+          </button>
           @if (editingServer() === server.id) {
             <button type="button" class="secondary" (click)="saveServerName(server)" [disabled]="savingServerName() === server.id">
               {{ savingServerName() === server.id ? 'Saving...' : 'Save name' }}
@@ -194,6 +197,26 @@
             </div>
           } @else {
             <p class="muted-copy">No Traefik containers were detected on this server.</p>
+          }
+
+          @if (validationFor(server); as validation) {
+            <div class="traefik-validation" [class.fail]="validationTone(validation.status) === 'fail'" [class.warn]="validationTone(validation.status) === 'warn'">
+              <div class="validation-head">
+                <strong>Validation {{ validation.status }}</strong>
+                <span>{{ formatDate(validation.checkedAt) }}</span>
+              </div>
+              <div class="validation-checks">
+                @for (check of validation.checks; track check.key) {
+                  <article class="validation-check" [class.fail]="validationTone(check.status) === 'fail'" [class.warn]="validationTone(check.status) === 'warn'">
+                    <strong><span class="validation-dot"></span>{{ check.label }}</strong>
+                    <span>{{ check.detail }}</span>
+                    @if (check.output) {
+                      <pre>{{ check.output }}</pre>
+                    }
+                  </article>
+                }
+              </div>
+            </div>
           }
         } @else {
           <p class="muted-copy">Refresh health to inspect Traefik on this server.</p>

@@ -1,7 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import { ProjectSummary, ServerRecord } from '../../models/project';
+import { ProjectSummary, ServerRecord, TraefikConfigValidation, TraefikDiagnosticStatus } from '../../models/project';
 import { readMigratedSessionStorageKey, removeSessionStorageKeys } from '../../services/browser-storage';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
@@ -24,6 +24,7 @@ export class ServersPage implements OnInit {
   protected readonly pairingServer = signal('');
   protected readonly refreshingServer = signal('');
   protected readonly backingUpTraefik = signal('');
+  protected readonly validatingTraefik = signal('');
   protected readonly deletingServer = signal('');
   protected readonly editingServer = signal('');
   protected readonly savingServerName = signal('');
@@ -31,6 +32,7 @@ export class ServersPage implements OnInit {
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly pairingTokens = signal<Record<string, string>>({});
+  protected readonly traefikValidation = signal<Record<string, TraefikConfigValidation>>({});
   protected readonly servers = this.store.servers;
   protected readonly serverForm = this.fb.group({
     name: [''],
@@ -147,6 +149,24 @@ export class ServersPage implements OnInit {
       error: (error) => {
         this.error.set(error?.error?.error || 'Could not export Traefik backup.');
         this.backingUpTraefik.set('');
+      },
+    });
+  }
+
+  protected validateTraefik(server: ServerRecord) {
+    this.validatingTraefik.set(server.id);
+    this.message.set('');
+    this.error.set('');
+
+    this.api.validateTraefik(server.id).subscribe({
+      next: (validation) => {
+        this.traefikValidation.update((current) => ({ ...current, [server.id]: validation }));
+        this.message.set(`Traefik validation ${validation.status} for ${server.name}.`);
+        this.validatingTraefik.set('');
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not validate Traefik config.');
+        this.validatingTraefik.set('');
       },
     });
   }
@@ -307,6 +327,14 @@ export class ServersPage implements OnInit {
 
   protected traefikMountLabel(mount: { source: string; target: string }) {
     return `${mount.source} -> ${mount.target}`;
+  }
+
+  protected validationFor(server: ServerRecord) {
+    return this.traefikValidation()[server.id];
+  }
+
+  protected validationTone(status: TraefikDiagnosticStatus) {
+    return status;
   }
 
   protected memoryLabel(server: ServerRecord) {

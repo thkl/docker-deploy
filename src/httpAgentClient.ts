@@ -118,6 +118,17 @@ export class HttpAgentClient implements AgentClient {
     }
 
     /**
+     * Validates Traefik config files through a remote target server.
+     */
+    async validateTraefik(serverId: string, globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["validateTraefik"]>> }>({
+            jobType: "validateTraefik",
+            payload: { serverId, globalSettings } satisfies DetectTraefikJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
      * Diagnoses Traefik routing through a remote target server.
      */
     async diagnoseTraefik(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {

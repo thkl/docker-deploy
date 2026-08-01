@@ -191,6 +191,22 @@ export interface TraefikConfigBackupFile {
     error?: string;
 }
 
+export interface TraefikConfigValidation {
+    serverId: string;
+    checkedAt: string;
+    status: TraefikDiagnosticStatus;
+    inventory: ServerCapabilities["traefik"];
+    checks: TraefikConfigValidationCheck[];
+}
+
+export interface TraefikConfigValidationCheck {
+    key: string;
+    label: string;
+    status: TraefikDiagnosticStatus;
+    detail: string;
+    output?: string;
+}
+
 export interface ServerSystemMetrics {
     checkedAt: string;
     loadAverage: number[];

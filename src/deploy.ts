@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
+import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -430,6 +430,88 @@ export async function backupTraefikConfig(serverId: string, globalSettings: Glob
     };
 }
 
+export async function validateTraefikConfig(serverId: string, globalSettings: GlobalSettings): Promise<TraefikConfigValidation> {
+    const networkName = globalSettings.defaultTraefikNetwork || "proxy";
+    const checkedAt = new Date().toISOString();
+    const result = await inspectTraefikContainers(networkName);
+    const inspect = result.ok ? result.inspect : [];
+    const inventory = result.ok
+        ? await buildTraefikInventory(inspect, result.containerCount, result.networkPresent, networkName, checkedAt)
+        : {
+              available: false,
+              containerCount: 0,
+              networkPresent: false,
+              checkedAt
+          };
+    const checks: TraefikConfigValidationCheck[] = [];
+
+    if (!result.ok) {
+        checks.push({
+            key: "docker-inspect",
+            label: "Docker inspection",
+            status: "fail",
+            detail: "Could not inspect Traefik containers on this server."
+        });
+    }
+
+    checks.push({
+        key: "traefik-container",
+        label: "Traefik container",
+        status: inventory.containerCount > 0 ? "pass" : "fail",
+        detail: inventory.containerCount > 0 ? `${inventory.containerCount} Traefik container(s) found.` : "No Traefik container was found."
+    });
+
+    checks.push({
+        key: "entrypoints",
+        label: "Entrypoints",
+        status: inventory.entryPoints?.length ? "pass" : "warn",
+        detail: inventory.entryPoints?.length ? `Detected ${inventory.entryPoints.join(", ")}.` : "No entrypoints were detected from mounted static config or command args."
+    });
+
+    checks.push({
+        key: "cert-resolvers",
+        label: "Certificate resolvers",
+        status: inventory.certResolvers?.length ? "pass" : "warn",
+        detail: inventory.certResolvers?.length ? `Detected ${inventory.certResolvers.join(", ")}.` : "No certificate resolvers were detected."
+    });
+
+    checks.push({
+        key: "docker-provider-network",
+        label: "Docker provider network",
+        status: inventory.dockerProviderNetwork ? "pass" : "warn",
+        detail: inventory.dockerProviderNetwork ? `Using ${inventory.dockerProviderNetwork}.` : "No Docker provider network was configured or safely inferred."
+    });
+
+    if (inventory.certResolvers?.length) {
+        checks.push({
+            key: "acme-storage",
+            label: "ACME storage",
+            status: inventory.acmeStorage ? "pass" : "warn",
+            detail: inventory.acmeStorage ? `Using ${inventory.acmeStorage}.` : "Certificate resolvers exist, but ACME storage was not detected."
+        });
+    }
+
+    const staticConfigChecks = await validateMountedTraefikStaticConfigs(inspect);
+    checks.push(...staticConfigChecks);
+
+    if (inventory.containerCount > 0 && !staticConfigChecks.length) {
+        checks.push({
+            key: "static-config",
+            label: "Static config check",
+            status: "warn",
+            detail: "No mounted Traefik static config file was found. Command-line configuration was inspected only."
+        });
+    }
+
+    return {
+        serverId,
+        checkedAt,
+        status: summarizeValidationStatus(checks),
+        inventory,
+        checks
+    };
+}
+
 async function inspectTraefikContainers(networkName: string) {
     const command = `TRAEFIK_IDS="$(docker ps -aq --filter label=org.opencontainers.image.title=Traefik)"
 if [ -z "$TRAEFIK_IDS" ]; then
@@ -583,6 +665,73 @@ async function collectTraefikBackupFiles(containers: DockerInspectContainerWithM
     }
 
     return files;
+}
+
+async function validateMountedTraefikStaticConfigs(containers: DockerInspectContainerWithMounts[]) {
+    const checks: TraefikConfigValidationCheck[] = [];
+    const seen = new Set<string>();
+
+    for (const container of containers) {
+        if (!container.Id) {
+            continue;
+        }
+
+        const containerName = container.Name?.replace(/^\/+/, "") || container.Id.slice(0, 12);
+        const staticPaths = unique((container.Mounts ?? []).map((mount) => mount.Destination).filter(isLikelyTraefikStaticConfigPath));
+        for (const staticPath of staticPaths) {
+            const key = `${container.Id}:${staticPath}`;
+            if (seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+
+            const result = await runTraefikStaticConfigCheck(container, staticPath);
+            checks.push({
+                key: `static-config:${container.Id.slice(0, 12)}:${staticPath}`,
+                label: `Static config ${staticPath}`,
+                status: result.ok ? "pass" : "fail",
+                detail: result.ok
+                    ? `${containerName} accepted ${staticPath}.`
+                    : `${containerName} rejected ${staticPath}.`,
+                ...(result.output ? { output: result.output } : {})
+            });
+        }
+    }
+
+    return checks;
+}
+
+async function runTraefikStaticConfigCheck(container: DockerInspectContainerWithMounts, path: string) {
+    const containerId = container.Id ?? "";
+    const outputLimit = 12 * 1024;
+    const command = container.State?.Status === "running"
+        ? `docker exec ${shellQuote(containerId)} traefik check --configFile=${shellQuote(path)}`
+        : `docker run --rm --volumes-from ${shellQuote(`${containerId}:ro`)} --entrypoint traefik ${shellQuote(container.Config?.Image || "traefik:latest")} check --configFile=${shellQuote(path)}`;
+
+    try {
+        const { stdout, stderr } = await execAsync(command, { maxBuffer: 256 * 1024 });
+        return {
+            ok: true,
+            output: trimValidationOutput(`${stdout}${stderr ? `\n${stderr}` : ""}`, outputLimit)
+        };
+    } catch (error) {
+        const output = typeof error === "object" && error
+            ? `${"stdout" in error ? String(error.stdout ?? "") : ""}${"stderr" in error ? `\n${String(error.stderr ?? "")}` : ""}`
+            : "";
+        return {
+            ok: false,
+            output: trimValidationOutput(output || (error instanceof Error ? error.message : "Traefik config check failed."), outputLimit)
+        };
+    }
+}
+
+function trimValidationOutput(output: string, limit: number) {
+    const trimmed = output.trim();
+    if (trimmed.length <= limit) {
+        return trimmed;
+    }
+
+    return `${trimmed.slice(0, limit)}\n... truncated ...`;
 }
 
 function classifyTraefikBackupPath(path: string): TraefikConfigBackupFile["kind"] {
@@ -1348,6 +1497,18 @@ function outputFlag(value: string | undefined) {
 }
 
 function summarizeDiagnosticStatus(checks: TraefikDiagnosticCheck[]) {
+    if (checks.some((check) => check.status === "fail")) {
+        return "fail";
+    }
+
+    if (checks.some((check) => check.status === "warn")) {
+        return "warn";
+    }
+
+    return "pass";
+}
+
+function summarizeValidationStatus(checks: TraefikConfigValidationCheck[]) {
     if (checks.some((check) => check.status === "fail")) {
         return "fail";
     }

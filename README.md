@@ -148,6 +148,8 @@ The Servers page also shows a read-only Traefik inventory per agent: detected co
 
 Use **Export Traefik** on a server row to download a JSON backup before changing any shared proxy configuration. The export is collected through the selected agent and includes the read-only inventory plus discovered static and dynamic Traefik config file contents.
 
+Use **Validate Traefik** on a server row to run Traefik's own static config check through the selected agent. The result includes pass/warn/fail checks for discovered containers, entrypoints, certificate resolvers, Docker provider network, ACME storage, and mounted static config files.
+
 ## Deploy From CI
 
 Set a CI deploy token in project settings, then call:

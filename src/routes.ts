@@ -149,6 +149,22 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
         }
     });
 
+    app.get("/api/servers/:id/traefik/validate", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            const server = serverStore.get(serverId);
+            if (!server) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+
+            const validation = await agentManager.getClient(serverId).validateTraefik(serverId, globalSettingsStore.readSettings());
+            res.json(validation);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not validate Traefik config." });
+        }
+    });
+
     app.post("/api/servers/:id/health", async (req: Request, res: Response) => {
         try {
             const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

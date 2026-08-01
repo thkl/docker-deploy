@@ -230,6 +230,11 @@ export class AgentRuntime {
             return { result: await this.localAgent.backupTraefik(payload.serverId || this.state.serverId, payload.globalSettings) };
         }
 
+        if (request.jobType === "validateTraefik") {
+            const payload = request.payload as DetectTraefikJobPayload;
+            return { result: await this.localAgent.validateTraefik(payload.serverId || this.state.serverId, payload.globalSettings) };
+        }
+
         if (request.jobType === "diagnoseTraefik") {
             const payload = request.payload as DiagnoseTraefikJobPayload;
             return { result: await this.localAgent.diagnoseTraefik(payload.projectName, payload.appSettings, payload.globalSettings) };
