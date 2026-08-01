@@ -8,6 +8,7 @@ import { ProjectStore } from '../../state/project-store';
 
 const pairingTokenStorageKey = 'deploy.agentPairingTokens';
 const legacyPairingTokenStorageKey = 'updater.agentPairingTokens';
+type ServerTab = 'name' | 'health' | 'traefik';
 
 @Component({
   selector: 'app-servers-page',
@@ -30,6 +31,8 @@ export class ServersPage implements OnInit {
   protected readonly editingServer = signal('');
   protected readonly savingServerName = signal('');
   protected readonly serverNameDraft = signal('');
+  protected readonly selectedServerId = signal('');
+  protected readonly activeServerTab = signal<ServerTab>('name');
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly pairingTokens = signal<Record<string, string>>({});
@@ -45,6 +48,22 @@ export class ServersPage implements OnInit {
   ngOnInit() {
     this.pairingTokens.set(readStoredPairingTokens());
     this.store.loadServers();
+  }
+
+  protected selectedServer() {
+    const servers = this.servers();
+    const selectedId = this.selectedServerId();
+    return servers.find((server) => server.id === selectedId) ?? servers[0];
+  }
+
+  protected selectServer(server: ServerRecord) {
+    this.selectedServerId.set(server.id);
+    this.editingServer.set('');
+    this.serverNameDraft.set('');
+  }
+
+  protected setServerTab(tab: ServerTab) {
+    this.activeServerTab.set(tab);
   }
 
   protected saveServer() {

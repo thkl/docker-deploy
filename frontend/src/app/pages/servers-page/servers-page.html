@@ -16,27 +16,68 @@
   <p class="notice">{{ message() }}</p>
 }
 
-<section class="server-list">
-  @for (server of servers(); track server.id) {
-    <article class="server-row">
-      <header class="server-top">
+<section class="server-workspace">
+  <aside class="server-sidebar">
+    <div class="server-list" role="list">
+      @for (server of servers(); track server.id) {
+        <button type="button" class="server-list-item" [class.active]="selectedServer()?.id === server.id" (click)="selectServer(server)">
+          <span class="server-light" [class.online]="statusTone(server) === 'online'" [class.unpaired]="statusTone(server) === 'unpaired'" [class.offline]="statusTone(server) === 'offline'"></span>
+          <span>
+            <strong>{{ server.name }}</strong>
+            <small>{{ server.id }} · {{ server.kind }}</small>
+          </span>
+          <span class="server-chip" [class.unpaired]="server.status === 'unpaired'" [class.offline]="server.status === 'offline'">{{ server.status || server.kind }}</span>
+        </button>
+      } @empty {
+        <section class="settings-panel">
+          <p class="muted-copy">No servers have been registered yet.</p>
+        </section>
+      }
+    </div>
+
+    <section class="settings-panel remote-agent-panel" [formGroup]="serverForm">
+      <div class="panel-head inline">
+        <div>
+          <h3>Add remote agent</h3>
+          <span>Enter the agent URL and the token from /app/data/agent-pairing.json</span>
+        </div>
+        <button type="button" class="secondary" (click)="saveServer()" [disabled]="savingServer()">
+          {{ savingServer() ? 'Saving...' : 'Save agent' }}
+        </button>
+      </div>
+
+      <div class="agent-install">
+        <strong>Agent container</strong>
+        <code>docker compose -f docker-compose-agent.yaml up -d</code>
+        <span>Open <code>/app/data/agent-pairing.json</code> on the target server and paste the pairing token above.</span>
+      </div>
+
+      <div class="field-grid">
+        <label>
+          <span>Name optional</span>
+          <input formControlName="name" placeholder="uses the agent serverId when empty" />
+        </label>
+
+        <label>
+          <span>Agent URL</span>
+          <input formControlName="baseUrl" placeholder="http://10.0.0.22:3998" />
+        </label>
+
+        <label>
+          <span>Pairing token</span>
+          <input formControlName="pairingToken" autocomplete="off" placeholder="token from agent-pairing.json" />
+        </label>
+      </div>
+    </section>
+  </aside>
+
+  <section class="server-detail">
+    @if (selectedServer(); as server) {
+      <header class="server-detail-head">
         <div class="server-main">
           <div class="server-title">
             <span class="server-light" [class.online]="statusTone(server) === 'online'" [class.unpaired]="statusTone(server) === 'unpaired'" [class.offline]="statusTone(server) === 'offline'"></span>
-            @if (editingServer() === server.id) {
-              <input
-                class="server-name-input"
-                type="text"
-                [value]="serverNameDraft()"
-                (input)="updateServerNameDraft($event)"
-                (keydown.enter)="saveServerName(server)"
-                (keydown.escape)="cancelRename()"
-                [disabled]="savingServerName() === server.id"
-                aria-label="Server name"
-              />
-            } @else {
-              <strong>{{ server.name }}</strong>
-            }
+            <strong>{{ server.name }}</strong>
             <span class="server-chip" [class.unpaired]="server.status === 'unpaired'" [class.offline]="server.status === 'offline'">{{ server.status || server.kind }}</span>
           </div>
           <span>{{ server.id }} @if (server.agentServerId && server.agentServerId !== server.id) { · agent {{ server.agentServerId }} } @if (server.baseUrl) { · {{ server.baseUrl }} }</span>
@@ -44,303 +85,323 @@
             <small class="health-error">{{ server.lastHealthError }}</small>
           }
         </div>
-
-        <div class="server-actions">
-          <button type="button" class="secondary" (click)="refreshServer(server.id)" [disabled]="refreshingServer() !== ''">
-            {{ refreshingServer() === server.id ? 'Checking...' : 'Check' }}
-          </button>
-          <button type="button" class="secondary" (click)="backupTraefik(server)" [disabled]="backingUpTraefik() !== '' || !server.capabilities?.traefik?.available">
-            {{ backingUpTraefik() === server.id ? 'Exporting...' : 'Export Traefik' }}
-          </button>
-          <button type="button" class="secondary" (click)="validateTraefik(server)" [disabled]="validatingTraefik() !== '' || !server.capabilities?.traefik?.available">
-            {{ validatingTraefik() === server.id ? 'Validating...' : 'Validate Traefik' }}
-          </button>
-          <button type="button" class="secondary" (click)="previewTraefikImpact(server)" [disabled]="previewingTraefikImpact() !== ''">
-            {{ previewingTraefikImpact() === server.id ? 'Checking...' : 'Impact' }}
-          </button>
-          @if (editingServer() === server.id) {
-            <button type="button" class="secondary" (click)="saveServerName(server)" [disabled]="savingServerName() === server.id">
-              {{ savingServerName() === server.id ? 'Saving...' : 'Save name' }}
-            </button>
-            <button type="button" class="secondary" (click)="cancelRename()" [disabled]="savingServerName() === server.id">
-              Cancel
-            </button>
-          } @else {
-            <button type="button" class="secondary" (click)="startRename(server)" [disabled]="editingServer() !== ''">
-              Edit name
-            </button>
-          }
-          @if (server.kind === 'remote') {
-            @if (server.status === 'unpaired') {
-              <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">
-                {{ pairingServer() === server.id ? 'Pairing...' : 'Pair' }}
-              </button>
-            }
-            <button type="button" class="danger-action" (click)="deleteServer(server.id)" [disabled]="deletingServer() !== ''">
-              {{ deletingServer() === server.id ? 'Removing...' : 'Remove' }}
-            </button>
-          }
-        </div>
       </header>
 
-      <div class="server-health">
-        <span>
-          <strong>{{ server.agentVersion || 'unknown' }}</strong>
-          <small>version</small>
-        </span>
-        <span>
-          <strong>{{ formatDate(server.lastSeenAt) }}</strong>
-          <small>last heartbeat</small>
-        </span>
-        <span>
-          <strong>{{ activeJobLabel(server) }}</strong>
-          <small>running agent work</small>
-        </span>
-        <span>
-          <strong>{{ traefikLabel(server) }}</strong>
-          <small>Traefik</small>
-        </span>
-      </div>
+      <nav class="server-tabs" aria-label="Server settings">
+        <button type="button" [class.active]="activeServerTab() === 'name'" (click)="setServerTab('name')">Name</button>
+        <button type="button" [class.active]="activeServerTab() === 'health'" (click)="setServerTab('health')">Health</button>
+        <button type="button" [class.active]="activeServerTab() === 'traefik'" (click)="setServerTab('traefik')">Traefik</button>
+      </nav>
 
-      <div class="diagnostic-grid">
-        <div class="metric-row">
-          <div>
-            <strong>CPU load</strong>
-            <small class="label_small">{{ loadLabel(server) }}</small>
-          </div>
-          <meter min="0" max="100" [value]="loadPercent(server)"></meter>
-        </div>
-
-        <div class="metric-row">
-          <div>
-            <strong>Memory</strong>
-            <small class="label_small">{{ memoryLabel(server) }}</small>
-          </div>
-          <meter min="0" max="100" [value]="memoryPercent(server)"></meter>
-        </div>
-
-        <div class="metric-row">
-          <div>
-            <strong>Disk /</strong>
-            <small class="label_small">{{ diskLabel(server) }}</small>
-          </div>
-          <meter min="0" max="100" [value]="diskPercent(server)"></meter>
-        </div>
-
-        <div class="metric-row">
-          <div>
-            <strong>Metrics</strong>
-            <small class="label_small">{{ metricCheckedAt(server) }}</small>
-          </div>
-        </div>
-      </div>
-
-      <section class="traefik-panel">
-        <div class="traefik-head">
-          <div>
-            <strong>Traefik inventory</strong>
-            <span>Read-only server proxy configuration discovered from containers, args, networks, and mounts.</span>
-          </div>
-          <span class="server-chip" [class.offline]="!server.capabilities?.traefik?.available">{{ traefikLabel(server) }}</span>
-        </div>
-
-        @if (server.capabilities?.traefik; as traefik) {
-          <div class="traefik-summary">
-            <span>
-              <strong>{{ traefikValue(traefik.entryPoints) }}</strong>
-              <small>entrypoints</small>
-            </span>
-            <span>
-              <strong>{{ traefikValue(traefik.certResolvers) }}</strong>
-              <small>cert resolvers</small>
-            </span>
-            <span>
-              <strong>{{ traefikProviderNetwork(server) }}</strong>
-              <small>Docker provider network</small>
-            </span>
-            <span>
-              <strong>{{ traefikAcmeStorage(server) }}</strong>
-              <small>ACME storage</small>
-            </span>
-          </div>
-
-          @if (traefik.staticConfigPaths?.length || traefik.dynamicConfigPaths?.length) {
-            <div class="traefik-paths">
-              @if (traefik.staticConfigPaths?.length) {
-                <span>Static config: {{ traefikValue(traefik.staticConfigPaths) }}</span>
+      @if (activeServerTab() === 'name') {
+        <section class="tab-panel">
+          <div class="panel-head inline">
+            <div>
+              <h3>Server identity</h3>
+              <span>Rename the display label and review projects assigned to this agent.</span>
+            </div>
+            <div class="server-actions">
+              @if (editingServer() === server.id) {
+                <button type="button" class="secondary" (click)="saveServerName(server)" [disabled]="savingServerName() === server.id">
+                  {{ savingServerName() === server.id ? 'Saving...' : 'Save name' }}
+                </button>
+                <button type="button" class="secondary" (click)="cancelRename()" [disabled]="savingServerName() === server.id">
+                  Cancel
+                </button>
+              } @else {
+                <button type="button" class="secondary" (click)="startRename(server)" [disabled]="editingServer() !== ''">
+                  Edit name
+                </button>
               }
-              @if (traefik.dynamicConfigPaths?.length) {
-                <span>Dynamic config: {{ traefikValue(traefik.dynamicConfigPaths) }}</span>
+              @if (server.kind === 'remote') {
+                @if (server.status === 'unpaired') {
+                  <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">
+                    {{ pairingServer() === server.id ? 'Pairing...' : 'Pair' }}
+                  </button>
+                }
+                <button type="button" class="danger-action" (click)="deleteServer(server.id)" [disabled]="deletingServer() !== ''">
+                  {{ deletingServer() === server.id ? 'Removing...' : 'Remove' }}
+                </button>
               }
             </div>
-          }
+          </div>
 
-          @if (traefik.containers?.length) {
-            <div class="traefik-containers">
-              @for (container of traefik.containers; track container.id || container.name) {
-                <article class="traefik-container">
-                  <div>
-                    <strong>{{ container.name || container.id }}</strong>
-                    <span>{{ container.image || 'unknown image' }} · {{ container.state || 'unknown state' }}</span>
-                    @if (container.ports) {
-                      <small>{{ container.ports }}</small>
-                    }
-                  </div>
-
-                  <div class="service-chip-list">
-                    @for (network of container.networks; track network) {
-                      <span>{{ network }}</span>
-                    }
-                    @for (mount of container.mounts; track mount.source + mount.target) {
-                      <span>{{ traefikMountLabel(mount) }}</span>
-                    }
-                  </div>
-                </article>
+          <div class="identity-grid">
+            <label>
+              <span>Display name</span>
+              @if (editingServer() === server.id) {
+                <input
+                  class="server-name-input"
+                  type="text"
+                  [value]="serverNameDraft()"
+                  (input)="updateServerNameDraft($event)"
+                  (keydown.enter)="saveServerName(server)"
+                  (keydown.escape)="cancelRename()"
+                  [disabled]="savingServerName() === server.id"
+                  aria-label="Server name"
+                />
+              } @else {
+                <strong>{{ server.name }}</strong>
               }
-            </div>
-          } @else {
-            <p class="muted-copy">No Traefik containers were detected on this server.</p>
-          }
+            </label>
+            <label>
+              <span>Server ID</span>
+              <strong>{{ server.id }}</strong>
+            </label>
+            <label>
+              <span>Agent URL</span>
+              <strong>{{ server.baseUrl || 'local controller' }}</strong>
+            </label>
+          </div>
 
-          @if (validationFor(server); as validation) {
-            <div class="traefik-validation" [class.fail]="validationTone(validation.status) === 'fail'" [class.warn]="validationTone(validation.status) === 'warn'">
-              <div class="validation-head">
-                <strong>Validation {{ validation.status }}</strong>
-                <span>{{ formatDate(validation.checkedAt) }}</span>
+          <section class="managed-panel">
+            <div class="managed-head">
+              <strong>Managed containers</strong>
+              <span>{{ managedContainerLabel(server) }}</span>
+            </div>
+
+            @if (managedProjects(server).length) {
+              <div class="managed-list">
+                @for (project of managedProjects(server); track project.id) {
+                  <div class="managed-project">
+                    <div>
+                      <strong>{{ project.name }}</strong>
+                      <small>{{ projectContainerLabel(project) }}</small>
+                    </div>
+
+                    @if (projectContainerServices(project).length) {
+                      <div class="service-chip-list">
+                        @for (service of projectContainerServices(project); track service.containerId || service.containerName || service.service) {
+                          <span>{{ service.service }} · {{ service.state }}</span>
+                        }
+                      </div>
+                    } @else {
+                      <small class="muted-inline">No container status available yet.</small>
+                    }
+                  </div>
+                }
               </div>
-              <div class="validation-checks">
-                @for (check of validation.checks; track check.key) {
-                  <article class="validation-check" [class.fail]="validationTone(check.status) === 'fail'" [class.warn]="validationTone(check.status) === 'warn'">
-                    <strong><span class="validation-dot"></span>{{ check.label }}</strong>
-                    <span>{{ check.detail }}</span>
-                    @if (check.output) {
-                      <pre>{{ check.output }}</pre>
-                    }
+            } @else {
+              <p class="muted-copy">No projects target this server.</p>
+            }
+          </section>
+        </section>
+      }
+
+      @if (activeServerTab() === 'health') {
+        <section class="tab-panel">
+          <div class="panel-head inline">
+            <div>
+              <h3>Host health</h3>
+              <span>Agent heartbeat, active work, and host resource diagnostics.</span>
+            </div>
+            <button type="button" class="secondary" (click)="refreshServer(server.id)" [disabled]="refreshingServer() !== ''">
+              {{ refreshingServer() === server.id ? 'Checking...' : 'Check' }}
+            </button>
+          </div>
+
+          <div class="server-health">
+            <span>
+              <strong>{{ server.agentVersion || 'unknown' }}</strong>
+              <small>version</small>
+            </span>
+            <span>
+              <strong>{{ formatDate(server.lastSeenAt) }}</strong>
+              <small>last heartbeat</small>
+            </span>
+            <span>
+              <strong>{{ activeJobLabel(server) }}</strong>
+              <small>running agent work</small>
+            </span>
+            <span>
+              <strong>{{ metricCheckedAt(server) }}</strong>
+              <small>metrics</small>
+            </span>
+          </div>
+
+          <div class="diagnostic-grid">
+            <div class="metric-row">
+              <div>
+                <strong>CPU load</strong>
+                <small>{{ loadLabel(server) }}</small>
+              </div>
+              <meter min="0" max="100" [value]="loadPercent(server)"></meter>
+            </div>
+
+            <div class="metric-row">
+              <div>
+                <strong>Memory</strong>
+                <small>{{ memoryLabel(server) }}</small>
+              </div>
+              <meter min="0" max="100" [value]="memoryPercent(server)"></meter>
+            </div>
+
+            <div class="metric-row">
+              <div>
+                <strong>Disk /</strong>
+                <small>{{ diskLabel(server) }}</small>
+              </div>
+              <meter min="0" max="100" [value]="diskPercent(server)"></meter>
+            </div>
+          </div>
+
+          @if (server.activeJobs?.length) {
+            <div class="active-job-list">
+              @for (job of server.activeJobs; track job.id) {
+                <span>{{ job.type }} · {{ formatDate(job.startedAt) }}</span>
+              }
+            </div>
+          }
+        </section>
+      }
+
+      @if (activeServerTab() === 'traefik') {
+        <section class="traefik-panel tab-panel">
+          <div class="traefik-head">
+            <div>
+              <strong>Traefik inventory</strong>
+              <span>Read-only server proxy configuration discovered from containers, args, networks, and mounts.</span>
+            </div>
+            <div class="server-actions">
+              <button type="button" class="secondary" (click)="backupTraefik(server)" [disabled]="backingUpTraefik() !== '' || !server.capabilities?.traefik?.available">
+                {{ backingUpTraefik() === server.id ? 'Exporting...' : 'Export' }}
+              </button>
+              <button type="button" class="secondary" (click)="validateTraefik(server)" [disabled]="validatingTraefik() !== '' || !server.capabilities?.traefik?.available">
+                {{ validatingTraefik() === server.id ? 'Validating...' : 'Validate' }}
+              </button>
+              <button type="button" class="secondary" (click)="previewTraefikImpact(server)" [disabled]="previewingTraefikImpact() !== ''">
+                {{ previewingTraefikImpact() === server.id ? 'Checking...' : 'Impact' }}
+              </button>
+            </div>
+          </div>
+
+          @if (server.capabilities?.traefik; as traefik) {
+            <div class="traefik-summary">
+              <span>
+                <strong>{{ traefikLabel(server) }}</strong>
+                <small>status</small>
+              </span>
+              <span>
+                <strong>{{ traefikValue(traefik.entryPoints) }}</strong>
+                <small>entrypoints</small>
+              </span>
+              <span>
+                <strong>{{ traefikValue(traefik.certResolvers) }}</strong>
+                <small>cert resolvers</small>
+              </span>
+              <span>
+                <strong>{{ traefikProviderNetwork(server) }}</strong>
+                <small>Docker provider network</small>
+              </span>
+              <span>
+                <strong>{{ traefikAcmeStorage(server) }}</strong>
+                <small>ACME storage</small>
+              </span>
+            </div>
+
+            @if (traefik.staticConfigPaths?.length || traefik.dynamicConfigPaths?.length) {
+              <div class="traefik-paths">
+                @if (traefik.staticConfigPaths?.length) {
+                  <span>Static config: {{ traefikValue(traefik.staticConfigPaths) }}</span>
+                }
+                @if (traefik.dynamicConfigPaths?.length) {
+                  <span>Dynamic config: {{ traefikValue(traefik.dynamicConfigPaths) }}</span>
+                }
+              </div>
+            }
+
+            @if (traefik.containers?.length) {
+              <div class="traefik-containers">
+                @for (container of traefik.containers; track container.id || container.name) {
+                  <article class="traefik-container">
+                    <div>
+                      <strong>{{ container.name || container.id }}</strong>
+                      <span>{{ container.image || 'unknown image' }} · {{ container.state || 'unknown state' }}</span>
+                      @if (container.ports) {
+                        <small>{{ container.ports }}</small>
+                      }
+                    </div>
+
+                    <div class="service-chip-list">
+                      @for (network of container.networks; track network) {
+                        <span>{{ network }}</span>
+                      }
+                      @for (mount of container.mounts; track mount.source + mount.target) {
+                        <span>{{ traefikMountLabel(mount) }}</span>
+                      }
+                    </div>
                   </article>
                 }
               </div>
-            </div>
-          }
+            } @else {
+              <p class="muted-copy">No Traefik containers were detected on this server.</p>
+            }
 
-          @if (impactFor(server); as impact) {
-            <div class="traefik-impact">
-              <div class="validation-head">
-                <strong>Affected projects</strong>
-                <span>{{ impact.projectCount }} · {{ formatDate(impact.checkedAt) }}</span>
-              </div>
-              <div class="impact-defaults">
-                <span>Network: {{ impact.defaults.network || 'unset' }}</span>
-                <span>Entrypoints: {{ impact.defaults.entryPoints || 'unset' }}</span>
-                <span>Cert resolver: {{ impact.defaults.certResolver || 'unset' }}</span>
-              </div>
-              @if (impact.projects.length) {
-                <div class="impact-list">
-                  @for (project of impact.projects; track project.id || project.name) {
-                    <article class="impact-project">
-                      <div>
-                        <strong>{{ project.name }}</strong>
-                        <span>{{ project.hostname || 'No hostname' }} · {{ project.service || project.name }}:{{ project.port || 'auto' }}</span>
-                      </div>
-                      <div class="service-chip-list">
-                        <span>{{ project.network }}</span>
-                        <span>{{ project.entryPoints }}</span>
-                        <span>{{ project.certResolver }}</span>
-                        @if (project.wildcardDomain) {
-                          <span>{{ project.wildcardDomain }}</span>
-                        }
-                        <span>{{ projectDefaultUsage(project) }}</span>
-                      </div>
+            @if (validationFor(server); as validation) {
+              <div class="traefik-validation" [class.fail]="validationTone(validation.status) === 'fail'" [class.warn]="validationTone(validation.status) === 'warn'">
+                <div class="validation-head">
+                  <strong>Validation {{ validation.status }}</strong>
+                  <span>{{ formatDate(validation.checkedAt) }}</span>
+                </div>
+                <div class="validation-checks">
+                  @for (check of validation.checks; track check.key) {
+                    <article class="validation-check" [class.fail]="validationTone(check.status) === 'fail'" [class.warn]="validationTone(check.status) === 'warn'">
+                      <strong><span class="validation-dot"></span>{{ check.label }}</strong>
+                      <span>{{ check.detail }}</span>
+                      @if (check.output) {
+                        <pre>{{ check.output }}</pre>
+                      }
                     </article>
                   }
                 </div>
-              } @else {
-                <p class="muted-copy">No Traefik-enabled projects target this server.</p>
-              }
-            </div>
-          }
-        } @else {
-          <p class="muted-copy">Refresh health to inspect Traefik on this server.</p>
-        }
-      </section>
+              </div>
+            }
 
-      <section class="managed-panel">
-        <div class="managed-head">
-          <strong>Managed containers</strong>
-          <span>{{ managedContainerLabel(server) }}</span>
-        </div>
-
-        @if (managedProjects(server).length) {
-          <div class="managed-list">
-            @for (project of managedProjects(server); track project.id) {
-              <div class="managed-project">
-                <div>
-                  <strong>{{ project.name }}</strong>
-                  <small>{{ projectContainerLabel(project) }}</small>
+            @if (impactFor(server); as impact) {
+              <div class="traefik-impact">
+                <div class="validation-head">
+                  <strong>Affected projects</strong>
+                  <span>{{ impact.projectCount }} · {{ formatDate(impact.checkedAt) }}</span>
                 </div>
-
-                @if (projectContainerServices(project).length) {
-                  <div class="service-chip-list">
-                    @for (service of projectContainerServices(project); track service.containerId || service.containerName || service.service) {
-                      <span>{{ service.service }} · {{ service.state }}</span>
+                <div class="impact-defaults">
+                  <span>Network: {{ impact.defaults.network || 'unset' }}</span>
+                  <span>Entrypoints: {{ impact.defaults.entryPoints || 'unset' }}</span>
+                  <span>Cert resolver: {{ impact.defaults.certResolver || 'unset' }}</span>
+                </div>
+                @if (impact.projects.length) {
+                  <div class="impact-list">
+                    @for (project of impact.projects; track project.id || project.name) {
+                      <article class="impact-project">
+                        <div>
+                          <strong>{{ project.name }}</strong>
+                          <span>{{ project.hostname || 'No hostname' }} · {{ project.service || project.name }}:{{ project.port || 'auto' }}</span>
+                        </div>
+                        <div class="service-chip-list">
+                          <span>{{ project.network }}</span>
+                          <span>{{ project.entryPoints }}</span>
+                          <span>{{ project.certResolver }}</span>
+                          @if (project.wildcardDomain) {
+                            <span>{{ project.wildcardDomain }}</span>
+                          }
+                          <span>{{ projectDefaultUsage(project) }}</span>
+                        </div>
+                      </article>
                     }
                   </div>
                 } @else {
-                  <small class="muted-inline">No container status available yet.</small>
+                  <p class="muted-copy">No Traefik-enabled projects target this server.</p>
                 }
               </div>
             }
-          </div>
-        } @else {
-          <p class="muted-copy">No projects target this server.</p>
-        }
-      </section>
-
-      @if (server.activeJobs?.length) {
-        <div class="active-job-list">
-          @for (job of server.activeJobs; track job.id) {
-            <span>{{ job.type }} · {{ formatDate(job.startedAt) }}</span>
+          } @else {
+            <p class="muted-copy">Refresh health to inspect Traefik on this server.</p>
           }
-        </div>
+        </section>
       }
-    </article>
-  } @empty {
-    <section class="settings-panel">
-      <p class="muted-copy">No servers have been registered yet.</p>
-    </section>
-  }
-</section>
-
-<section class="settings-panel remote-agent-panel" [formGroup]="serverForm">
-  <div class="panel-head inline">
-    <div>
-      <h3>Add remote agent</h3>
-      <span>Enter the agent URL and the token from /app/data/agent-pairing.json</span>
-    </div>
-    <button type="button" class="secondary" (click)="saveServer()" [disabled]="savingServer()">
-      {{ savingServer() ? 'Saving...' : 'Save agent' }}
-    </button>
-  </div>
-
-  <div class="agent-install">
-    <strong>Agent container</strong>
-    <code>docker compose -f docker-compose-agent.yaml up -d</code>
-    <span>Open <code>/app/data/agent-pairing.json</code> on the target server and paste the pairing token above.</span>
-  </div>
-
-  <div class="field-grid">
-    <label>
-      <span>Name optional</span>
-      <input formControlName="name" placeholder="uses the agent serverId when empty" />
-    </label>
-
-    <label>
-      <span>Agent URL</span>
-      <input formControlName="baseUrl" placeholder="http://10.0.0.22:3998" />
-    </label>
-
-    <label>
-      <span>Pairing token</span>
-      <input formControlName="pairingToken" autocomplete="off" placeholder="token from agent-pairing.json" />
-    </label>
-  </div>
+    } @else {
+      <section class="settings-panel">
+        <p class="muted-copy">Select a server or add a remote agent.</p>
+      </section>
+    }
+  </section>
 </section>

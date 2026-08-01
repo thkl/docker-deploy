@@ -23,6 +23,8 @@ p {
 }
 
 .settings-panel,
+.server-detail,
+.tab-panel,
 .server-row {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -30,9 +32,71 @@ p {
   padding: 0.9rem;
 }
 
-.server-list {
+.server-workspace {
+  align-items: start;
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: minmax(260px, 0.32fr) minmax(0, 1fr);
+}
+
+.server-sidebar {
   display: grid;
   gap: 0.85rem;
+  min-width: 0;
+}
+
+.server-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.server-list-item {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 54px;
+  padding: 0.65rem;
+  text-align: left;
+  width: 100%;
+}
+
+.server-list-item:hover,
+.server-list-item.active {
+  border-color: color-mix(in srgb, var(--accent), transparent 30%);
+}
+
+.server-list-item.active {
+  background: color-mix(in srgb, var(--accent), transparent 92%);
+}
+
+.server-list-item > span:nth-child(2) {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.server-list-item strong,
+.server-list-item small {
+  overflow-wrap: anywhere;
+}
+
+.server-detail,
+.tab-panel {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.server-detail-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
 }
 
 .server-row {
@@ -112,6 +176,7 @@ p {
 
 .server-main span,
 .server-main small,
+.server-list-item small,
 .server-health small,
 .metric-row small,
 .traefik-panel span,
@@ -130,10 +195,42 @@ label span,
   justify-content: flex-end;
 }
 
+.server-tabs {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 0.35rem;
+  margin: 0 -0.9rem;
+  padding: 0 0.9rem;
+}
+
+.server-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  min-height: 38px;
+  padding: 0.45rem 0.65rem;
+}
+
+.server-tabs button:hover,
+.server-tabs button.active {
+  color: var(--accent-strong);
+}
+
+.server-tabs button.active {
+  border-bottom-color: var(--accent);
+}
+
 .server-health,
 .diagnostic-grid {
   display: grid;
   gap: 0.65rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.server-health {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -188,7 +285,7 @@ meter {
 .traefik-summary {
   display: grid;
   gap: 0.55rem;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .traefik-summary span,
@@ -423,7 +520,6 @@ meter {
 .remote-agent-panel {
   display: grid;
   gap: 0.85rem;
-  margin-top: 0.85rem;
 }
 
 .panel-head {
@@ -445,7 +541,7 @@ meter {
 .field-grid {
   display: grid;
   gap: 0.85rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
 
 label {
@@ -453,8 +549,22 @@ label {
   gap: 0.45rem;
 }
 
-.label_small {
-  margin-left: 1rem;
+.identity-grid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.identity-grid label {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  min-width: 0;
+  padding: 0.65rem;
+}
+
+.identity-grid strong {
+  overflow-wrap: anywhere;
 }
 
 input {
@@ -514,10 +624,14 @@ button.danger-action:hover {
 }
 
 @media (max-width: 1050px) {
+  .server-workspace {
+    grid-template-columns: minmax(220px, 0.38fr) minmax(0, 1fr);
+  }
+
   .server-health,
   .diagnostic-grid,
   .traefik-summary,
-  .field-grid {
+  .identity-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -525,11 +639,16 @@ button.danger-action:hover {
 @media (max-width: 760px) {
   .page-head,
   .server-top,
+  .server-detail-head,
   .panel-head.inline,
   .traefik-head {
     align-items: stretch;
     display: flex;
     flex-direction: column;
+  }
+
+  .server-workspace {
+    grid-template-columns: 1fr;
   }
 
   .server-actions {
@@ -541,7 +660,8 @@ button.danger-action:hover {
   .traefik-summary,
   .traefik-container,
   .managed-project,
-  .field-grid {
+  .identity-grid,
+  .impact-project {
     grid-template-columns: 1fr;
   }
 }
