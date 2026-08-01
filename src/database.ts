@@ -26,8 +26,9 @@ const legacyDefaultGlobalSettings: GlobalSettings = {
 export class AppDatabase {
     readonly connection: DatabaseSync;
 
-    constructor(private readonly databasePath = process.env.DEPLOY_DATABASE_PATH || process.env.DATABASE_PATH || join("./data", "updater.sqlite")) {
+    constructor(private readonly databasePath = process.env.DEPLOY_DATABASE_PATH || process.env.UPDATER_DATABASE_PATH || join("./data", "updater.sqlite")) {
         mkdirSync(dirname(this.databasePath), { recursive: true });
+        console.log(`Using Deploy database at ${this.databasePath}`);
         this.connection = new DatabaseSync(this.databasePath);
         this.connection.exec("PRAGMA foreign_keys = ON;");
         this.connection.exec("PRAGMA journal_mode = WAL;");

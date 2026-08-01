@@ -71,7 +71,7 @@ Project webhook secrets and CI deploy tokens are encrypted in SQLite with a cont
 ./data/controller-secret-key.json
 ```
 
-The controller database defaults to `./data/updater.sqlite`; set `DEPLOY_DATABASE_PATH` or `DATABASE_PATH` when you need an explicit mounted path.
+The controller database defaults to `./data/updater.sqlite`; set `DEPLOY_DATABASE_PATH` when you need an explicit mounted path. The legacy `UPDATER_DATABASE_PATH` name is still accepted.
 
 Keep this file with the controller data volume. Existing `UPDATER_SECRET_KEY` or new `DEPLOY_SECRET_KEY` can also provide a 32-byte base64 key explicitly.
 
