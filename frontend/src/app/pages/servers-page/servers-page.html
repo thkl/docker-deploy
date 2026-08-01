@@ -133,6 +133,38 @@
         </div>
       </section>
 
+      <section class="managed-panel">
+        <div class="managed-head">
+          <strong>Managed containers</strong>
+          <span>{{ managedContainerLabel(server) }}</span>
+        </div>
+
+        @if (managedProjects(server).length) {
+          <div class="managed-list">
+            @for (project of managedProjects(server); track project.id) {
+              <div class="managed-project">
+                <div>
+                  <strong>{{ project.name }}</strong>
+                  <small>{{ projectContainerLabel(project) }}</small>
+                </div>
+
+                @if (projectContainerServices(project).length) {
+                  <div class="service-chip-list">
+                    @for (service of projectContainerServices(project); track service.containerId || service.containerName || service.service) {
+                      <span>{{ service.service }} · {{ service.state }}</span>
+                    }
+                  </div>
+                } @else {
+                  <small class="muted-inline">No container status available yet.</small>
+                }
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="muted-copy">No projects target this server.</p>
+        }
+      </section>
+
       @if (server.activeJobs?.length) {
         <div class="active-job-list">
           @for (job of server.activeJobs; track job.id) {

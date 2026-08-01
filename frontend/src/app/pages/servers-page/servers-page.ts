@@ -1,7 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import { ServerRecord } from '../../models/project';
+import { ProjectSummary, ServerRecord } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -221,6 +221,42 @@ export class ServersPage implements OnInit {
   protected activeJobLabel(server: ServerRecord) {
     const count = server.activeJobs?.length ?? 0;
     return count === 1 ? '1 active job' : `${count} active jobs`;
+  }
+
+  protected managedProjects(server: ServerRecord) {
+    return this.store.projects().filter((project) => (project.serverId || 'local') === server.id);
+  }
+
+  protected managedContainerCount(server: ServerRecord) {
+    return this.managedProjects(server).reduce((count, project) => count + (this.store.runtimeStatusFor(project.id)?.services.length ?? 0), 0);
+  }
+
+  protected managedContainerLabel(server: ServerRecord) {
+    const projects = this.managedProjects(server);
+    const containers = this.managedContainerCount(server);
+    if (!projects.length) {
+      return 'No managed projects';
+    }
+
+    if (containers === 1) {
+      return `1 known container · ${projects.length} project${projects.length === 1 ? '' : 's'}`;
+    }
+
+    return `${containers} known containers · ${projects.length} project${projects.length === 1 ? '' : 's'}`;
+  }
+
+  protected projectContainerLabel(project: ProjectSummary) {
+    const status = this.store.runtimeStatusFor(project.id);
+    if (!status) {
+      return 'status not checked';
+    }
+
+    const count = status.services.length;
+    return count === 1 ? '1 container' : `${count} containers`;
+  }
+
+  protected projectContainerServices(project: ProjectSummary) {
+    return this.store.runtimeStatusFor(project.id)?.services ?? [];
   }
 
   protected traefikLabel(server: ServerRecord) {

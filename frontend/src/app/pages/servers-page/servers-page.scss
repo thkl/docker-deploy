@@ -140,6 +140,7 @@ label span,
 .server-health span,
 .metric-row,
 .traefik-panel,
+.managed-panel,
 .agent-install {
   background: var(--panel-soft);
   border: 1px solid var(--line);
@@ -172,9 +173,66 @@ meter {
 }
 
 .traefik-panel div,
+.managed-head,
 .agent-install {
   display: grid;
   gap: 0.35rem;
+}
+
+.managed-panel {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.managed-head span,
+.managed-project small,
+.muted-inline {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.managed-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.managed-project {
+  align-items: start;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(160px, 0.45fr) minmax(0, 1fr);
+  padding-top: 0.55rem;
+}
+
+.managed-project:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.managed-project > div:first-child {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.managed-project strong {
+  overflow-wrap: anywhere;
+}
+
+.service-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.service-chip-list span {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 0.2rem 0.5rem;
 }
 
 .active-job-list {
@@ -308,6 +366,7 @@ button.danger-action:hover {
 
   .server-health,
   .diagnostic-grid,
+  .managed-project,
   .field-grid {
     grid-template-columns: 1fr;
   }
