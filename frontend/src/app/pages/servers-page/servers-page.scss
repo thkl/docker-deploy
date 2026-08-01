@@ -218,6 +218,10 @@ label {
   gap: 0.45rem;
 }
 
+.label_small {
+  margin-left: 1rem;
+}
+
 input {
   background: var(--panel-soft);
   border: 1px solid var(--line);

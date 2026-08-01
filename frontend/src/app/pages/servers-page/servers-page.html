@@ -72,7 +72,7 @@
         <div class="metric-row">
           <div>
             <strong>CPU load</strong>
-            <small>{{ loadLabel(server) }}</small>
+            <small class="label_small">{{ loadLabel(server) }}</small>
           </div>
           <meter min="0" max="100" [value]="loadPercent(server)"></meter>
         </div>
@@ -80,7 +80,7 @@
         <div class="metric-row">
           <div>
             <strong>Memory</strong>
-            <small>{{ memoryLabel(server) }}</small>
+            <small class="label_small">{{ memoryLabel(server) }}</small>
           </div>
           <meter min="0" max="100" [value]="memoryPercent(server)"></meter>
         </div>
@@ -88,7 +88,7 @@
         <div class="metric-row">
           <div>
             <strong>Disk /</strong>
-            <small>{{ diskLabel(server) }}</small>
+            <small class="label_small">{{ diskLabel(server) }}</small>
           </div>
           <meter min="0" max="100" [value]="diskPercent(server)"></meter>
         </div>
@@ -96,7 +96,7 @@
         <div class="metric-row">
           <div>
             <strong>Metrics</strong>
-            <small>{{ metricCheckedAt(server) }}</small>
+            <small class="label_small">{{ metricCheckedAt(server) }}</small>
           </div>
         </div>
       </div>
