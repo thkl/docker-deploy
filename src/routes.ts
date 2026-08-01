@@ -157,7 +157,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
     app.put("/api/servers/:id", (req: Request, res: Response) => {
         try {
             const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-            const server = serverStore.updateRemote(serverId, req.body as ServerPayload);
+            const server = serverStore.updateServer(serverId, req.body as ServerPayload);
             eventBus.publish({ type: "servers.updated", changedAt: new Date().toISOString() });
             res.json(server);
         } catch (error) {

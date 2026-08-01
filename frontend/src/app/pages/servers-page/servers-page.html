@@ -23,7 +23,20 @@
         <div class="server-main">
           <div class="server-title">
             <span class="server-light" [class.online]="statusTone(server) === 'online'" [class.unpaired]="statusTone(server) === 'unpaired'" [class.offline]="statusTone(server) === 'offline'"></span>
-            <strong>{{ server.name }}</strong>
+            @if (editingServer() === server.id) {
+              <input
+                class="server-name-input"
+                type="text"
+                [value]="serverNameDraft()"
+                (input)="updateServerNameDraft($event)"
+                (keydown.enter)="saveServerName(server)"
+                (keydown.escape)="cancelRename()"
+                [disabled]="savingServerName() === server.id"
+                aria-label="Server name"
+              />
+            } @else {
+              <strong>{{ server.name }}</strong>
+            }
             <span class="server-chip" [class.unpaired]="server.status === 'unpaired'" [class.offline]="server.status === 'offline'">{{ server.status || server.kind }}</span>
           </div>
           <span>{{ server.id }} @if (server.agentServerId && server.agentServerId !== server.id) { · agent {{ server.agentServerId }} } @if (server.baseUrl) { · {{ server.baseUrl }} }</span>
@@ -36,6 +49,18 @@
           <button type="button" class="secondary" (click)="refreshServer(server.id)" [disabled]="refreshingServer() !== ''">
             {{ refreshingServer() === server.id ? 'Checking...' : 'Check' }}
           </button>
+          @if (editingServer() === server.id) {
+            <button type="button" class="secondary" (click)="saveServerName(server)" [disabled]="savingServerName() === server.id">
+              {{ savingServerName() === server.id ? 'Saving...' : 'Save name' }}
+            </button>
+            <button type="button" class="secondary" (click)="cancelRename()" [disabled]="savingServerName() === server.id">
+              Cancel
+            </button>
+          } @else {
+            <button type="button" class="secondary" (click)="startRename(server)" [disabled]="editingServer() !== ''">
+              Edit name
+            </button>
+          }
           @if (server.kind === 'remote') {
             @if (server.status === 'unpaired') {
               <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">

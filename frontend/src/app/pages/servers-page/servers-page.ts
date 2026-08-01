@@ -22,6 +22,9 @@ export class ServersPage implements OnInit {
   protected readonly pairingServer = signal('');
   protected readonly refreshingServer = signal('');
   protected readonly deletingServer = signal('');
+  protected readonly editingServer = signal('');
+  protected readonly savingServerName = signal('');
+  protected readonly serverNameDraft = signal('');
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly pairingTokens = signal<Record<string, string>>({});
@@ -152,6 +155,54 @@ export class ServersPage implements OnInit {
       error: (error) => {
         this.error.set(error?.error?.error || 'Could not pair remote server.');
         this.pairingServer.set('');
+      },
+    });
+  }
+
+  protected startRename(server: ServerRecord) {
+    this.editingServer.set(server.id);
+    this.serverNameDraft.set(server.name);
+    this.message.set('');
+    this.error.set('');
+  }
+
+  protected updateServerNameDraft(event: Event) {
+    this.serverNameDraft.set((event.target as HTMLInputElement).value);
+  }
+
+  protected cancelRename() {
+    if (this.savingServerName()) {
+      return;
+    }
+
+    this.editingServer.set('');
+    this.serverNameDraft.set('');
+  }
+
+  protected saveServerName(server: ServerRecord) {
+    const nextName = this.serverNameDraft().trim();
+    if (!nextName) {
+      this.error.set('Enter a server name before saving.');
+      return;
+    }
+
+    this.savingServerName.set(server.id);
+    this.message.set('');
+    this.error.set('');
+    this.api.updateServer(server.id, {
+      name: nextName,
+      ...(server.kind === 'remote' ? { baseUrl: server.baseUrl } : {}),
+    }).subscribe({
+      next: (updated) => {
+        this.store.loadServers();
+        this.message.set(`Server ${updated.id} renamed to ${updated.name}.`);
+        this.editingServer.set('');
+        this.serverNameDraft.set('');
+        this.savingServerName.set('');
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not rename server.');
+        this.savingServerName.set('');
       },
     });
   }

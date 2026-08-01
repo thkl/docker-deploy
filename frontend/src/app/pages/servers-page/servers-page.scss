@@ -64,6 +64,14 @@ p {
   font-size: 0.98rem;
 }
 
+.server-name-input {
+  font-size: 0.98rem;
+  min-height: 32px;
+  min-width: min(260px, 100%);
+  padding: 0.35rem 0.55rem;
+  width: min(320px, 100%);
+}
+
 .server-light {
   background: var(--muted);
   border-radius: 999px;

@@ -58,11 +58,20 @@ export class ServerStore {
     }
 
     /**
-     * Updates a remote server record.
+     * Updates editable server metadata. Local servers allow display-name edits
+     * only; remote servers also allow URL/key maintenance.
      */
-    updateRemote(serverId: string, payload: ServerPayload) {
-        const existing = this.requireRemote(serverId);
+    updateServer(serverId: string, payload: ServerPayload) {
+        const existing = this.requireServer(serverId);
         const now = new Date().toISOString();
+        const nextName = payload.name?.trim() || existing.name;
+        if (existing.kind === "local") {
+            this.database
+                .prepare("UPDATE servers SET name = ?, updated_at = ? WHERE id = ?")
+                .run(nextName, now, serverId);
+            return this.get(serverId);
+        }
+
         this.database
             .prepare(
                 `UPDATE servers
@@ -74,7 +83,7 @@ export class ServerStore {
                  WHERE id = ?`
             )
             .run(
-                payload.name?.trim() || existing.name,
+                nextName,
                 normalizeBaseUrl(payload.baseUrl || existing.baseUrl),
                 payload.agentPublicEncryptionKey?.trim() || existing.agentPublicEncryptionKey || null,
                 payload.agentPublicSigningKey?.trim() || existing.agentPublicSigningKey || null,
@@ -83,6 +92,14 @@ export class ServerStore {
             );
 
         return this.get(serverId);
+    }
+
+    /**
+     * Updates a remote server record.
+     */
+    updateRemote(serverId: string, payload: ServerPayload) {
+        this.requireRemote(serverId);
+        return this.updateServer(serverId, payload);
     }
 
     /**
@@ -193,13 +210,22 @@ export class ServerStore {
      * Ensures a server exists and can receive remote jobs.
      */
     requireRemote(serverId: string) {
-        const server = this.get(serverId);
-        if (!server) {
-            throw new Error("Server does not exist.");
-        }
+        const server = this.requireServer(serverId);
 
         if (server.kind !== "remote") {
             throw new Error("Only remote servers can be edited here.");
+        }
+
+        return server;
+    }
+
+    /**
+     * Ensures a server exists.
+     */
+    requireServer(serverId: string) {
+        const server = this.get(serverId);
+        if (!server) {
+            throw new Error("Server does not exist.");
         }
 
         return server;
