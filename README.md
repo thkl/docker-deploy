@@ -174,6 +174,8 @@ Each deploy uses a fresh temporary checkout under the project root:
 
 Enable cleanup in Settings when project data no longer lives inside the temporary repository checkout. Before deleting `.updater/tmpdeploy`, the controller asks the selected agent to inspect the effective Compose file. Cleanup runs only when there are no unsafe checkout-local bind mounts such as `./data:/data`.
 
+On startup, the controller also sweeps stale `.updater/tmpdeploy` folders for configured projects when cleanup is enabled. This handles self-updates where the controller restarted before the original deploy callback could delete the temporary checkout.
+
 If a Compose file references `env_file: .env`, the worker uses `.env` from the persistent project root when the cloned repository does not contain one. The persisted deploy compose is rewritten to reference that project-root `.env`, so later runtime actions still work after temporary checkout cleanup.
 
 If a Compose file uses an absolute build context that points at the project root, for example `build.context: /root/docker-apps/my-project`, the worker rewrites only that build context to `.updater/tmpdeploy`. Relative bind mounts such as `./data:/app/data` are rewritten to the persistent project root, for example `/root/docker-apps/my-project/data:/app/data`.

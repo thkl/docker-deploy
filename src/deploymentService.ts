@@ -94,41 +94,59 @@ export class DeploymentService {
     }
 
     private async cleanupCheckoutAfterDeploy(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        await this.cleanupTempDeploymentCheckout(projectName, appSettings, globalSettings, deploymentId);
+    }
+
+    private async cleanupTempDeploymentCheckout(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, deploymentId?: string) {
         if (!globalSettings.cleanupAfterDeploy) {
             return;
         }
 
         const serverId = appSettings.serverId ?? "local";
         const agent = this.agentManager.getClient(serverId);
-        this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy requested. Verifying temporary checkout bind mounts...");
+        this.logCleanupLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy requested. Verifying temporary checkout bind mounts...");
 
         try {
             const checkoutPath = assertSafeDeletePath(tempDeployPath(appSettings.path ?? defaultProjectPath(globalSettings, projectName)), globalSettings.dataRoot);
             const bindMountInspection = await agent.inspectCheckoutBindMounts(checkoutPath);
             if (bindMountInspection.references.length > 0) {
-                this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> Cleanup skipped: ${bindMountInspection.references.length} running bind mount(s) still reference the temporary checkout.`);
+                this.logCleanupLine(projectName, deploymentId, "stdout", `--> Cleanup skipped: ${bindMountInspection.references.length} running bind mount(s) still reference the temporary checkout.`);
                 for (const reference of bindMountInspection.references.slice(0, 5)) {
-                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> Active mount: ${reference.containerName || reference.containerId || "container"} ${reference.source}:${reference.target}`);
+                    this.logCleanupLine(projectName, deploymentId, "stdout", `--> Active mount: ${reference.containerName || reference.containerId || "container"} ${reference.source}:${reference.target}`);
                 }
                 if (bindMountInspection.references.length > 5) {
-                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> ${bindMountInspection.references.length - 5} more active temporary-checkout mount(s) omitted.`);
+                    this.logCleanupLine(projectName, deploymentId, "stdout", `--> ${bindMountInspection.references.length - 5} more active temporary-checkout mount(s) omitted.`);
                 }
                 return;
             }
 
             const cleanup = await agent.deleteCheckout(checkoutPath);
             for (const step of cleanup.steps) {
-                this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> ${step}`);
+                this.logCleanupLine(projectName, deploymentId, "stdout", `--> ${step}`);
             }
-            this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy completed.");
+            this.logCleanupLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy completed.");
         } catch (error) {
-            this.appendDeploymentLine(projectName, deploymentId, "stderr", `--> Cleanup after deploy skipped: ${readErrorMessage(error)}`);
+            this.logCleanupLine(projectName, deploymentId, "stderr", `--> Cleanup after deploy skipped: ${readErrorMessage(error)}`);
         }
     }
 
     private appendDeploymentLine(projectName: string, deploymentId: string, stream: "stdout" | "stderr", message: string) {
         this.deploymentStore.append(projectName, deploymentId, stream, `${message}\n`);
         this.broadcastDeploymentUpdate(projectName);
+    }
+
+    private logCleanupLine(projectName: string, deploymentId: string | undefined, stream: "stdout" | "stderr", message: string) {
+        if (deploymentId) {
+            this.appendDeploymentLine(projectName, deploymentId, stream, message);
+            return;
+        }
+
+        const line = `[deployment-cleanup] ${projectName}: ${message}`;
+        if (stream === "stderr") {
+            console.error(line);
+        } else {
+            console.log(line);
+        }
     }
 
     /**
@@ -168,10 +186,6 @@ export class DeploymentService {
      */
     async reconcileRunningDeployments(projects: Record<string, ProjectSettings>) {
         const runningDeployments = this.deploymentStore.listRunning();
-        if (!runningDeployments.length) {
-            return;
-        }
-
         const globalSettings = this.globalSettingsStore.readSettings();
         for (const deployment of runningDeployments) {
             if (this.activeDeployments.has(deployment.id)) {
@@ -191,6 +205,26 @@ export class DeploymentService {
             }
 
             await this.reconcileDeployment(deployment.projectName, deployment.id, appSettings, globalSettings);
+        }
+
+        await this.cleanupStaleTempDeployments(projects, globalSettings);
+    }
+
+    /**
+     * Removes leftover temp checkouts after controller restarts.
+     */
+    private async cleanupStaleTempDeployments(projects: Record<string, ProjectSettings>, globalSettings: GlobalSettings) {
+        if (!globalSettings.cleanupAfterDeploy) {
+            return;
+        }
+
+        for (const [projectName, appSettings] of Object.entries(projects)) {
+            const latest = this.deploymentStore.latest(appSettings.id ?? projectName);
+            if (latest?.status === "running") {
+                continue;
+            }
+
+            await this.cleanupTempDeploymentCheckout(projectName, appSettings, globalSettings);
         }
     }
 
