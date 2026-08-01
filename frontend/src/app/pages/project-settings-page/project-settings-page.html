@@ -251,9 +251,11 @@
                   </div>
 
                   <div class="structured-editors">
-                    <section class="list-editor">
+                    <fieldset>
+                      <legend>Ports on</legend>
+
                       <div class="list-editor-head">
-                        <span>Ports</span>
+                        <span></span>
                         <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'ports', '8080:80')">Add</button>
                       </div>
                       @for (port of builderServiceListItems(service, 'ports'); track $index) {
@@ -264,7 +266,7 @@
                       } @empty {
                         <small>No published ports configured.</small>
                       }
-                    </section>
+                    </fieldset>
 
                     <section class="list-editor">
                       <div class="list-editor-head">
