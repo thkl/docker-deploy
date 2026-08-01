@@ -1,6 +1,8 @@
 import { createServer, Server } from "node:http";
 import express, { Express, Request, Response } from "express";
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
@@ -9,6 +11,8 @@ import { LocalAgent } from "./localAgent.js";
 import { RuntimeLogStream } from "./deploy.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
 import { appVersion } from "./version.js";
+import { defaultProjectPath } from "./globalSettingsStore.js";
+import { assertSafeDeletePath } from "./checkoutCleanup.js";
 
 interface AgentJobState {
     id: string;
@@ -19,7 +23,19 @@ interface AgentJobState {
     streamToken: string;
     frames: AgentLogFrame[];
     sockets: Set<WebSocket>;
+    request?: AgentJobRequest;
     cancel?: () => void;
+}
+
+interface PersistedAgentJobState {
+    id: string;
+    type: string;
+    startedAt: string;
+    active: boolean;
+    cancelOnDisconnect: boolean;
+    streamToken: string;
+    frames: AgentLogFrame[];
+    request?: AgentJobRequest;
 }
 
 /**
@@ -31,6 +47,7 @@ export class AgentRuntime {
     private readonly host = process.env.DEPLOY_AGENT_HOST || process.env.UPDATER_AGENT_HOST || "0.0.0.0";
     private readonly localAgent = new LocalAgent();
     private readonly jobs = new Map<string, AgentJobState>();
+    private readonly jobsPath = join("./data", "agent-jobs.json");
     private state: AgentState = ensureAgentState();
 
     /**
@@ -38,6 +55,7 @@ export class AgentRuntime {
      */
     start() {
         writeAgentPairingFile(this.state);
+        this.loadPersistedJobs();
         this.app.use(express.json({ limit: "12mb" }));
         this.registerRoutes();
         const server = createServer(this.app);
@@ -50,6 +68,7 @@ export class AgentRuntime {
             } else {
                 console.log("Agent pairing data written to /app/data/agent-pairing.json.");
             }
+            void this.recoverActiveDeployJobs();
         });
     }
 
@@ -129,7 +148,7 @@ export class AgentRuntime {
         this.app.post("/agent/jobs", async (req: Request, res: Response) => {
             try {
                 const request = this.openControllerEnvelope<AgentJobRequest>((req.body as { envelope?: SecureEnvelope }).envelope);
-                const accepted = this.createJob(request.jobType);
+                const accepted = this.createJob(request);
                 const response = await this.startJob(request, accepted);
                 if (!isStreamingJob(request.jobType)) {
                     const job = this.jobs.get(accepted.jobId);
@@ -308,18 +327,20 @@ export class AgentRuntime {
     /**
      * Creates an in-memory job stream.
      */
-    private createJob(jobType: AgentJobRequest["jobType"]): AgentJobAccepted {
+    private createJob(request: AgentJobRequest): AgentJobAccepted {
         const job: AgentJobState = {
             id: randomUUID(),
-            type: jobType,
+            type: request.jobType,
             startedAt: new Date().toISOString(),
             active: true,
-            cancelOnDisconnect: jobType !== "deploy",
+            cancelOnDisconnect: request.jobType !== "deploy",
             streamToken: randomUUID(),
             frames: [],
-            sockets: new Set()
+            sockets: new Set(),
+            ...(request.jobType === "deploy" ? { request } : {})
         };
         this.jobs.set(job.id, job);
+        this.persistDeployJobs();
         return { jobId: job.id, streamToken: job.streamToken, status: "accepted" };
     }
 
@@ -333,14 +354,159 @@ export class AgentRuntime {
         }
 
         job.frames.push(frame);
+        job.frames = trimFrames(job.frames);
         if (frame.done) {
             job.active = false;
         }
+        this.persistDeployJobs();
         const serialized = JSON.stringify(this.sealControllerEnvelope(frame, "job.log"));
         for (const socket of job.sockets) {
             if (socket.readyState === WebSocket.OPEN) {
                 socket.send(serialized);
             }
+        }
+    }
+
+    /**
+     * Reloads persisted deployment jobs so controller log polling can survive
+     * an agent self-update.
+     */
+    private loadPersistedJobs() {
+        if (!existsSync(this.jobsPath)) {
+            return;
+        }
+
+        try {
+            const persisted = JSON.parse(readFileSync(this.jobsPath, "utf8")) as PersistedAgentJobState[];
+            for (const job of persisted) {
+                if (job.type !== "deploy") {
+                    continue;
+                }
+                this.jobs.set(job.id, {
+                    id: job.id,
+                    type: job.type,
+                    startedAt: job.startedAt,
+                    active: job.active,
+                    cancelOnDisconnect: false,
+                    streamToken: job.streamToken,
+                    frames: trimFrames(job.frames ?? []),
+                    sockets: new Set(),
+                    request: job.request
+                });
+            }
+        } catch (error) {
+            console.error(`Could not load persisted agent jobs: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Persists deploy job metadata and buffered frames in the agent data volume.
+     */
+    private persistDeployJobs() {
+        const jobs = [...this.jobs.values()]
+            .filter((job) => job.type === "deploy")
+            .sort((left, right) => left.startedAt.localeCompare(right.startedAt))
+            .slice(-20)
+            .map((job): PersistedAgentJobState => ({
+                id: job.id,
+                type: job.type,
+                startedAt: job.startedAt,
+                active: job.active,
+                cancelOnDisconnect: false,
+                streamToken: job.streamToken,
+                frames: trimFrames(job.frames),
+                request: job.request
+            }));
+
+        try {
+            mkdirSync(dirname(this.jobsPath), { recursive: true });
+            writeFileSync(this.jobsPath, `${JSON.stringify(jobs, null, 2)}\n`, { mode: 0o600 });
+        } catch (error) {
+            console.error(`Could not persist agent jobs: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Completes active deployment jobs that were interrupted by an agent
+     * restart. The build worker usually survives long enough to finish the
+     * compose replacement; this reconciles by inspecting Docker runtime state.
+     */
+    private async recoverActiveDeployJobs() {
+        for (const job of [...this.jobs.values()].filter((candidate) => candidate.type === "deploy" && candidate.active && candidate.request?.jobType === "deploy")) {
+            const payload = job.request?.payload as DeployJobPayload | undefined;
+            if (!payload) {
+                continue;
+            }
+
+            this.emitFrame(job.id, {
+                stream: "stdout",
+                chunk: "--> Agent restarted before deployment completion was recorded. Rechecking runtime status.\n"
+            });
+
+            await delay(8000);
+            const status = await this.inspectRecoveredDeployment(payload);
+            if (status === "running" || status === "partial") {
+                await this.cleanupRecoveredDeployment(payload, job.id);
+                this.emitFrame(job.id, {
+                    stream: "status",
+                    chunk: `Agent recovered deployment after restart. Runtime status is ${status}.`,
+                    done: true,
+                    success: true
+                });
+            } else {
+                this.emitFrame(job.id, {
+                    stream: "status",
+                    chunk: `Agent recovered deployment after restart, but runtime status is ${status}.`,
+                    done: true,
+                    success: false,
+                    error: `Runtime status is ${status}.`
+                });
+            }
+        }
+    }
+
+    private async inspectRecoveredDeployment(payload: DeployJobPayload) {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+            const status = await this.localAgent.inspectStatus(payload.projectName, payload.appSettings, payload.globalSettings);
+            if (status.status === "running" || status.status === "partial") {
+                return status.status;
+            }
+            if (attempt < 3) {
+                await delay(5000);
+            }
+        }
+
+        return (await this.localAgent.inspectStatus(payload.projectName, payload.appSettings, payload.globalSettings)).status;
+    }
+
+    private async cleanupRecoveredDeployment(payload: DeployJobPayload, jobId: string) {
+        if (!payload.globalSettings.cleanupAfterDeploy) {
+            this.emitFrame(jobId, { stream: "stdout", chunk: "--> Cleanup after deploy disabled in global settings.\n" });
+            return;
+        }
+
+        try {
+            const projectRoot = payload.appSettings.path ?? defaultProjectPath(payload.globalSettings, payload.projectName);
+            const checkoutPath = assertSafeDeletePath(`${projectRoot.replace(/\/+$/, "")}/.updater/tmpdeploy`, payload.globalSettings.dataRoot);
+            const inspection = await this.localAgent.inspectCheckoutBindMounts(checkoutPath);
+            if (inspection.references.length > 0) {
+                this.emitFrame(jobId, {
+                    stream: "stdout",
+                    chunk: `--> Cleanup skipped: ${inspection.references.length} running bind mount(s) still reference the temporary checkout.\n`
+                });
+                return;
+            }
+
+            const cleanup = await this.localAgent.deleteCheckout(checkoutPath);
+            for (const step of cleanup.steps) {
+                this.emitFrame(jobId, { stream: "stdout", chunk: `--> ${step}\n` });
+            }
+            this.emitFrame(jobId, { stream: "stdout", chunk: "--> Cleanup after deploy completed.\n" });
+        } catch (error) {
+            this.emitFrame(jobId, {
+                stream: "stderr",
+                chunk: `--> Cleanup after deploy skipped: ${error instanceof Error ? error.message : String(error)}\n`
+            });
         }
     }
 
@@ -382,4 +548,12 @@ export class AgentRuntime {
 
 function isStreamingJob(jobType: AgentJobRequest["jobType"]) {
     return jobType === "deploy" || jobType === "runtimeLogsFollow" || jobType === "runtimeActionFollow";
+}
+
+function trimFrames(frames: AgentLogFrame[]) {
+    return frames.slice(-5000);
+}
+
+function delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
