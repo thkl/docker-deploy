@@ -49,6 +49,9 @@
           <button type="button" class="secondary" (click)="refreshServer(server.id)" [disabled]="refreshingServer() !== ''">
             {{ refreshingServer() === server.id ? 'Checking...' : 'Check' }}
           </button>
+          <button type="button" class="secondary" (click)="backupTraefik(server)" [disabled]="backingUpTraefik() !== '' || !server.capabilities?.traefik?.available">
+            {{ backingUpTraefik() === server.id ? 'Exporting...' : 'Export Traefik' }}
+          </button>
           @if (editingServer() === server.id) {
             <button type="button" class="secondary" (click)="saveServerName(server)" [disabled]="savingServerName() === server.id">
               {{ savingServerName() === server.id ? 'Saving...' : 'Save name' }}

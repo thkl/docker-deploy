@@ -173,6 +173,24 @@ export interface TraefikContainerInventory {
     configArgs: string[];
 }
 
+export interface TraefikConfigBackup {
+    serverId: string;
+    createdAt: string;
+    inventory: ServerCapabilities["traefik"];
+    files: TraefikConfigBackupFile[];
+}
+
+export interface TraefikConfigBackupFile {
+    containerId?: string;
+    containerName?: string;
+    source: string;
+    path: string;
+    kind: "static" | "dynamic" | "other";
+    content: string;
+    truncated: boolean;
+    error?: string;
+}
+
 export interface ServerSystemMetrics {
     checkedAt: string;
     loadAverage: number[];

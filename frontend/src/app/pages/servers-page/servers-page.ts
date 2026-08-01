@@ -23,6 +23,7 @@ export class ServersPage implements OnInit {
   protected readonly savingServer = signal(false);
   protected readonly pairingServer = signal('');
   protected readonly refreshingServer = signal('');
+  protected readonly backingUpTraefik = signal('');
   protected readonly deletingServer = signal('');
   protected readonly editingServer = signal('');
   protected readonly savingServerName = signal('');
@@ -128,6 +129,24 @@ export class ServersPage implements OnInit {
       error: (error) => {
         this.error.set(error?.error?.error || 'Could not refresh agent health.');
         this.refreshingServer.set('');
+      },
+    });
+  }
+
+  protected backupTraefik(server: ServerRecord) {
+    this.backingUpTraefik.set(server.id);
+    this.message.set('');
+    this.error.set('');
+
+    this.api.backupTraefik(server.id).subscribe({
+      next: (backup) => {
+        downloadJson(`deploy-traefik-${server.id}-${backup.createdAt.replace(/[:.]/g, '-')}.json`, backup);
+        this.message.set(`Traefik backup exported for ${server.name}.`);
+        this.backingUpTraefik.set('');
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not export Traefik backup.');
+        this.backingUpTraefik.set('');
       },
     });
   }
@@ -395,4 +414,14 @@ function readStoredPairingTokens(): Record<string, string> {
     removeSessionStorageKeys(pairingTokenStorageKey, legacyPairingTokenStorageKey);
     return {};
   }
+}
+
+function downloadJson(filename: string, value: unknown) {
+  const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

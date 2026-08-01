@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikDiagnostics, WebhookEventRecord } from '../models/project';
+import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigBackup, TraefikDiagnostics, WebhookEventRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -95,6 +95,10 @@ export class ProjectApi {
 
   refreshServerHealth(serverId: string): Observable<ServerRecord> {
     return this.http.post<ServerRecord>(`/api/servers/${encodeURIComponent(serverId)}/health`, {});
+  }
+
+  backupTraefik(serverId: string): Observable<TraefikConfigBackup> {
+    return this.http.get<TraefikConfigBackup>(`/api/servers/${encodeURIComponent(serverId)}/traefik/backup`);
   }
 
   createServer(payload: ServerPayload): Observable<ServerRecord> {

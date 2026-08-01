@@ -107,6 +107,17 @@ export class HttpAgentClient implements AgentClient {
     }
 
     /**
+     * Exports Traefik config files through a remote target server.
+     */
+    async backupTraefik(serverId: string, globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["backupTraefik"]>> }>({
+            jobType: "backupTraefik",
+            payload: { serverId, globalSettings } satisfies DetectTraefikJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
      * Diagnoses Traefik routing through a remote target server.
      */
     async diagnoseTraefik(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {

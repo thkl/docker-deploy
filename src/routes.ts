@@ -133,6 +133,22 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
         }
     });
 
+    app.get("/api/servers/:id/traefik/backup", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            const server = serverStore.get(serverId);
+            if (!server) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+
+            const backup = await agentManager.getClient(serverId).backupTraefik(serverId, globalSettingsStore.readSettings());
+            res.json(backup);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not export Traefik backup." });
+        }
+    });
+
     app.post("/api/servers/:id/health", async (req: Request, res: Response) => {
         try {
             const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

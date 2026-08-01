@@ -146,6 +146,8 @@ This is aimed at common `504 Gateway Timeout` failures where Traefik matched the
 
 The Servers page also shows a read-only Traefik inventory per agent: detected containers, networks, entrypoints, certificate resolvers, Docker provider network, ACME storage, and mounted config paths when these can be inferred from the Traefik container.
 
+Use **Export Traefik** on a server row to download a JSON backup before changing any shared proxy configuration. The export is collected through the selected agent and includes the read-only inventory plus discovered static and dynamic Traefik config file contents.
+
 ## Deploy From CI
 
 Set a CI deploy token in project settings, then call:

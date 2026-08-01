@@ -2,7 +2,7 @@ import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js"
 import { inspectCompose } from "./composeInspection.js";
 import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { backupTraefikConfig, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { GlobalSettings, ProjectSettings, RuntimeServiceAction } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
@@ -68,6 +68,13 @@ export class LocalAgent implements AgentClient {
      */
     detectTraefik(globalSettings: GlobalSettings) {
         return detectTraefik(globalSettings);
+    }
+
+    /**
+     * Exports discovered Traefik config files without modifying the target.
+     */
+    backupTraefik(serverId: string, globalSettings: GlobalSettings) {
+        return backupTraefikConfig(serverId, globalSettings);
     }
 
     /**

@@ -63,7 +63,7 @@ Initial tables:
 
 - [x] `settings`
 - [x] `servers`
-- [ ] `agents`
+- [x] `agents`
 - [x] `projects`
 - [x] `project_traefik_settings`
 - [x] `deployments`
@@ -345,7 +345,7 @@ Management workflow:
 
 - [x] Inventory Traefik containers, static config paths, dynamic config paths, entrypoints, cert resolvers, Docker provider network, and ACME storage.
 - [x] Show read-only server-level Traefik configuration before offering edits.
-- [ ] Add explicit backup/export before writing any Traefik config.
+- [x] Add explicit backup/export before writing any Traefik config.
 - [ ] Manage common defaults: entrypoints, cert resolvers, Docker network, wildcard domains, and ACME email/storage.
 - [ ] Validate generated Traefik config with the target agent before applying.
 - [ ] Apply changes through the target server agent and keep rollback instructions/output.

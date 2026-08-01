@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
+import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -393,6 +393,44 @@ function isPathInside(parentPath: string, candidatePath: string) {
  */
 export async function detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]> {
     const networkName = globalSettings.defaultTraefikNetwork || "proxy";
+    const checkedAt = new Date().toISOString();
+    const result = await inspectTraefikContainers(networkName);
+    if (!result.ok) {
+        return {
+            available: false,
+            containerCount: 0,
+            networkPresent: false,
+            checkedAt
+        };
+    }
+
+    const inventory = await buildTraefikInventory(result.inspect, result.containerCount, result.networkPresent, networkName, checkedAt);
+    return inventory;
+}
+
+export async function backupTraefikConfig(serverId: string, globalSettings: GlobalSettings): Promise<TraefikConfigBackup> {
+    const networkName = globalSettings.defaultTraefikNetwork || "proxy";
+    const checkedAt = new Date().toISOString();
+    const result = await inspectTraefikContainers(networkName);
+    const inspect = result.ok ? result.inspect : [];
+    const inventory = result.ok
+        ? await buildTraefikInventory(inspect, result.containerCount, result.networkPresent, networkName, checkedAt)
+        : {
+              available: false,
+              containerCount: 0,
+              networkPresent: false,
+              checkedAt
+          };
+
+    return {
+        serverId,
+        createdAt: new Date().toISOString(),
+        inventory,
+        files: await collectTraefikBackupFiles(inspect)
+    };
+}
+
+async function inspectTraefikContainers(networkName: string) {
     const command = `TRAEFIK_IDS="$(docker ps -aq --filter label=org.opencontainers.image.title=Traefik)"
 if [ -z "$TRAEFIK_IDS" ]; then
     TRAEFIK_IDS="$(docker ps -a --format '{{.ID}} {{.Image}} {{.Names}}' | grep -Ei '(^|[ /])traefik(:| |$)' | awk '{print $1}')"
@@ -410,40 +448,41 @@ printf '}\\n'`;
     try {
         const { stdout } = await execAsync(command, { maxBuffer: 1024 * 1024 });
         const result = JSON.parse(stdout.trim() || "{}") as { containerCount?: number; networkPresent?: boolean; inspect?: DockerInspectContainerWithMounts[] };
-        const containerCount = Number(result.containerCount || 0);
-        const networkPresent = Boolean(result.networkPresent);
-        const inspectedContainers = result.inspect ?? [];
-        const containers = inspectedContainers.map(parseTraefikContainerInventory);
-        const configArgs = containers.flatMap((container) => container.configArgs);
-        const mountedTargets = containers.flatMap((container) => container.mounts.map((mount) => mount.target));
-        const staticConfig = await readTraefikStaticConfigInventory(inspectedContainers);
-        const entryPoints = unique([...extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./), ...staticConfig.entryPoints]);
-        const certResolvers = unique([...extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./), ...staticConfig.certResolvers]);
-        const dockerProviderNetwork = extractTraefikValue(configArgs, "--providers.docker.network=") || staticConfig.dockerProviderNetwork || inferTraefikDockerNetwork(containers, networkName);
-        const acmeStorage = extractTraefikValue(configArgs, "--certificatesresolvers.", ".acme.storage=") || staticConfig.acmeStorage;
-
         return {
-            available: containerCount > 0 || networkPresent,
-            containerCount,
-            networkPresent,
-            checkedAt: new Date().toISOString(),
-            ...(containers.length ? { containers } : {}),
-            ...(unique(containers.flatMap((container) => container.networks)).length ? { networks: unique(containers.flatMap((container) => container.networks)) } : {}),
-            ...(entryPoints.length ? { entryPoints } : {}),
-            ...(certResolvers.length ? { certResolvers } : {}),
-            ...(dockerProviderNetwork ? { dockerProviderNetwork } : {}),
-            ...(acmeStorage ? { acmeStorage } : {}),
-            ...(mountedTargets.filter(isLikelyTraefikStaticConfigPath).length ? { staticConfigPaths: unique(mountedTargets.filter(isLikelyTraefikStaticConfigPath)) } : {}),
-            ...(mountedTargets.filter(isLikelyTraefikDynamicConfigPath).length ? { dynamicConfigPaths: unique(mountedTargets.filter(isLikelyTraefikDynamicConfigPath)) } : {})
+            ok: true as const,
+            containerCount: Number(result.containerCount || 0),
+            networkPresent: Boolean(result.networkPresent),
+            inspect: result.inspect ?? []
         };
     } catch (error) {
-        return {
-            available: false,
-            containerCount: 0,
-            networkPresent: false,
-            checkedAt: new Date().toISOString()
-        };
+        return { ok: false as const, containerCount: 0, networkPresent: false, inspect: [] as DockerInspectContainerWithMounts[] };
     }
+}
+
+async function buildTraefikInventory(inspectedContainers: DockerInspectContainerWithMounts[], containerCount: number, networkPresent: boolean, networkName: string, checkedAt: string): Promise<ServerCapabilities["traefik"]> {
+    const containers = inspectedContainers.map(parseTraefikContainerInventory);
+    const configArgs = containers.flatMap((container) => container.configArgs);
+    const mountedTargets = containers.flatMap((container) => container.mounts.map((mount) => mount.target));
+    const staticConfig = await readTraefikStaticConfigInventory(inspectedContainers);
+    const entryPoints = unique([...extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./), ...staticConfig.entryPoints]);
+    const certResolvers = unique([...extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./), ...staticConfig.certResolvers]);
+    const dockerProviderNetwork = extractTraefikValue(configArgs, "--providers.docker.network=") || staticConfig.dockerProviderNetwork || inferTraefikDockerNetwork(containers, networkName);
+    const acmeStorage = extractTraefikValue(configArgs, "--certificatesresolvers.", ".acme.storage=") || staticConfig.acmeStorage;
+
+    return {
+        available: containerCount > 0 || networkPresent,
+        containerCount,
+        networkPresent,
+        checkedAt,
+        ...(containers.length ? { containers } : {}),
+        ...(unique(containers.flatMap((container) => container.networks)).length ? { networks: unique(containers.flatMap((container) => container.networks)) } : {}),
+        ...(entryPoints.length ? { entryPoints } : {}),
+        ...(certResolvers.length ? { certResolvers } : {}),
+        ...(dockerProviderNetwork ? { dockerProviderNetwork } : {}),
+        ...(acmeStorage ? { acmeStorage } : {}),
+        ...(mountedTargets.filter(isLikelyTraefikStaticConfigPath).length ? { staticConfigPaths: unique(mountedTargets.filter(isLikelyTraefikStaticConfigPath)) } : {}),
+        ...(mountedTargets.filter(isLikelyTraefikDynamicConfigPath).length ? { dynamicConfigPaths: unique(mountedTargets.filter(isLikelyTraefikDynamicConfigPath)) } : {})
+    };
 }
 
 function parseTraefikContainerInventory(container: DockerInspectContainerWithMounts): TraefikContainerInventory {
@@ -501,6 +540,97 @@ async function readTraefikStaticConfigInventory(containers: DockerInspectContain
         dockerProviderNetwork: inventory.dockerProviderNetwork,
         acmeStorage: inventory.acmeStorage
     };
+}
+
+async function collectTraefikBackupFiles(containers: DockerInspectContainerWithMounts[]): Promise<TraefikConfigBackupFile[]> {
+    const files: TraefikConfigBackupFile[] = [];
+    const seen = new Set<string>();
+
+    for (const container of containers) {
+        if (!container.Id) {
+            continue;
+        }
+
+        const containerId = container.Id;
+        const containerName = container.Name?.replace(/^\/+/, "");
+        for (const mount of container.Mounts ?? []) {
+            const kind = classifyTraefikBackupPath(mount.Destination);
+            if (kind === "other") {
+                continue;
+            }
+
+            const discoveredPaths = await discoverContainerFiles(containerId, mount.Destination);
+            const paths = discoveredPaths.length ? discoveredPaths : [mount.Destination];
+            for (const path of paths) {
+                const key = `${containerId}:${path}`;
+                if (seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                const read = await readContainerFileForBackup(containerId, path);
+                files.push({
+                    containerId: containerId.slice(0, 12),
+                    ...(containerName ? { containerName } : {}),
+                    source: mount.Source,
+                    path,
+                    kind,
+                    content: read.content,
+                    truncated: read.truncated,
+                    ...(read.error ? { error: read.error } : {})
+                });
+            }
+        }
+    }
+
+    return files;
+}
+
+function classifyTraefikBackupPath(path: string): TraefikConfigBackupFile["kind"] {
+    if (isLikelyTraefikStaticConfigPath(path)) {
+        return "static";
+    }
+
+    if (isLikelyTraefikDynamicConfigPath(path) || /\.(ya?ml|toml)$/.test(path)) {
+        return "dynamic";
+    }
+
+    return "other";
+}
+
+async function discoverContainerFiles(containerId: string, path: string) {
+    try {
+        const { stdout } = await execAsync(
+            `docker run --rm --volumes-from ${shellQuote(`${containerId}:ro`)} alpine:latest sh -c 'if [ -d "$1" ]; then find "$1" -maxdepth 3 -type f \\( -name "*.yml" -o -name "*.yaml" -o -name "*.toml" \\) | sort; elif [ -f "$1" ]; then printf "%s\\n" "$1"; fi' sh ${shellQuote(path)}`,
+            { maxBuffer: 128 * 1024 }
+        );
+        return stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    } catch {
+        return [];
+    }
+}
+
+async function readContainerFileForBackup(containerId: string, path: string) {
+    const maxBytes = 256 * 1024;
+    try {
+        const { stdout } = await execAsync(
+            `docker run --rm --volumes-from ${shellQuote(`${containerId}:ro`)} alpine:latest sh -c 'if [ -f "$1" ]; then head -c ${maxBytes + 1} "$1"; else printf "__DEPLOY_BACKUP_ERROR__not a file"; fi' sh ${shellQuote(path)}`,
+            { maxBuffer: maxBytes + 4096 }
+        );
+        if (stdout.startsWith("__DEPLOY_BACKUP_ERROR__")) {
+            return { content: "", truncated: false, error: stdout.replace("__DEPLOY_BACKUP_ERROR__", "") };
+        }
+
+        return {
+            content: stdout.slice(0, maxBytes),
+            truncated: Buffer.byteLength(stdout) > maxBytes
+        };
+    } catch (error) {
+        return {
+            content: "",
+            truncated: false,
+            error: error instanceof Error ? error.message : "Could not read file."
+        };
+    }
 }
 
 async function readContainerFile(containerId: string, path: string) {
