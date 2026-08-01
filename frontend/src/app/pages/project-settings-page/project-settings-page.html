@@ -252,7 +252,7 @@
 
                   <div class="structured-editors">
                     <fieldset>
-                      <legend>Ports on</legend>
+                      <legend>Ports</legend>
 
                       <div class="list-editor-head">
                         <span></span>
@@ -268,9 +268,9 @@
                       }
                     </fieldset>
 
-                    <section class="list-editor">
+                    <fieldset>
+                      <legend>Environment</legend>
                       <div class="list-editor-head">
-                        <span>Environment</span>
                         <button type="button" class="secondary compact" (click)="addBuilderEnvironmentEntry(service.id)">Add</button>
                       </div>
                       @for (entry of builderEnvironmentEntries(service); track $index) {
@@ -282,11 +282,11 @@
                       } @empty {
                         <small>No environment variables configured.</small>
                       }
-                    </section>
+                    </fieldset>
 
-                    <section class="list-editor">
+                    <fieldset>
+                      <legend>Sensitive environment</legend>
                       <div class="list-editor-head">
-                        <span>Sensitive environment</span>
                         <button type="button" class="secondary compact" (click)="addBuilderSecretEnvironmentEntry(service.id)">Add</button>
                       </div>
                       @for (entry of service.secretEnvironment; track $index) {
@@ -302,11 +302,11 @@
                       } @empty {
                         <small>No sensitive environment variables configured.</small>
                       }
-                    </section>
+                    </fieldset>
 
-                    <section class="list-editor">
+                    <fieldset>
+                      <legend>Volumes</legend>
                       <div class="list-editor-head">
-                        <span>Volumes</span>
                         <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'volumes', './data:/data')">Add</button>
                       </div>
                       @for (volume of builderServiceListItems(service, 'volumes'); track $index) {
@@ -317,11 +317,11 @@
                       } @empty {
                         <small>No volume mounts configured.</small>
                       }
-                    </section>
+                    </fieldset>
 
-                    <section class="list-editor">
+                    <fieldset>
+                      <legend>Expose container ports</legend>
                       <div class="list-editor-head">
-                        <span>Expose container ports</span>
                         <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'expose', '3000')">Add</button>
                       </div>
                       @for (port of builderServiceListItems(service, 'expose'); track $index) {
@@ -332,7 +332,7 @@
                       } @empty {
                         <small>No exposed container ports configured.</small>
                       }
-                    </section>
+                    </fieldset>
                   </div>
 
                   <div class="field-grid">
