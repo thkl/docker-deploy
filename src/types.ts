@@ -122,6 +122,25 @@ export interface ServerCapabilities {
         networkPresent: boolean;
         checkedAt: string;
     };
+    system?: ServerSystemMetrics;
+}
+
+export interface ServerSystemMetrics {
+    checkedAt: string;
+    loadAverage: number[];
+    cpuCount: number;
+    memory: {
+        totalBytes: number;
+        usedBytes: number;
+        freeBytes: number;
+    };
+    disk?: {
+        path: string;
+        totalBytes: number;
+        usedBytes: number;
+        availableBytes: number;
+        usedPercent: number;
+    };
 }
 
 export type RuntimeProjectStatus = "running" | "partial" | "stopped" | "unknown" | "error";

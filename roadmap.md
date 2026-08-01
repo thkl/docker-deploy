@@ -271,6 +271,8 @@ Server UI:
 - [x] Show local agent by default.
 - [x] Add remote agent install/connect instructions.
 - [x] Show agent version, last heartbeat, and active job.
+- [x] Move server management into its own top-level UI category.
+- [x] Show host diagnostics from agents: CPU load, memory, disk, and metric timestamp when available.
 - [x] Push server health updates to the UI over the global event stream.
 - [x] Ping all configured remote agents every 5 minutes.
 
@@ -378,3 +380,5 @@ Example target layout:
 - [ ] Add explicit `queued` deployment status if deployments become queued before workers start.
 - [ ] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
 - [ ] Add cleanup-after-deploy enforcement based on externalized storage mappings.
+- [ ] Design guarded server-level Traefik management for entrypoints, cert resolvers, networks, and static/dynamic config.
+- [ ] Decide whether the product name should change now that it manages servers, compose, agents, and proxy diagnostics.

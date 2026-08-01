@@ -7,6 +7,7 @@ import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
 import { RuntimeLogStream } from "./deploy.js";
+import { collectSystemMetrics } from "./systemMetrics.js";
 import { appVersion } from "./version.js";
 
 interface AgentJobState {
@@ -78,7 +79,8 @@ export class AgentRuntime {
                         defaultTraefikCertResolver: "letsencrypt",
                         sshKeyPath: "~/.ssh",
                         cleanupAfterDeploy: false
-                    })
+                    }),
+                    system: await collectSystemMetrics()
                 }
             });
         });

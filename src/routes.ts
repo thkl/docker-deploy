@@ -17,6 +17,7 @@ import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignature } from "./signature.js";
+import { collectSystemMetrics } from "./systemMetrics.js";
 import { DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject } from "./webhookResolver.js";
@@ -99,8 +100,8 @@ function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSetting
 function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "controllerKeys" | "agentManager" | "globalSettingsStore" | "agentHealth" | "eventBus">) {
     const { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus } = dependencies;
 
-    app.get("/api/servers", (req: Request, res: Response) => {
-        agentHealth.refreshLocal();
+    app.get("/api/servers", async (req: Request, res: Response) => {
+        await agentHealth.refreshLocal();
         res.json(serverStore.list());
     });
 
@@ -118,7 +119,11 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
                 return;
             }
 
-            const capabilities = { traefik: await agentManager.getClient(serverId).detectTraefik(globalSettingsStore.readSettings()) };
+            const system = server.kind === "local" ? await collectSystemMetrics() : server.capabilities?.system;
+            const capabilities = {
+                traefik: await agentManager.getClient(serverId).detectTraefik(globalSettingsStore.readSettings()),
+                ...(system ? { system } : {})
+            };
             serverStore.updateCapabilities(serverId, capabilities);
             res.json(capabilities);
         } catch (error) {

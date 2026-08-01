@@ -36,4 +36,9 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/global-settings-page/global-settings-page').then((m) => m.GlobalSettingsPage),
   },
+  {
+    path: 'servers',
+    loadComponent: () =>
+      import('./pages/servers-page/servers-page').then((m) => m.ServersPage),
+  },
 ];

@@ -1,0 +1,159 @@
+<section class="page-head">
+  <div>
+    <h2>Servers</h2>
+    <p>Deployment agents, host diagnostics, active jobs, and proxy availability.</p>
+  </div>
+  <button type="button" class="secondary" (click)="refreshAllServers()" [disabled]="refreshingServer() !== '' || servers().length === 0">
+    {{ refreshingServer() ? 'Refreshing...' : 'Refresh health' }}
+  </button>
+</section>
+
+@if (error()) {
+  <p class="notice error">{{ error() }}</p>
+}
+
+@if (message()) {
+  <p class="notice">{{ message() }}</p>
+}
+
+<section class="server-list">
+  @for (server of servers(); track server.id) {
+    <article class="server-row">
+      <header class="server-top">
+        <div class="server-main">
+          <div class="server-title">
+            <span class="server-light" [class.online]="statusTone(server) === 'online'" [class.unpaired]="statusTone(server) === 'unpaired'" [class.offline]="statusTone(server) === 'offline'"></span>
+            <strong>{{ server.name }}</strong>
+            <span class="server-chip" [class.unpaired]="server.status === 'unpaired'" [class.offline]="server.status === 'offline'">{{ server.status || server.kind }}</span>
+          </div>
+          <span>{{ server.id }} @if (server.agentServerId && server.agentServerId !== server.id) { · agent {{ server.agentServerId }} } @if (server.baseUrl) { · {{ server.baseUrl }} }</span>
+          @if (server.lastHealthError) {
+            <small class="health-error">{{ server.lastHealthError }}</small>
+          }
+        </div>
+
+        <div class="server-actions">
+          <button type="button" class="secondary" (click)="refreshServer(server.id)" [disabled]="refreshingServer() !== ''">
+            {{ refreshingServer() === server.id ? 'Checking...' : 'Check' }}
+          </button>
+          @if (server.kind === 'remote') {
+            @if (server.status === 'unpaired') {
+              <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">
+                {{ pairingServer() === server.id ? 'Pairing...' : 'Pair' }}
+              </button>
+            }
+            <button type="button" class="danger-action" (click)="deleteServer(server.id)" [disabled]="deletingServer() !== ''">
+              {{ deletingServer() === server.id ? 'Removing...' : 'Remove' }}
+            </button>
+          }
+        </div>
+      </header>
+
+      <div class="server-health">
+        <span>
+          <strong>{{ server.agentVersion || 'unknown' }}</strong>
+          <small>version</small>
+        </span>
+        <span>
+          <strong>{{ formatDate(server.lastSeenAt) }}</strong>
+          <small>last heartbeat</small>
+        </span>
+        <span>
+          <strong>{{ activeJobLabel(server) }}</strong>
+          <small>running agent work</small>
+        </span>
+        <span>
+          <strong>{{ traefikLabel(server) }}</strong>
+          <small>Traefik</small>
+        </span>
+      </div>
+
+      <div class="diagnostic-grid">
+        <div class="metric-row">
+          <div>
+            <strong>CPU load</strong>
+            <small>{{ loadLabel(server) }}</small>
+          </div>
+          <meter min="0" max="100" [value]="loadPercent(server)"></meter>
+        </div>
+
+        <div class="metric-row">
+          <div>
+            <strong>Memory</strong>
+            <small>{{ memoryLabel(server) }}</small>
+          </div>
+          <meter min="0" max="100" [value]="memoryPercent(server)"></meter>
+        </div>
+
+        <div class="metric-row">
+          <div>
+            <strong>Disk /</strong>
+            <small>{{ diskLabel(server) }}</small>
+          </div>
+          <meter min="0" max="100" [value]="diskPercent(server)"></meter>
+        </div>
+
+        <div class="metric-row">
+          <div>
+            <strong>Metrics</strong>
+            <small>{{ metricCheckedAt(server) }}</small>
+          </div>
+        </div>
+      </div>
+
+      <section class="traefik-panel">
+        <div>
+          <strong>Traefik management</strong>
+          <span>Updater can detect Traefik and generate project labels today. Server-level Traefik config editing should be added as a dedicated, guarded workflow.</span>
+        </div>
+      </section>
+
+      @if (server.activeJobs?.length) {
+        <div class="active-job-list">
+          @for (job of server.activeJobs; track job.id) {
+            <span>{{ job.type }} · {{ formatDate(job.startedAt) }}</span>
+          }
+        </div>
+      }
+    </article>
+  } @empty {
+    <section class="settings-panel">
+      <p class="muted-copy">No servers have been registered yet.</p>
+    </section>
+  }
+</section>
+
+<section class="settings-panel remote-agent-panel" [formGroup]="serverForm">
+  <div class="panel-head inline">
+    <div>
+      <h3>Add remote agent</h3>
+      <span>Enter the agent URL and the token from /app/data/agent-pairing.json</span>
+    </div>
+    <button type="button" class="secondary" (click)="saveServer()" [disabled]="savingServer()">
+      {{ savingServer() ? 'Saving...' : 'Save agent' }}
+    </button>
+  </div>
+
+  <div class="agent-install">
+    <strong>Agent container</strong>
+    <code>docker compose -f docker-compose-agent.yaml up -d</code>
+    <span>Open <code>/app/data/agent-pairing.json</code> on the target server and paste the pairing token above.</span>
+  </div>
+
+  <div class="field-grid">
+    <label>
+      <span>Name optional</span>
+      <input formControlName="name" placeholder="uses the agent serverId when empty" />
+    </label>
+
+    <label>
+      <span>Agent URL</span>
+      <input formControlName="baseUrl" placeholder="http://10.0.0.22:3998" />
+    </label>
+
+    <label>
+      <span>Pairing token</span>
+      <input formControlName="pairingToken" autocomplete="off" placeholder="token from agent-pairing.json" />
+    </label>
+  </div>
+</section>

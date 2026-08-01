@@ -2,6 +2,7 @@ import { AgentManager } from "./agentManager.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ServerStore } from "./serverStore.js";
+import { collectSystemMetrics } from "./systemMetrics.js";
 import { GlobalSettings, ServerActiveJob, ServerCapabilities, ServerRecord } from "./types.js";
 import { appVersion } from "./version.js";
 
@@ -49,19 +50,39 @@ export class AgentHealthService {
     /**
      * Refreshes the locally embedded agent health row.
      */
-    refreshLocal() {
+    async refreshLocal() {
         const capabilities = this.serverStore.get("local")?.capabilities;
         return this.publishUpdatedServer(this.serverStore.updateHealth("local", {
             status: "online",
             agentVersion: appVersion(),
             activeJobs: this.localActiveJobs(),
-            capabilities: capabilities ?? {
+            capabilities: {
+                ...(capabilities ?? {
+                    traefik: {
+                        available: false,
+                        containerCount: 0,
+                        networkPresent: false,
+                        checkedAt: new Date().toISOString()
+                    }
+                }),
+                system: await collectSystemMetrics()
+            }
+        }));
+    }
+
+    /**
+     * Refreshes locally available Docker/proxy capabilities and host metrics.
+     */
+    async refreshLocalCapabilities(traefik: ServerCapabilities["traefik"]) {
+        return this.publishUpdatedServer(this.serverStore.updateHealth("local", {
+            status: "online",
+            agentVersion: appVersion(),
+            activeJobs: this.localActiveJobs(),
+            capabilities: {
                 traefik: {
-                    available: false,
-                    containerCount: 0,
-                    networkPresent: false,
-                    checkedAt: new Date().toISOString()
-                }
+                    ...traefik
+                },
+                system: await collectSystemMetrics()
             }
         }));
     }

@@ -1,0 +1,302 @@
+.page-head {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+h2 {
+  font-size: clamp(1.45rem, 2.2vw, 2rem);
+  font-weight: 560;
+  margin: 0 0 0.35rem;
+}
+
+h3 {
+  font-size: 0.98rem;
+  margin: 0;
+}
+
+p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.settings-panel,
+.server-row {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.9rem;
+}
+
+.server-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.server-row {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.server-top {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.server-main {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.server-title {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.server-title strong {
+  font-size: 0.98rem;
+}
+
+.server-light {
+  background: var(--muted);
+  border-radius: 999px;
+  height: 0.68rem;
+  width: 0.68rem;
+}
+
+.server-light.online {
+  background: var(--running);
+}
+
+.server-light.unpaired {
+  background: var(--warning);
+}
+
+.server-light.offline {
+  background: var(--danger);
+}
+
+.server-chip {
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 30%);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 520;
+  padding: 0.2rem 0.55rem;
+}
+
+.server-chip.unpaired {
+  border-color: color-mix(in srgb, var(--warning), transparent 34%);
+  color: var(--warning);
+}
+
+.server-chip.offline,
+.health-error {
+  color: var(--danger);
+}
+
+.server-main span,
+.server-main small,
+.server-health small,
+.metric-row small,
+.traefik-panel span,
+.panel-head span,
+label span,
+.agent-install span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.server-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
+.server-health,
+.diagnostic-grid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.server-health span,
+.metric-row,
+.traefik-panel,
+.agent-install {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  min-width: 0;
+  padding: 0.65rem;
+}
+
+.server-health span,
+.metric-row {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.server-health strong,
+.server-health small,
+.metric-row strong,
+.metric-row small {
+  overflow-wrap: anywhere;
+}
+
+meter {
+  height: 0.55rem;
+  width: 100%;
+}
+
+.traefik-panel {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.traefik-panel div,
+.agent-install {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.active-job-list {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding-top: 0.7rem;
+}
+
+.active-job-list span {
+  background: color-mix(in srgb, var(--warning), transparent 88%);
+  border-radius: 999px;
+  color: var(--warning);
+  font-size: 0.82rem;
+  padding: 0.18rem 0.5rem;
+}
+
+.remote-agent-panel {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.85rem;
+}
+
+.panel-head {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin: -0.9rem -0.9rem 0.9rem;
+  padding: 0.9rem;
+}
+
+.panel-head.inline {
+  border-bottom: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.field-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+input {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  min-height: 38px;
+  padding: 0.58rem 0.7rem;
+  width: 100%;
+}
+
+input:focus {
+  border-color: var(--accent);
+  outline: 3px solid color-mix(in srgb, var(--accent), transparent 78%);
+}
+
+button.secondary {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 28%);
+  color: var(--accent-strong);
+}
+
+button.secondary:hover {
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button.danger-action {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 36%);
+  color: var(--danger);
+}
+
+button.danger-action:hover {
+  background: transparent;
+  border-color: var(--danger);
+}
+
+.muted-copy {
+  max-width: 70ch;
+}
+
+.notice {
+  background: var(--button-subtle);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  margin: 0 0 0.85rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.notice.error {
+  color: var(--danger);
+}
+
+@media (max-width: 1050px) {
+  .server-health,
+  .diagnostic-grid,
+  .field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .page-head,
+  .server-top,
+  .panel-head.inline {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .server-actions {
+    justify-content: flex-start;
+  }
+
+  .server-health,
+  .diagnostic-grid,
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+}

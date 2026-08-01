@@ -57,6 +57,7 @@
     <section class="nav-section">
       <div class="nav-heading">Global</div>
       <nav class="global-nav" aria-label="Global settings">
+        <a routerLink="/servers" routerLinkActive="active">Servers</a>
         <a routerLink="/settings" routerLinkActive="active">Settings</a>
         @if (auth.authRequired()) {
           <button type="button" (click)="logout()">Logout</button>

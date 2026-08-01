@@ -135,8 +135,7 @@ class App {
      */
     private async warmLocalCapabilities() {
         const traefik = await this.localAgent.detectTraefik(this.globalSettingsStore.readSettings());
-        this.serverStore.updateCapabilities("local", { traefik });
-        this.agentHealth.refreshLocal();
+        await this.agentHealth.refreshLocalCapabilities(traefik);
     }
 
     /**
