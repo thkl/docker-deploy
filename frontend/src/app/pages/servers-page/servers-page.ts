@@ -2,10 +2,12 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { ProjectSummary, ServerRecord } from '../../models/project';
+import { readMigratedSessionStorageKey, removeSessionStorageKeys } from '../../services/browser-storage';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
-const pairingTokenStorageKey = 'updater.agentPairingTokens';
+const pairingTokenStorageKey = 'deploy.agentPairingTokens';
+const legacyPairingTokenStorageKey = 'updater.agentPairingTokens';
 
 @Component({
   selector: 'app-servers-page',
@@ -354,6 +356,7 @@ export class ServersPage implements OnInit {
     this.pairingTokens.update((tokens) => {
       const next = { ...tokens, [serverId]: pairingToken };
       sessionStorage.setItem(pairingTokenStorageKey, JSON.stringify(next));
+      sessionStorage.removeItem(legacyPairingTokenStorageKey);
       return next;
     });
   }
@@ -363,6 +366,7 @@ export class ServersPage implements OnInit {
       const next = { ...tokens };
       delete next[serverId];
       sessionStorage.setItem(pairingTokenStorageKey, JSON.stringify(next));
+      sessionStorage.removeItem(legacyPairingTokenStorageKey);
       return next;
     });
   }
@@ -370,8 +374,9 @@ export class ServersPage implements OnInit {
 
 function readStoredPairingTokens(): Record<string, string> {
   try {
-    return JSON.parse(sessionStorage.getItem(pairingTokenStorageKey) || '{}') as Record<string, string>;
+    return JSON.parse(readMigratedSessionStorageKey(pairingTokenStorageKey, legacyPairingTokenStorageKey) || '{}') as Record<string, string>;
   } catch {
+    removeSessionStorageKeys(pairingTokenStorageKey, legacyPairingTokenStorageKey);
     return {};
   }
 }

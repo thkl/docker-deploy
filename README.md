@@ -208,3 +208,4 @@ pnpm run build:all
 - Project roots, temporary checkouts, and Docker commands execute on the selected target server.
 - Stored Compose overrides intentionally replace repository Compose files for deployment.
 - The generated `.updater/compose/docker-compose.deploy.yml` is the persisted deploy source after each successful render.
+- `.updater`, `docker-compose.updater.yml`, and `UPDATER_*` environment names are kept as compatibility names for existing installs.

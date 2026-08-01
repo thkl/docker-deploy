@@ -2,13 +2,15 @@ import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { tap } from 'rxjs';
 import { AuthStatus } from '../models/project';
+import { readMigratedLocalStorageKey, removeLocalStorageKeys } from './browser-storage';
 
-export const adminTokenKey = 'updater.adminToken';
+export const adminTokenKey = 'deploy.adminToken';
+const legacyAdminTokenKey = 'updater.adminToken';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
-  private readonly token = signal(localStorage.getItem(adminTokenKey) ?? '');
+  private readonly token = signal(readMigratedLocalStorageKey(adminTokenKey, legacyAdminTokenKey) ?? '');
 
   readonly status = signal<AuthStatus | null>(null);
   readonly loading = signal(false);
@@ -54,8 +56,9 @@ export class AuthService {
     this.token.set(token);
     if (token) {
       localStorage.setItem(adminTokenKey, token);
+      localStorage.removeItem(legacyAdminTokenKey);
     } else {
-      localStorage.removeItem(adminTokenKey);
+      removeLocalStorageKeys(adminTokenKey, legacyAdminTokenKey);
     }
   }
 }

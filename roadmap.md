@@ -402,4 +402,4 @@ Example target layout:
 - [ ] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
 - [x] Add cleanup-after-deploy enforcement based on externalized storage mappings.
 - [ ] Build guarded server-level Traefik management for entrypoints, cert resolvers, networks, and static/dynamic config.
-- [ ] Decide whether the product name should change now that it manages servers, compose, agents, and proxy diagnostics.
+- [x] Rename the user-facing product to Deploy while keeping legacy `.updater`, `docker-compose.updater.yml`, and `UPDATER_*` compatibility.

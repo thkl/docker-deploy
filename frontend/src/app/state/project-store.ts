@@ -1,16 +1,18 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ProjectSummary, RuntimeStatus, ServerRecord } from '../models/project';
+import { readMigratedLocalStorageKey, removeLocalStorageKeys } from '../services/browser-storage';
 import { ControllerEvent, EventBusService } from '../services/event-bus';
 import { ProjectApi } from '../services/project-api';
 
-const selectedProjectKey = 'updater.selectedProject';
+const selectedProjectKey = 'deploy.selectedProject';
+const legacySelectedProjectKey = 'updater.selectedProject';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectStore {
   private readonly api = inject(ProjectApi);
   private readonly eventBus = inject(EventBusService);
-  private readonly selectedId = signal(localStorage.getItem(selectedProjectKey) ?? '');
+  private readonly selectedId = signal(readMigratedLocalStorageKey(selectedProjectKey, legacySelectedProjectKey) ?? '');
   private eventBusSubscription?: Subscription;
 
   readonly projects = signal<ProjectSummary[]>([]);
@@ -33,8 +35,9 @@ export class ProjectStore {
       const id = this.selectedId();
       if (id) {
         localStorage.setItem(selectedProjectKey, id);
+        localStorage.removeItem(legacySelectedProjectKey);
       } else {
-        localStorage.removeItem(selectedProjectKey);
+        removeLocalStorageKeys(selectedProjectKey, legacySelectedProjectKey);
       }
     });
   }
