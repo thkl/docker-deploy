@@ -46,11 +46,11 @@ function shellQuote(value: string | number | boolean) {
  */
 export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}): RuntimeLogStream {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
-    const cleanupScript = renderCleanupScript(globalSettings);
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const quotedHostAppsVolume = shellQuote(`${hostAppsPath}:${hostAppsPath}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
@@ -66,40 +66,45 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
 
-                if [ ! -d ${quotedHostAppsPath}/.git ]; then
-                    if [ -z "${quotedRepositoryUrl}" ]; then
-                        echo "--> CRITICAL: Project folder is missing or is not a Git checkout, and no repository URL is configured."
-                        exit 1
-                    fi
+                PROJECT_ROOT=${quotedHostAppsPath}
+                PROJECT_NAME=${shellQuote(composeProjectName)}
+                TMP_DEPLOY="$PROJECT_ROOT/.updater/tmpdeploy"
+                COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
+                mkdir -p "$COMPOSE_WORKSPACE"
 
-                    if [ -d ${quotedHostAppsPath} ] && [ -n "$(find ${quotedHostAppsPath} -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
-                        echo "--> CRITICAL: Project folder exists but is not an empty directory or a Git checkout."
-                        exit 1
-                    fi
-
-                    echo "--> Cloning repository into project folder..."
-                    mkdir -p "$(dirname ${quotedHostAppsPath})"
-                    git clone ${quotedRepositoryUrl} ${quotedHostAppsPath}
+                if [ -n "${quotedRepositoryUrl}" ]; then
+                    echo "--> Preparing temporary deployment checkout..."
+                    rm -rf "$TMP_DEPLOY"
+                    git clone ${quotedRepositoryUrl} "$TMP_DEPLOY"
+                    cd "$TMP_DEPLOY"
+                elif [ -d "$PROJECT_ROOT/.git" ]; then
+                    echo "--> Using legacy project-root Git checkout..."
+                    cd "$PROJECT_ROOT"
+                else
+                    echo "--> CRITICAL: No repository URL is configured and no legacy Git checkout exists at $PROJECT_ROOT."
+                    exit 1
                 fi
 
-                cd ${quotedHostAppsPath}
                 echo "--> Fetching latest changes..."
                 git pull --ff-only
 
 ${composeOverrideScript}
 ${composeSelectionScript}
 ${traefikOverrideScript}
+
+                echo "--> Rendering persistent Compose deployment file..."
+                docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --no-interpolate > "$COMPOSE_WORKSPACE/docker-compose.deploy.yml"
+                COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
                 
                 echo "--> Testing build for new changes..."
-                docker compose $COMPOSE_FILES build
+                docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build
                 if [ $? -eq 0 ]; then
                     echo "--> Build succeeded! Safely dropping old container via compose..."
-                    docker compose $COMPOSE_FILES down
+                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES down
                     
                     echo "--> Starting newly built container..."
-                    docker compose $COMPOSE_FILES up -d --no-build
+                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build
                     echo "--> Deployment successful."
-${cleanupScript}
                 else
                     echo "--> CRITICAL: Build failed! Keeping the old container running."
                     exit 1
@@ -142,6 +147,7 @@ EOF`;
  */
 export async function stopProjectContainers(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
@@ -155,14 +161,23 @@ export async function stopProjectContainers(repoName: string, appSettings: Proje
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose > /dev/null 2>&1
                 mkdir -p ${quotedHostAppsPath}
-                cd ${quotedHostAppsPath}
+                PROJECT_ROOT=${quotedHostAppsPath}
+                PROJECT_NAME=${shellQuote(composeProjectName)}
+                COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
+
+                if [ -f "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" ]; then
+                    echo "--> Using persisted updater Compose file."
+                    COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
+                else
+                    cd "$PROJECT_ROOT"
 
 ${composeOverrideScript}
 ${composeSelectionScript}
 ${traefikOverrideScript}
+                fi
 
                 echo "--> Stopping project containers..."
-                docker compose $COMPOSE_FILES down
+                docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES down
 EOF`;
 
     const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
@@ -507,6 +522,7 @@ function normalizeRuntimeActionInput(service: string, action: RuntimeServiceActi
 
 function renderRuntimeServiceActionCommand(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, serviceName: string, action: RuntimeServiceAction) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
     const projectPath = resolveHostPath(hostAppsPath);
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
@@ -519,10 +535,18 @@ function renderRuntimeServiceActionCommand(repoName: string, appSettings: Projec
             -v ${shellQuote(`${projectPath}:${projectPath}`)} \
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose > /dev/null 2>&1
-                cd ${shellQuote(projectPath)}
+                PROJECT_ROOT=${shellQuote(projectPath)}
+                PROJECT_NAME=${shellQuote(composeProjectName)}
+                COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
+
+                if [ -f "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" ]; then
+                    COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
+                else
+                    cd "$PROJECT_ROOT"
 ${composeOverrideScript}
 ${composeSelectionScript}
 ${traefikOverrideScript}
+                fi
 ${actionScript}
 EOF`;
 }
@@ -541,7 +565,10 @@ function renderComposeOverrideScript(composeOverride: string | undefined) {
                 cat > docker-compose.updater.source.yml << 'UPDATER_COMPOSE_EOF'
 ${composeOverride}
 UPDATER_COMPOSE_EOF
-                cp docker-compose.updater.source.yml docker-compose.updater.yml`;
+                cp docker-compose.updater.source.yml docker-compose.updater.yml
+                if [ -n "$COMPOSE_WORKSPACE" ]; then
+                    cp docker-compose.updater.source.yml "$COMPOSE_WORKSPACE/docker-compose.updater.source.yml"
+                fi`;
 }
 
 /**
@@ -576,50 +603,35 @@ function renderComposeSelectionScript(composeOverride: string | undefined) {
                 COMPOSE_FILES="-f $COMPOSE_FILE"`;
 }
 
-/**
- * Builds the deployment cleanup shell block.
- *
- * Cleanup is intentionally a placeholder for now because deleting repository
- * files can break bind mounts until data mapping is modeled explicitly.
- */
-function renderCleanupScript(globalSettings: GlobalSettings) {
-    if (!globalSettings.cleanupAfterDeploy) {
-        return "";
-    }
-
-    return `
-                    echo "--> Cleanup is enabled. Leaving compose artifacts in place; repository cleanup is not active yet."`;
-}
-
 function renderRuntimeServiceActionScript(service: string, action: RuntimeServiceAction) {
     const quotedService = shellQuote(service);
     if (action === "restart") {
         return `
                 echo "--> Restarting ${service}..."
-                docker compose $COMPOSE_FILES restart ${quotedService}`;
+                docker compose -p "$PROJECT_NAME" $COMPOSE_FILES restart ${quotedService}`;
     }
 
     if (action === "start") {
         return `
                 echo "--> Starting ${service}..."
-                docker compose $COMPOSE_FILES start ${quotedService}`;
+                docker compose -p "$PROJECT_NAME" $COMPOSE_FILES start ${quotedService}`;
     }
 
     if (action === "stop") {
         return `
                 echo "--> Stopping ${service}..."
-                docker compose $COMPOSE_FILES stop ${quotedService}`;
+                docker compose -p "$PROJECT_NAME" $COMPOSE_FILES stop ${quotedService}`;
     }
 
     if (action === "recreate") {
         return `
                 echo "--> Recreating ${service}..."
-                docker compose $COMPOSE_FILES up -d --no-deps --force-recreate ${quotedService}`;
+                docker compose -p "$PROJECT_NAME" $COMPOSE_FILES up -d --no-deps --force-recreate ${quotedService}`;
     }
 
     return `
                 echo "--> Pulling image for ${service}..."
-                docker compose $COMPOSE_FILES pull ${quotedService}`;
+                docker compose -p "$PROJECT_NAME" $COMPOSE_FILES pull ${quotedService}`;
 }
 
 function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {

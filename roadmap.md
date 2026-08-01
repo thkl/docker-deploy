@@ -360,7 +360,8 @@ Behavior:
 - [x] Offer rewrite to `/root/docker-data/<project>/...`.
 - [x] Generate updater-owned compose output instead of changing the repository compose file.
 - [x] Block repository cleanup if unsafe bind mounts remain.
-- [ ] Allow cleanup after deploy only when data paths are externalized.
+- [x] Allow cleanup after deploy only when data paths are externalized.
+- [x] Deploy from an updater-managed temporary checkout and persist rendered Compose files outside the checkout.
 
 Example target layout:
 
@@ -399,6 +400,6 @@ Example target layout:
 - [ ] Add encrypted-at-rest storage for project secrets.
 - [ ] Add explicit `queued` deployment status if deployments become queued before workers start.
 - [ ] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
-- [ ] Add cleanup-after-deploy enforcement based on externalized storage mappings.
+- [x] Add cleanup-after-deploy enforcement based on externalized storage mappings.
 - [ ] Build guarded server-level Traefik management for entrypoints, cert resolvers, networks, and static/dynamic config.
 - [ ] Decide whether the product name should change now that it manages servers, compose, agents, and proxy diagnostics.

@@ -6,7 +6,7 @@ import { AgentHealthService } from "./agentHealth.js";
 import { sealEnvelope } from "./agentCrypto.js";
 import { AdminAuth } from "./auth.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
-import { hasUnsafeRelativeBindMounts } from "./composeInspection.js";
+import { countBindMountsInsidePath, hasUnsafeRelativeBindMounts } from "./composeInspection.js";
 import { ConfigStore, maskToken } from "./configStore.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { DeploymentService } from "./deploymentService.js";
@@ -455,9 +455,12 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
             if (payload.deleteCheckout) {
                 const inspection = await agent.inspectCompose(projectName, appSettings, globalSettings);
-                if (hasUnsafeRelativeBindMounts(inspection)) {
+                const checkoutPath = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
+                const unsafeProjectRootMounts = countBindMountsInsidePath(inspection, checkoutPath);
+                if (hasUnsafeRelativeBindMounts(inspection) || unsafeProjectRootMounts > 0) {
+                    const unsafeMounts = Math.max(inspection.unsafeRelativeBindMounts, unsafeProjectRootMounts);
                     res.status(400).json({
-                        error: `${inspection.unsafeRelativeBindMounts} relative bind mounts still point into the checkout. Map them to ${globalSettings.dataRoot}/${projectName}/... before deleting the repository folder.`
+                        error: `${unsafeMounts} bind mounts still point into the project root or temporary checkout. Move them outside ${checkoutPath} before deleting the project folder.`
                     });
                     return;
                 }

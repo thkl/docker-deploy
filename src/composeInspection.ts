@@ -1,4 +1,5 @@
 import { exec } from "node:child_process";
+import { isAbsolute, relative, resolve } from "node:path/posix";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { ComposeInspection, ComposeMountInspection, ComposePortInspection, ComposeResourceInspection, ComposeServiceInspection, ComposeStorageMapping, GlobalSettings, ProjectSettings } from "./types.js";
@@ -14,45 +15,43 @@ const composeJsonEndMarker = "__UPDATER_COMPOSE_JSON_END__";
  */
 export async function inspectCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ComposeInspection> {
     const composeOverride = appSettings.composeOverride?.trim();
+    const projectRoot = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
+    const projectPath = `${projectRoot.replace(/\/+$/, "")}/.updater/inspect`;
     const output = composeOverride
         ? await inspectStoredOverride(projectName, appSettings, globalSettings, composeOverride)
         : await inspectRepositoryCompose(projectName, appSettings, globalSettings);
-    return normalizeComposeInspection(output, composeOverride ? "storedOverride" : "repository", projectName, globalSettings);
+    return normalizeComposeInspection(output, composeOverride ? "storedOverride" : "repository", projectName, globalSettings, projectPath);
 }
 
 async function inspectStoredOverride(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, composeOverride: string) {
-    const projectPath = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
-    const parentPath = parentDirectory(projectPath);
-    const quotedParentVolume = shellQuote(`${parentPath}:${parentPath}`);
+    const projectRoot = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
+    const quotedProjectVolume = shellQuote(`${projectRoot}:${projectRoot}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
-    const quotedProjectPath = shellQuote(projectPath);
+    const quotedProjectRoot = shellQuote(projectRoot);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
 
     const dockerRunCommand = `docker run -i --rm \
-            -v ${quotedParentVolume} \
+            -v ${quotedProjectVolume} \
             -v ${quotedSshKeyPath} \
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose git openssh-client > /dev/null 2>&1
 
-                if [ ! -d ${quotedProjectPath}/.git ]; then
-                    if [ -n "${quotedRepositoryUrl}" ]; then
-                        if [ -d ${quotedProjectPath} ] && [ -n "$(find ${quotedProjectPath} -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
-                            echo "--> CRITICAL: Project folder exists but is not an empty directory or a Git checkout."
-                            exit 1
-                        fi
+                PROJECT_ROOT=${quotedProjectRoot}
+                TMP_DEPLOY="$PROJECT_ROOT/.updater/inspect"
+                mkdir -p "$PROJECT_ROOT/.updater"
 
-                        echo "--> Cloning repository into project folder..."
-                        mkdir -p "$(dirname ${quotedProjectPath})"
-                        git clone ${quotedRepositoryUrl} ${quotedProjectPath}
-                    else
-                        mkdir -p ${quotedProjectPath}
-                    fi
+                if [ -n "${quotedRepositoryUrl}" ]; then
+                    rm -rf "$TMP_DEPLOY"
+                    git clone ${quotedRepositoryUrl} "$TMP_DEPLOY"
+                    cd "$TMP_DEPLOY"
+                elif [ -d "$PROJECT_ROOT/.git" ]; then
+                    echo "--> Using legacy project-root Git checkout for compose inspection..."
+                    cd "$PROJECT_ROOT"
                 else
-                    echo "--> Fetching latest changes for compose inspection..."
-                    git -C ${quotedProjectPath} pull --ff-only
+                    mkdir -p "$TMP_DEPLOY"
+                    cd "$TMP_DEPLOY"
                 fi
 
-                cd ${quotedProjectPath}
                 cat > docker-compose.updater.yml << 'UPDATER_COMPOSE_EOF'
 ${composeOverride}
 UPDATER_COMPOSE_EOF
@@ -70,40 +69,39 @@ EOF`;
 }
 
 async function inspectRepositoryCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
-    const projectPath = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
-    const parentPath = parentDirectory(projectPath);
-    const quotedParentVolume = shellQuote(`${parentPath}:${parentPath}`);
+    const projectRoot = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
+    const quotedProjectVolume = shellQuote(`${projectRoot}:${projectRoot}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
-    const quotedProjectPath = shellQuote(projectPath);
+    const quotedProjectRoot = shellQuote(projectRoot);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
     const composeSearch = composeFileNames.map(shellQuote).join(" ");
 
     const dockerRunCommand = `docker run -i --rm \
-            -v ${quotedParentVolume} \
+            -v ${quotedProjectVolume} \
             -v ${quotedSshKeyPath} \
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose git openssh-client > /dev/null 2>&1
 
-                if [ ! -d ${quotedProjectPath}/.git ]; then
+                PROJECT_ROOT=${quotedProjectRoot}
+                TMP_DEPLOY="$PROJECT_ROOT/.updater/inspect"
+                mkdir -p "$PROJECT_ROOT/.updater"
+
+                if [ -n "${quotedRepositoryUrl}" ]; then
+                    rm -rf "$TMP_DEPLOY"
+                    git clone ${quotedRepositoryUrl} "$TMP_DEPLOY"
+                    cd "$TMP_DEPLOY"
+                elif [ -d "$PROJECT_ROOT/.git" ]; then
+                    echo "--> Using legacy project-root Git checkout for compose inspection..."
+                    cd "$PROJECT_ROOT"
+                    echo "--> Fetching latest changes for compose inspection..."
+                    git pull --ff-only
+                else
                     if [ -z "${quotedRepositoryUrl}" ]; then
                         echo "--> CRITICAL: Project folder is missing or is not a Git checkout, and no repository URL is configured."
                         exit 1
                     fi
-
-                    if [ -d ${quotedProjectPath} ] && [ -n "$(find ${quotedProjectPath} -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
-                        echo "--> CRITICAL: Project folder exists but is not an empty directory or a Git checkout."
-                        exit 1
-                    fi
-
-                    echo "--> Cloning repository into project folder..."
-                    mkdir -p "$(dirname ${quotedProjectPath})"
-                    git clone ${quotedRepositoryUrl} ${quotedProjectPath}
-                else
-                    echo "--> Fetching latest changes for compose inspection..."
-                    git -C ${quotedProjectPath} pull --ff-only
                 fi
 
-                cd ${quotedProjectPath}
                 COMPOSE_FILE=""
                 for CANDIDATE in ${composeSearch}; do
                     if [ -f "$CANDIDATE" ]; then
@@ -130,14 +128,14 @@ EOF`;
     return stdout;
 }
 
-function normalizeComposeInspection(output: string, source: ComposeInspection["source"], projectName: string, globalSettings: GlobalSettings): ComposeInspection {
+function normalizeComposeInspection(output: string, source: ComposeInspection["source"], projectName: string, globalSettings: GlobalSettings, projectPath: string): ComposeInspection {
     const composeFile = parseMarkerValue(output, composeFileMarker);
     const config = parseMarkedJson(output) as ComposeConfig;
-    const services = Object.entries(config.services ?? {}).map(([name, service]) => normalizeService(name, service));
+    const services = Object.entries(config.services ?? {}).map(([name, service]) => normalizeService(name, service, projectPath));
     const volumes = normalizeResources(config.volumes);
     const networks = normalizeResources(config.networks);
     const unsafeRelativeBindMounts = services.flatMap((service) => service.mounts).filter((mount) => !mount.safeForCleanup).length;
-    const storageMappings = buildStorageMappings(projectName, globalSettings, services);
+    const storageMappings = buildStorageMappings(projectName, globalSettings, services, projectPath);
     const storageOverridePreview = renderStorageOverridePreview(storageMappings);
 
     return {
@@ -157,7 +155,14 @@ export function hasUnsafeRelativeBindMounts(inspection: ComposeInspection) {
     return inspection.storageMappings.length > 0 || inspection.unsafeRelativeBindMounts > 0;
 }
 
-function normalizeService(name: string, service: ComposeServiceConfig): ComposeServiceInspection {
+export function countBindMountsInsidePath(inspection: ComposeInspection, path: string) {
+    return inspection.services
+        .flatMap((service) => service.mounts)
+        .filter((mount) => mount.type === "bind" && mount.source && isCheckoutLocalPath(mount.source, path))
+        .length;
+}
+
+function normalizeService(name: string, service: ComposeServiceConfig, projectPath: string): ComposeServiceInspection {
     return {
         name,
         ...(typeof service.image === "string" ? { image: service.image } : {}),
@@ -166,7 +171,7 @@ function normalizeService(name: string, service: ComposeServiceConfig): ComposeS
         ...(typeof service.restart === "string" ? { restart: service.restart } : {}),
         ports: normalizePorts(service.ports),
         expose: normalizeStringList(service.expose),
-        mounts: normalizeMounts(service.volumes),
+        mounts: normalizeMounts(service.volumes, projectPath),
         networks: normalizeNameList(service.networks),
         dependsOn: normalizeNameList(service.depends_on),
         environmentKeys: normalizeEnvironmentKeys(service.environment)
@@ -200,14 +205,14 @@ function normalizePorts(ports: unknown): ComposePortInspection[] {
     });
 }
 
-function normalizeMounts(volumes: unknown): ComposeMountInspection[] {
+function normalizeMounts(volumes: unknown, projectPath: string): ComposeMountInspection[] {
     if (!Array.isArray(volumes)) {
         return [];
     }
 
     return volumes.map((volume) => {
         if (typeof volume === "string") {
-            return normalizeStringMount(volume);
+            return normalizeStringMount(volume, projectPath);
         }
 
         if (isRecord(volume)) {
@@ -216,13 +221,14 @@ function normalizeMounts(volumes: unknown): ComposeMountInspection[] {
             const target = valueToString(volume.target);
             const readOnly = Boolean(volume.read_only ?? volume.readonly);
             const relative = type === "bind" && Boolean(source) && isRelativePath(source);
+            const checkoutLocal = type === "bind" && Boolean(source) && isCheckoutLocalPath(source, projectPath);
             return {
                 type,
                 ...(source ? { source } : {}),
                 ...(target ? { target } : {}),
                 readOnly,
                 relative,
-                safeForCleanup: !relative,
+                safeForCleanup: !relative && !checkoutLocal,
                 raw: stringifyComposeValue(volume)
             };
         }
@@ -237,12 +243,13 @@ function normalizeMounts(volumes: unknown): ComposeMountInspection[] {
     });
 }
 
-function normalizeStringMount(value: string): ComposeMountInspection {
+function normalizeStringMount(value: string, projectPath: string): ComposeMountInspection {
     const parts = value.split(":");
     const source = parts.length > 1 ? parts[0] : "";
     const target = parts.length > 1 ? parts[1] : parts[0];
     const flags = parts.slice(2);
     const relative = Boolean(source) && isRelativePath(source);
+    const checkoutLocal = Boolean(source) && isCheckoutLocalPath(source, projectPath);
 
     return {
         type: source ? "bind" : "volume",
@@ -250,7 +257,7 @@ function normalizeStringMount(value: string): ComposeMountInspection {
         ...(target ? { target } : {}),
         readOnly: flags.includes("ro"),
         relative,
-        safeForCleanup: !relative,
+        safeForCleanup: !relative && !checkoutLocal,
         raw: value
     };
 }
@@ -266,12 +273,12 @@ function normalizeResources(resources: unknown): ComposeResourceInspection[] {
     }));
 }
 
-function buildStorageMappings(projectName: string, globalSettings: GlobalSettings, services: ComposeServiceInspection[]): ComposeStorageMapping[] {
+function buildStorageMappings(projectName: string, globalSettings: GlobalSettings, services: ComposeServiceInspection[], projectPath: string): ComposeStorageMapping[] {
     return services.flatMap((service) =>
         service.mounts
-            .filter((mount) => mount.type === "bind" && mount.relative && mount.source && mount.target)
+            .filter((mount) => mount.type === "bind" && !mount.safeForCleanup && mount.source && mount.target)
             .map((mount) => {
-                const suggestedHostPath = joinPaths(globalSettings.dataRoot, projectName, sanitizeRelativeMountSource(mount.source ?? ""));
+                const suggestedHostPath = joinPaths(globalSettings.dataRoot, projectName, sanitizeMountSource(mount.source ?? "", projectPath));
                 return {
                     service: service.name,
                     source: mount.source ?? "",
@@ -399,6 +406,24 @@ function parseMarkedJson(output: string) {
 
 function isRelativePath(path: string) {
     return path === "." || path === ".." || path.startsWith("./") || path.startsWith("../");
+}
+
+function isCheckoutLocalPath(path: string, projectPath: string) {
+    if (!isAbsolute(path)) {
+        return false;
+    }
+
+    const relativeSource = relative(resolve(projectPath), resolve(path));
+    return relativeSource === "" || (!relativeSource.startsWith("..") && !isAbsolute(relativeSource));
+}
+
+function sanitizeMountSource(source: string, projectPath: string) {
+    if (isAbsolute(source) && isCheckoutLocalPath(source, projectPath)) {
+        const sourceRelativeToProject = relative(resolve(projectPath), resolve(source));
+        return sanitizeRelativeMountSource(sourceRelativeToProject || "root");
+    }
+
+    return sanitizeRelativeMountSource(source);
 }
 
 function valueToString(value: unknown) {

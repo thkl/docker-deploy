@@ -26,8 +26,8 @@ export interface ImportedCompose {
  * import, deployment, and cleanup aligned on the same host checkout path.
  */
 export async function importProjectCompose(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ImportedCompose> {
-    const projectPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
-    const output = await runDockerHostComposeImport(projectPath, appSettings.repositoryUrl, globalSettings);
+    const projectRoot = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const output = await runDockerHostComposeImport(projectRoot, appSettings.repositoryUrl, globalSettings);
     return parseImportedCompose(output);
 }
 
@@ -36,42 +36,39 @@ export async function importProjectCompose(repoName: string, appSettings: Projec
  * the selected Compose file between parseable markers.
  */
 async function runDockerHostComposeImport(projectPath: string, repositoryUrl: string | undefined, globalSettings: GlobalSettings) {
-    const parentPath = parentDirectory(projectPath);
-    const quotedParentVolume = shellQuote(`${parentPath}:${parentPath}`);
+    const quotedProjectVolume = shellQuote(`${projectPath}:${projectPath}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
-    const quotedProjectPath = shellQuote(projectPath);
+    const quotedProjectRoot = shellQuote(projectPath);
     const quotedRepositoryUrl = repositoryUrl ? shellQuote(repositoryUrl) : "";
     const composeSearch = composeFileNames.map(shellQuote).join(" ");
 
-    console.log(`[compose-import] docker host import path: ${projectPath}`);
-    console.log(`[compose-import] docker host import mount: ${parentPath}:${parentPath}`);
+    console.log(`[compose-import] docker host project root: ${projectPath}`);
+    console.log(`[compose-import] docker host import mount: ${projectPath}:${projectPath}`);
 
     const dockerRunCommand = `docker run -i --rm \
-            -v ${quotedParentVolume} \
+            -v ${quotedProjectVolume} \
             -v ${quotedSshKeyPath} \
             alpine:latest sh << 'EOF'
                 apk add --no-cache git openssh-client > /dev/null 2>&1
 
-                if [ ! -d ${quotedProjectPath}/.git ]; then
-                    if [ -z "${quotedRepositoryUrl}" ]; then
-                        echo "--> CRITICAL: Project folder is missing or is not a Git checkout, and no repository URL is configured."
-                        exit 1
-                    fi
+                PROJECT_ROOT=${quotedProjectRoot}
+                TMP_DEPLOY="$PROJECT_ROOT/.updater/inspect"
+                mkdir -p "$PROJECT_ROOT/.updater"
 
-                    if [ -d ${quotedProjectPath} ] && [ -n "$(find ${quotedProjectPath} -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
-                        echo "--> CRITICAL: Project folder exists but is not an empty directory or a Git checkout."
-                        exit 1
-                    fi
-
-                    echo "--> Cloning repository into project folder..."
-                    mkdir -p "$(dirname ${quotedProjectPath})"
-                    git clone ${quotedRepositoryUrl} ${quotedProjectPath}
-                else
+                if [ -n "${quotedRepositoryUrl}" ]; then
+                    rm -rf "$TMP_DEPLOY"
+                    git clone ${quotedRepositoryUrl} "$TMP_DEPLOY"
+                    cd "$TMP_DEPLOY"
+                elif [ -d "$PROJECT_ROOT/.git" ]; then
+                    echo "--> Using legacy project-root Git checkout for compose import..."
+                    cd "$PROJECT_ROOT"
                     echo "--> Fetching latest changes for compose import..."
-                    git -C ${quotedProjectPath} pull --ff-only
+                    git pull --ff-only
+                else
+                    echo "--> CRITICAL: No repository URL is configured and no legacy Git checkout exists at $PROJECT_ROOT."
+                    exit 1
                 fi
 
-                cd ${quotedProjectPath}
                 COMPOSE_FILE=""
                 for CANDIDATE in ${composeSearch}; do
                     if [ -f "$CANDIDATE" ]; then
@@ -133,13 +130,6 @@ function parseImportedCompose(output: string): ImportedCompose {
         composeFile: composeFileLine,
         compose
     };
-}
-
-/**
- * Returns the parent directory for an absolute checkout path.
- */
-function parentDirectory(path: string) {
-    return path.replace(/\/+$/, "").replace(/\/[^/]+$/, "") || "/";
 }
 
 /**

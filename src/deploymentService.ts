@@ -1,7 +1,9 @@
 import { DeploymentRecord, DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
-import { GlobalSettingsStore } from "./globalSettingsStore.js";
+import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { AgentManager } from "./agentManager.js";
-import { ProjectSettings } from "./types.js";
+import { assertSafeDeletePath } from "./checkoutCleanup.js";
+import { hasUnsafeRelativeBindMounts } from "./composeInspection.js";
+import { GlobalSettings, ProjectSettings } from "./types.js";
 import { RuntimeLogStream } from "./deploy.js";
 
 /**
@@ -41,14 +43,7 @@ export class DeploymentService {
                 this.broadcastDeploymentUpdate(projectName);
             },
             onSuccess: () => {
-                if (!this.activeDeployments.has(deployment.id)) {
-                    return;
-                }
-                this.activeDeployments.delete(deployment.id);
-                this.deploymentStore.finish(projectName, deployment.id, "succeeded");
-                this.broadcastDeploymentUpdate(projectName);
-                void this.refreshServerHealth(appSettings.serverId ?? "local");
-                void this.refreshRuntimeStatus(projectName);
+                void this.finishSuccessfulDeployment(projectName, deployment.id, appSettings, globalSettings);
             },
             onFailure: (error) => {
                 if (!this.activeDeployments.has(deployment.id)) {
@@ -84,6 +79,64 @@ export class DeploymentService {
         });
 
         return deployment;
+    }
+
+    private async finishSuccessfulDeployment(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        if (!this.activeDeployments.has(deploymentId)) {
+            return;
+        }
+
+        this.activeDeployments.delete(deploymentId);
+        await this.cleanupCheckoutAfterDeploy(projectName, deploymentId, appSettings, globalSettings);
+        this.deploymentStore.finish(projectName, deploymentId, "succeeded");
+        this.broadcastDeploymentUpdate(projectName);
+        void this.refreshServerHealth(appSettings.serverId ?? "local");
+        void this.refreshRuntimeStatus(projectName);
+    }
+
+    private async cleanupCheckoutAfterDeploy(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        if (!globalSettings.cleanupAfterDeploy) {
+            return;
+        }
+
+        const serverId = appSettings.serverId ?? "local";
+        const agent = this.agentManager.getClient(serverId);
+        this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy requested. Verifying storage mappings...");
+
+        try {
+            const inspection = await agent.inspectCompose(projectName, appSettings, globalSettings);
+            if (hasUnsafeRelativeBindMounts(inspection)) {
+                this.appendDeploymentLine(
+                    projectName,
+                    deploymentId,
+                    "stdout",
+                    `--> Cleanup skipped: ${inspection.unsafeRelativeBindMounts} bind mount(s) still point into the temporary checkout. Externalize data paths before deleting it.`
+                );
+
+                const examples = inspection.storageMappings.slice(0, 5);
+                for (const mapping of examples) {
+                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> Suggested mapping for ${mapping.service}: ${mapping.suggestedMount}`);
+                }
+                if (inspection.storageMappings.length > examples.length) {
+                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> ${inspection.storageMappings.length - examples.length} more storage mapping(s) are available in Compose settings.`);
+                }
+                return;
+            }
+
+            const checkoutPath = assertSafeDeletePath(tempDeployPath(appSettings.path ?? defaultProjectPath(globalSettings, projectName)), globalSettings.dataRoot);
+            const cleanup = await agent.deleteCheckout(checkoutPath);
+            for (const step of cleanup.steps) {
+                this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> ${step}`);
+            }
+            this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy completed.");
+        } catch (error) {
+            this.appendDeploymentLine(projectName, deploymentId, "stderr", `--> Cleanup after deploy skipped: ${readErrorMessage(error)}`);
+        }
+    }
+
+    private appendDeploymentLine(projectName: string, deploymentId: string, stream: "stdout" | "stderr", message: string) {
+        this.deploymentStore.append(projectName, deploymentId, stream, `${message}\n`);
+        this.broadcastDeploymentUpdate(projectName);
     }
 
     /**
@@ -200,4 +253,12 @@ export class DeploymentService {
 
 function isRuntimeLogStream(value: RuntimeLogStream | Promise<RuntimeLogStream | void> | void): value is RuntimeLogStream {
     return !!value && typeof value === "object" && "stop" in value && typeof value.stop === "function";
+}
+
+function readErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function tempDeployPath(projectRoot: string) {
+    return `${projectRoot.replace(/\/+$/, "")}/.updater/tmpdeploy`;
 }

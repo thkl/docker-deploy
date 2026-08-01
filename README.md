@@ -14,6 +14,7 @@ Docker Updater is a lightweight Docker Compose deployment panel. It connects a c
 - Traefik integration that writes labels and proxy-network membership into the stored override YAML.
 - Traefik availability checks, cached server capabilities, and on-demand routing diagnostics.
 - Runtime status, published/exposed ports, host-network detection, recent logs, and live log streaming.
+- Optional checkout cleanup after deploy, guarded by Compose inspection so checkout-local data bind mounts must be externalized first.
 
 ## Run The Controller
 
@@ -58,7 +59,7 @@ In the controller UI, open global settings, add the agent URL, paste the pairing
 5. Configure either repository Compose usage or a stored Compose override.
 6. Save or Save & deploy.
 
-The target path is a path on the selected Docker server, not the controller machine.
+The target path is a persistent project root on the selected Docker server, not the controller machine. Deployments clone into an updater-managed temporary checkout below that root.
 
 ## Compose Builder
 
@@ -158,6 +159,23 @@ Project overview can inspect the deployed Compose runtime and show:
 
 Status and logs are requested through the selected target agent.
 
+## Cleanup After Deploy
+
+Each deploy uses a fresh temporary checkout under the project root:
+
+```text
+/root/docker-apps/my-project/
+  .updater/
+    tmpdeploy/
+    compose/docker-compose.deploy.yml
+    inspect/
+  data/
+```
+
+Enable cleanup in Settings when project data no longer lives inside the temporary repository checkout. Before deleting `.updater/tmpdeploy`, the controller asks the selected agent to inspect the effective Compose file. Cleanup runs only when there are no unsafe checkout-local bind mounts such as `./data:/data`.
+
+Use the Compose builder storage mapping preview to move relative data paths to an external host path such as `/root/docker-apps/<project>/data`. If unsafe mounts remain, the deploy still succeeds and the deployment log explains why checkout cleanup was skipped.
+
 ## Development
 
 Backend:
@@ -181,6 +199,6 @@ pnpm run build:all
 ## Notes
 
 - Docker socket access is powerful. Run the controller and agents only where that trust boundary is acceptable.
-- Project checkout paths and Docker commands execute on the selected target server.
+- Project roots, temporary checkouts, and Docker commands execute on the selected target server.
 - Stored Compose overrides intentionally replace repository Compose files for deployment.
-- The generated `docker-compose.updater.yml` is the deploy source when an override is saved.
+- The generated `.updater/compose/docker-compose.deploy.yml` is the persisted deploy source after each successful render.

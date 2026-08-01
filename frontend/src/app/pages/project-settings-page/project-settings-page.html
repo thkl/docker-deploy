@@ -49,7 +49,7 @@
       </label>
 
       <label>
-        <span>Host path</span>
+        <span>Project root</span>
         <input formControlName="path" autocomplete="off" placeholder="/root/docker-apps/service-a" />
       </label>
 
@@ -530,7 +530,7 @@
           <span>{{ compose.composeFile }} · {{ compose.source === 'storedOverride' ? 'stored override' : 'repository compose' }}</span>
         </div>
         @if (compose.unsafeRelativeBindMounts > 0) {
-          <p class="notice error">{{ compose.unsafeRelativeBindMounts }} relative bind mounts need data mapping before cleanup is safe.</p>
+          <p class="notice error">{{ compose.unsafeRelativeBindMounts }} checkout-local bind mounts need data mapping before cleanup is safe.</p>
         }
         @for (service of compose.services; track service.name) {
           <div class="compose-service">

@@ -19,11 +19,10 @@ const composeWarningsEndMarker = "__UPDATER_COMPOSE_WARNINGS_END__";
 export async function validateCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ComposeValidation> {
     const checkedAt = new Date().toISOString();
     const composeOverride = appSettings.composeOverride?.trim();
-    const projectPath = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
-    const parentPath = parentDirectory(projectPath);
-    const quotedParentVolume = shellQuote(`${parentPath}:${parentPath}`);
+    const projectRoot = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
+    const quotedProjectVolume = shellQuote(`${projectRoot}:${projectRoot}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
-    const quotedProjectPath = shellQuote(projectPath);
+    const quotedProjectRoot = shellQuote(projectRoot);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
     const composeSearch = composeFileNames.map(shellQuote).join(" ");
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
@@ -32,30 +31,30 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
 
     const dockerRunCommand = `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v ${quotedParentVolume} \
+            -v ${quotedProjectVolume} \
             -v ${quotedSshKeyPath} \
             alpine:latest sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose git jq openssh-client > /dev/null 2>&1
 
-                if [ ! -d ${quotedProjectPath}/.git ]; then
-                    if [ -n "${quotedRepositoryUrl}" ]; then
-                        if [ -d ${quotedProjectPath} ] && [ -n "$(find ${quotedProjectPath} -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
-                            echo "--> CRITICAL: Project folder exists but is not an empty directory or a Git checkout."
-                            exit 1
-                        fi
+                PROJECT_ROOT=${quotedProjectRoot}
+                TMP_DEPLOY="$PROJECT_ROOT/.updater/inspect"
+                COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
+                mkdir -p "$COMPOSE_WORKSPACE"
 
-                        echo "--> Cloning repository into project folder..."
-                        mkdir -p "$(dirname ${quotedProjectPath})"
-                        git clone ${quotedRepositoryUrl} ${quotedProjectPath}
-                    else
-                        mkdir -p ${quotedProjectPath}
-                    fi
-                else
+                if [ -n "${quotedRepositoryUrl}" ]; then
+                    rm -rf "$TMP_DEPLOY"
+                    git clone ${quotedRepositoryUrl} "$TMP_DEPLOY"
+                    cd "$TMP_DEPLOY"
+                elif [ -d "$PROJECT_ROOT/.git" ]; then
+                    echo "--> Using legacy project-root Git checkout for compose validation..."
+                    cd "$PROJECT_ROOT"
                     echo "--> Fetching latest changes for compose validation..."
-                    git -C ${quotedProjectPath} pull --ff-only
+                    git pull --ff-only
+                else
+                    mkdir -p "$TMP_DEPLOY"
+                    cd "$TMP_DEPLOY"
                 fi
 
-                cd ${quotedProjectPath}
 ${composeOverrideScript}
 ${composeSelectionScript}
 ${traefikOverrideScript}
@@ -160,12 +159,6 @@ function parseMarkedValue(output: string, beginMarker: string, endMarker: string
     }
 
     return output.slice(begin + beginMarker.length, end).replace(/^\r?\n/, "").replace(/\r?\n$/, "");
-}
-
-function parentDirectory(path: string) {
-    const normalized = path.replace(/\/+$/, "");
-    const parent = normalized.slice(0, normalized.lastIndexOf("/"));
-    return parent || "/";
 }
 
 function shellQuote(value: string | number | boolean) {
