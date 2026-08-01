@@ -352,6 +352,9 @@ fieldset small {
   display: flex;
   gap: 0.55rem;
   justify-content: space-between;
+  max-height: 40px;
+  display: flex;
+  flex-direction: row-reverse;
 }
 
 .list-editor-head span {
