@@ -197,6 +197,19 @@ export interface RuntimeActionResult {
     output: string;
 }
 
+export interface CheckoutBindMountReference {
+    containerName?: string;
+    containerId?: string;
+    source: string;
+    target: string;
+}
+
+export interface CheckoutBindMountInspection {
+    checkoutPath: string;
+    checkedAt: string;
+    references: CheckoutBindMountReference[];
+}
+
 export type TraefikDiagnosticStatus = "pass" | "warn" | "fail";
 
 export interface TraefikDiagnosticCheck {

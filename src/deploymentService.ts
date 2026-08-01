@@ -2,7 +2,6 @@ import { DeploymentRecord, DeploymentStore, DeploymentTrigger } from "./deployme
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { AgentManager } from "./agentManager.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
-import { hasUnsafeRelativeBindMounts } from "./composeInspection.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
 import { RuntimeLogStream } from "./deploy.js";
 
@@ -101,29 +100,22 @@ export class DeploymentService {
 
         const serverId = appSettings.serverId ?? "local";
         const agent = this.agentManager.getClient(serverId);
-        this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy requested. Verifying storage mappings...");
+        this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy requested. Verifying temporary checkout bind mounts...");
 
         try {
-            const inspection = await agent.inspectCompose(projectName, appSettings, globalSettings);
-            if (hasUnsafeRelativeBindMounts(inspection)) {
-                this.appendDeploymentLine(
-                    projectName,
-                    deploymentId,
-                    "stdout",
-                    `--> Cleanup skipped: ${inspection.unsafeRelativeBindMounts} bind mount(s) still point into the temporary checkout. Externalize data paths before deleting it.`
-                );
-
-                const examples = inspection.storageMappings.slice(0, 5);
-                for (const mapping of examples) {
-                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> Suggested mapping for ${mapping.service}: ${mapping.suggestedMount}`);
+            const checkoutPath = assertSafeDeletePath(tempDeployPath(appSettings.path ?? defaultProjectPath(globalSettings, projectName)), globalSettings.dataRoot);
+            const bindMountInspection = await agent.inspectCheckoutBindMounts(checkoutPath);
+            if (bindMountInspection.references.length > 0) {
+                this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> Cleanup skipped: ${bindMountInspection.references.length} running bind mount(s) still reference the temporary checkout.`);
+                for (const reference of bindMountInspection.references.slice(0, 5)) {
+                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> Active mount: ${reference.containerName || reference.containerId || "container"} ${reference.source}:${reference.target}`);
                 }
-                if (inspection.storageMappings.length > examples.length) {
-                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> ${inspection.storageMappings.length - examples.length} more storage mapping(s) are available in Compose settings.`);
+                if (bindMountInspection.references.length > 5) {
+                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> ${bindMountInspection.references.length - 5} more active temporary-checkout mount(s) omitted.`);
                 }
                 return;
             }
 
-            const checkoutPath = assertSafeDeletePath(tempDeployPath(appSettings.path ?? defaultProjectPath(globalSettings, projectName)), globalSettings.dataRoot);
             const cleanup = await agent.deleteCheckout(checkoutPath);
             for (const step of cleanup.steps) {
                 this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> ${step}`);
@@ -226,6 +218,7 @@ export class DeploymentService {
                     "stdout",
                     `--> Controller restarted before deployment completion was recorded. Runtime status is ${status.status}; marking deployment as succeeded.\n`
                 );
+                await this.cleanupCheckoutAfterDeploy(projectName, deploymentId, appSettings, globalSettings);
                 this.deploymentStore.finish(projectName, deploymentId, "succeeded", { exitCode: "controller-restart" });
             } else {
                 this.deploymentStore.finish(projectName, deploymentId, "failed", {

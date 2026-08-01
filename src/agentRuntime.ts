@@ -215,6 +215,11 @@ export class AgentRuntime {
             return { result: await this.localAgent.stopProject(payload.projectName, payload.appSettings, payload.globalSettings) };
         }
 
+        if (request.jobType === "inspectCheckoutBindMounts") {
+            const payload = request.payload as DeleteCheckoutJobPayload;
+            return { result: await this.localAgent.inspectCheckoutBindMounts(payload.checkoutPath) };
+        }
+
         if (request.jobType === "detectTraefik") {
             const payload = request.payload as DetectTraefikJobPayload;
             return { result: await this.localAgent.detectTraefik(payload.globalSettings) };

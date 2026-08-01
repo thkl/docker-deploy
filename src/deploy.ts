@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { GlobalSettings, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
+import { CheckoutBindMountInspection, GlobalSettings, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -224,6 +224,49 @@ EOF`;
 
     const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
     return `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
+}
+
+/**
+ * Reports running-container bind mounts that still reference a checkout path.
+ */
+export async function inspectCheckoutBindMounts(checkoutPath: string): Promise<CheckoutBindMountInspection> {
+    const normalizedCheckoutPath = checkoutPath.replace(/\/+$/, "");
+    const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli > /dev/null 2>&1
+                IDS="$(docker ps -q)"
+                if [ -z "$IDS" ]; then
+                    echo "[]"
+                    exit 0
+                fi
+                docker inspect $IDS
+EOF`;
+
+    const { stdout } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
+    const containers = JSON.parse(stdout.trim() || "[]") as DockerInspectContainerWithMounts[];
+    const references = containers.flatMap((container) =>
+        (container.Mounts ?? [])
+            .filter((mount) => mount.Type === "bind" && isPathInside(normalizedCheckoutPath, mount.Source))
+            .map((mount) => ({
+                containerName: container.Name?.replace(/^\//, ""),
+                containerId: container.Id,
+                source: mount.Source,
+                target: mount.Destination
+            }))
+    );
+
+    return {
+        checkoutPath: normalizedCheckoutPath,
+        checkedAt: new Date().toISOString(),
+        references
+    };
+}
+
+function isPathInside(parentPath: string, candidatePath: string) {
+    const normalizedParent = parentPath.replace(/\/+$/, "");
+    const normalizedCandidate = candidatePath.replace(/\/+$/, "");
+    return normalizedCandidate === normalizedParent || normalizedCandidate.startsWith(`${normalizedParent}/`);
 }
 
 /**
@@ -727,6 +770,14 @@ interface DockerInspectContainer {
         Ports?: DockerPortBindings;
         Networks?: Record<string, unknown>;
     };
+}
+
+interface DockerInspectContainerWithMounts extends DockerInspectContainer {
+    Mounts?: Array<{
+        Type?: string;
+        Source: string;
+        Destination: string;
+    }>;
 }
 
 function parseRuntimeService(container: DockerInspectContainer): RuntimeServiceStatus {

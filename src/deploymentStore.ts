@@ -174,7 +174,7 @@ export class DeploymentStore {
 
         this.database
             .prepare("INSERT INTO deployment_logs (deployment_id, stream, chunk, created_at) VALUES (?, ?, ?, ?)")
-            .run(deploymentId, stream, prefixChunk(stream, chunk), new Date().toISOString());
+            .run(deploymentId, stream, chunk, new Date().toISOString());
     }
 
     /**
@@ -222,7 +222,7 @@ export class DeploymentStore {
             .prepare("SELECT chunk FROM deployment_logs WHERE deployment_id = ? ORDER BY id ASC")
             .all(deploymentId) as unknown as Array<{ chunk: string }>;
 
-        return trimLog(rows.map((row) => row.chunk).join(""));
+        return trimLog(rows.map((row) => normalizeStoredLogChunk(row.chunk)).join(""));
     }
 
     /**
@@ -276,11 +276,8 @@ interface DeploymentRow {
     error: string | null;
 }
 
-/**
- * Keeps stderr markers compatible with the old JSON log output.
- */
-function prefixChunk(stream: DeploymentStream, chunk: string) {
-    return stream === "stderr" ? `[stderr] ${chunk}` : chunk;
+function normalizeStoredLogChunk(chunk: string) {
+    return chunk.replace(/(^|\n)\[stderr\] /g, "$1");
 }
 
 /**

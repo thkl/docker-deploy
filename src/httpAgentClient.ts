@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -80,6 +80,17 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: CheckoutCleanupResult }>({
             jobType: "deleteCheckout",
             payload: { checkoutPath } satisfies DeleteCheckoutJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
+     * Checks whether running containers still bind mount a checkout path.
+     */
+    async inspectCheckoutBindMounts(checkoutPath: string) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["inspectCheckoutBindMounts"]>> }>({
+            jobType: "inspectCheckoutBindMounts",
+            payload: { checkoutPath } satisfies InspectCheckoutBindMountsJobPayload
         });
         return accepted.result;
     }
