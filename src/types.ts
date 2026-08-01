@@ -77,6 +77,21 @@ export interface DeleteProjectPayload {
     deleteDeploymentHistory?: boolean;
 }
 
+export type WebhookEventStatus = "dispatched" | "ignored" | "error";
+
+export interface WebhookEventRecord {
+    id: string;
+    projectId?: string;
+    projectName?: string;
+    source: string;
+    eventType?: string;
+    status: WebhookEventStatus;
+    reason: string;
+    candidates: string[];
+    deploymentId?: string;
+    receivedAt: string;
+}
+
 export interface ServerRecord {
     id: string;
     name: string;

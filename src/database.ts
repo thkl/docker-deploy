@@ -142,6 +142,19 @@ export class AppDatabase {
                 error TEXT,
                 output TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS webhook_events (
+                id TEXT PRIMARY KEY,
+                project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+                project_name TEXT,
+                source TEXT NOT NULL,
+                event_type TEXT,
+                status TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                candidates_json TEXT NOT NULL,
+                deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
+                received_at TEXT NOT NULL
+            );
         `);
 
         this.ensureColumn("servers", "base_url", "TEXT");

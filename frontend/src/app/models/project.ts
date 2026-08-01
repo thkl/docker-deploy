@@ -76,6 +76,21 @@ export interface DeleteProjectResult {
   actions: string[];
 }
 
+export type WebhookEventStatus = 'dispatched' | 'ignored' | 'error';
+
+export interface WebhookEventRecord {
+  id: string;
+  projectId?: string;
+  projectName?: string;
+  source: string;
+  eventType?: string;
+  status: WebhookEventStatus;
+  reason: string;
+  candidates: string[];
+  deploymentId?: string;
+  receivedAt: string;
+}
+
 export interface GlobalSettings {
   dataRoot: string;
   defaultTraefikNetwork: string;

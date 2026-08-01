@@ -1,7 +1,7 @@
 import { Component, computed, effect, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus } from '../../models/project';
+import { DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, WebhookEventRecord } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
@@ -24,10 +24,12 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeStatus = signal<RuntimeStatus | null>(null);
   protected readonly runtimeLogs = signal<RuntimeLogs | null>(null);
   protected readonly runtimeOperations = signal<RuntimeOperationRecord[]>([]);
+  protected readonly latestWebhook = signal<WebhookEventRecord | null>(null);
   protected readonly loadingDeployment = signal(false);
   protected readonly loadingRuntimeStatus = signal(false);
   protected readonly loadingRuntimeLogs = signal(false);
   protected readonly loadingRuntimeOperations = signal(false);
+  protected readonly loadingWebhook = signal(false);
   protected readonly deploying = signal(false);
   protected readonly cancelingDeployment = signal(false);
   protected readonly deployMessage = signal('');
@@ -103,6 +105,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.connectDeploymentStream(projectRef);
         this.loadRuntimeStatus(projectRef);
         this.loadRuntimeOperations(projectRef);
+        this.loadLatestWebhook(projectRef);
       }
     });
   }
@@ -170,6 +173,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.loadLatestDeployment(project?.id ?? projectRef, project?.name ?? projectRef);
     this.loadRuntimeStatus(project?.id ?? projectRef);
     this.loadRuntimeOperations(project?.id ?? projectRef);
+    this.loadLatestWebhook(project?.id ?? projectRef);
   }
 
   protected openDelete(project: ProjectSummary) {
@@ -314,6 +318,22 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
           : status.status === 'error'
             ? 'Error'
             : 'Unknown';
+  }
+
+  protected webhookStatusLabel(webhook: WebhookEventRecord | null) {
+    if (!webhook) {
+      return 'No webhook yet';
+    }
+
+    return webhook.status === 'dispatched'
+      ? 'Dispatched'
+      : webhook.status === 'ignored'
+        ? 'Ignored'
+        : 'Error';
+  }
+
+  protected webhookCandidateLabel(webhook: WebhookEventRecord) {
+    return webhook.candidates.length ? webhook.candidates.slice(0, 4).join(', ') : 'No candidates recorded';
   }
 
   protected servicePortLabel(service: RuntimeServiceStatus) {
@@ -610,6 +630,29 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     });
   }
 
+  protected loadLatestWebhook(projectRef: string) {
+    this.loadingWebhook.set(true);
+
+    this.api.getLatestWebhook(projectRef).subscribe({
+      next: (webhook) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.latestWebhook.set(webhook);
+        this.loadingWebhook.set(false);
+      },
+      error: () => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.latestWebhook.set(null);
+        this.loadingWebhook.set(false);
+      },
+    });
+  }
+
   private connectDeploymentStream(projectRef: string) {
     this.disconnectDeploymentStream();
     this.loadingDeployment.set(true);
@@ -747,6 +790,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeStatus.set(null);
     this.runtimeLogs.set(null);
     this.runtimeOperations.set([]);
+    this.latestWebhook.set(null);
     this.runtimeStatusError.set('');
     this.runtimeLogsError.set('');
     this.runtimeOperationsError.set('');
@@ -765,6 +809,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.loadingRuntimeStatus.set(true);
     this.loadingRuntimeLogs.set(false);
     this.loadingRuntimeOperations.set(false);
+    this.loadingWebhook.set(false);
     this.cancelingDeployment.set(false);
 
     const cachedStatus = this.store.runtimeStatusFor(projectRef);

@@ -9,16 +9,39 @@ import { AuthenticatedRequest } from "./types.js";
  * verifier is kept as a fallback for webhook sources that use signed payloads.
  */
 export function verifySignature(repoToken: string, req: Request, res: Response) {
+    const result = verifySignatureDetailed(repoToken, req);
+    if (result.valid) {
+        return true;
+    }
+
+    if (result.logMessage) {
+        console.warn(result.logMessage);
+    }
+
+    res.status(result.statusCode).send(result.response);
+    return false;
+}
+
+export interface SignatureVerificationResult {
+    valid: boolean;
+    statusCode: number;
+    reason: string;
+    response: string;
+    logMessage?: string;
+}
+
+/**
+ * Verifies a webhook signature without writing to the HTTP response.
+ */
+export function verifySignatureDetailed(repoToken: string, req: Request): SignatureVerificationResult {
     try {
         const gitlabToken = readHeader(req.headers["x-gitlab-token"]);
         if (gitlabToken) {
             if (gitlabToken.length === repoToken.length && crypto.timingSafeEqual(Buffer.from(gitlabToken), Buffer.from(repoToken))) {
-                return true;
+                return validSignature();
             }
 
-            console.warn("Unauthorized: Invalid GitLab webhook token.");
-            res.status(403).send("Forbidden: Invalid webhook token.");
-            return false;
+            return invalidSignature("invalid-gitlab-token", "Forbidden: Invalid webhook token.", "Unauthorized: Invalid GitLab webhook token.");
         }
 
         const authReq = req as AuthenticatedRequest;
@@ -26,8 +49,7 @@ export function verifySignature(repoToken: string, req: Request, res: Response) 
         const webhookTimestamp = readHeader(req.headers["webhook-timestamp"]);
         const webhookSignatureHeader = readHeader(req.headers["webhook-signature"]);
         if (!webhookId || !webhookTimestamp || !webhookSignatureHeader) {
-            res.status(403).send("Forbidden: Missing webhook signature.");
-            return false;
+            return invalidSignature("missing-webhook-signature", "Forbidden: Missing webhook signature.");
         }
 
         const secretKeyRaw = repoToken.replace(/^whsec_/, "");
@@ -52,25 +74,25 @@ export function verifySignature(repoToken: string, req: Request, res: Response) 
         }
 
         if (!isSignatureValid) {
-            console.warn("Unauthorized: Invalid cryptographic signature.");
-            res.status(403).send("Forbidden: Invalid webhook signature.");
-            return false;
+            return invalidSignature("invalid-webhook-signature", "Forbidden: Invalid webhook signature.", "Unauthorized: Invalid cryptographic signature.");
         }
 
         const currentTimestamp = Math.floor(Date.now() / 1000);
         const requestTimestamp = parseInt(webhookTimestamp, 10);
         if (Math.abs(currentTimestamp - requestTimestamp) > 300) {
-            console.warn("Unauthorized: Webhook timestamp drifted too far (Replay Attack protection).");
-            res.status(403).send("Forbidden: Expired signature timestamp.");
-            return false;
+            return invalidSignature("expired-webhook-signature", "Forbidden: Expired signature timestamp.", "Unauthorized: Webhook timestamp drifted too far (Replay Attack protection).");
         }
     } catch (err) {
         console.error("Signature calculation crash:", err);
-        res.status(500).send("Internal validation error.");
-        return false;
+        return {
+            valid: false,
+            statusCode: 500,
+            reason: "signature-validation-error",
+            response: "Internal validation error."
+        };
     }
 
-    return true;
+    return validSignature();
 }
 
 /**
@@ -78,4 +100,23 @@ export function verifySignature(repoToken: string, req: Request, res: Response) 
  */
 function readHeader(value: string | string[] | undefined) {
     return Array.isArray(value) ? value[0] : value ?? "";
+}
+
+function validSignature(): SignatureVerificationResult {
+    return {
+        valid: true,
+        statusCode: 200,
+        reason: "valid",
+        response: ""
+    };
+}
+
+function invalidSignature(reason: string, response: string, logMessage?: string): SignatureVerificationResult {
+    return {
+        valid: false,
+        statusCode: 403,
+        reason,
+        response,
+        ...(logMessage ? { logMessage } : {})
+    };
 }

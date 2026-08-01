@@ -394,7 +394,7 @@ Example target layout:
 ## Current Remaining Work
 
 - [x] Add an Activity page backed by the global controller event stream.
-- [ ] Show last webhook receipt/match/ignore/error details per project.
+- [x] Show last webhook receipt/match/ignore/error details per project.
 - [ ] Finish moving page-specific live updates onto the global event stream where it makes sense, while keeping raw log streams separate if needed.
 - [ ] Add encrypted-at-rest storage for project secrets.
 - [ ] Add explicit `queued` deployment status if deployments become queued before workers start.

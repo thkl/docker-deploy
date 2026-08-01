@@ -233,6 +233,27 @@
   padding: 0.72rem 0.9rem;
 }
 
+.webhook-summary {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.72rem 0.9rem;
+}
+
+.webhook-detail {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.78rem 0.9rem;
+}
+
+.webhook-detail small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .status-chip {
   background: color-mix(in srgb, var(--accent), transparent 84%);
   border-radius: 999px;

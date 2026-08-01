@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikDiagnostics } from '../models/project';
+import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikDiagnostics, WebhookEventRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -71,6 +71,10 @@ export class ProjectApi {
 
   listDeployments(projectRef: string): Observable<DeploymentRecord[]> {
     return this.http.get<DeploymentRecord[]>(`/api/projects/${encodeURIComponent(projectRef)}/deployments`);
+  }
+
+  getLatestWebhook(projectRef: string): Observable<WebhookEventRecord | null> {
+    return this.http.get<WebhookEventRecord | null>(`/api/projects/${encodeURIComponent(projectRef)}/webhooks/latest`);
   }
 
   getGlobalSettings(): Observable<GlobalSettings> {

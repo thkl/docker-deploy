@@ -16,11 +16,12 @@ import { ControllerKeyState } from "./keyStore.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
-import { verifySignature } from "./signature.js";
+import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
 import { DeleteProjectPayload, GlobalSettingsPayload, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
-import { resolveWebhookProject } from "./webhookResolver.js";
+import { resolveWebhookProject, webhookProjectCandidates } from "./webhookResolver.js";
+import { WebhookStore } from "./webhookStore.js";
 
 /**
  * Dependencies required by the HTTP route layer.
@@ -30,6 +31,7 @@ export interface RouteDependencies {
     configStore: ConfigStore;
     deploymentService: DeploymentService;
     deploymentStore: DeploymentStore;
+    webhookStore: WebhookStore;
     runtimeOperationStore: RuntimeOperationStore;
     globalSettingsStore: GlobalSettingsStore;
     agentManager: AgentManager;
@@ -44,7 +46,7 @@ export interface RouteDependencies {
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
+    const { adminAuth, configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -70,8 +72,8 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
 
     registerSettingsRoutes(app, globalSettingsStore);
     registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus });
-    registerWebhookRoute(app, { configStore, deploymentService });
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus });
+    registerWebhookRoute(app, { configStore, deploymentService, webhookStore });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
 }
@@ -308,8 +310,8 @@ async function readResponseError(response: globalThis.Response) {
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "runtimeStatusStreams" | "eventBus">) {
-    const { configStore, deploymentService, deploymentStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "runtimeStatusStreams" | "eventBus">) {
+    const { configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus } = dependencies;
 
     app.get("/api/projects", async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -805,52 +807,118 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not load latest deployment." });
         }
     });
+
+    app.get("/api/projects/:name/webhooks/latest", (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+
+            if (!project) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            res.json(webhookStore.latestForProject(project.settings.id ?? project.name));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not load latest webhook event." });
+        }
+    });
 }
 
 /**
  * Registers the GitLab webhook endpoint.
  */
-function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService">) {
-    const { configStore, deploymentService } = dependencies;
+function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "webhookStore">) {
+    const { configStore, deploymentService, webhookStore } = dependencies;
 
     app.post("/webhook/:name", (req: Request, res: Response) => {
         const rawProjectName = req.params.name;
         const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
-        handleWebhook(req, res, configStore.resolveProject(projectRef));
+        handleWebhook(req, res, configStore.resolveProject(projectRef), `path:${projectRef}`, [projectRef, ...webhookProjectCandidates(req.body)]);
     });
 
     app.post("/webhook", (req: Request, res: Response) => {
-        handleWebhook(req, res, resolveWebhookProject(req.body, configStore.readConfig()));
+        handleWebhook(req, res, resolveWebhookProject(req.body, configStore.readConfig()), "auto", webhookProjectCandidates(req.body));
     });
 
-    function handleWebhook(req: Request, res: Response, webhookProject: { name?: string; projectName?: string; settings?: ProjectSettings; appSettings?: ProjectSettings } | null | undefined) {
-        const event = req.headers["x-gitlab-event"];
+    function handleWebhook(req: Request, res: Response, webhookProject: { name?: string; projectName?: string; settings?: ProjectSettings; appSettings?: ProjectSettings } | null | undefined, source: string, candidates: string[]) {
+        const event = readHeader(req.headers["x-gitlab-event"]);
+        const projectName = webhookProject?.projectName ?? webhookProject?.name;
+        const appSettings = webhookProject?.appSettings ?? webhookProject?.settings;
 
         if (event !== "Push Hook") {
+            webhookStore.record({
+                projectId: appSettings?.id,
+                projectName,
+                source,
+                eventType: event,
+                status: "ignored",
+                reason: event ? `Ignored ${event}. Only Push Hook triggers deployments.` : "Ignored webhook without X-Gitlab-Event header.",
+                candidates
+            });
             res.status(202).send("Ignored event");
             return;
         }
 
-        if (!webhookProject) {
-            throw new Error("No config for this repository");
-        }
-
-        const projectName = webhookProject.projectName ?? webhookProject.name;
-        const appSettings = webhookProject.appSettings ?? webhookProject.settings;
         if (!projectName || !appSettings) {
-            throw new Error("No config for this repository");
+            webhookStore.record({
+                source,
+                eventType: event,
+                status: "error",
+                reason: candidates.length ? `No configured project matched: ${candidates.join(", ")}` : "No configured project matched this webhook payload.",
+                candidates
+            });
+            res.status(404).send("No config for this repository");
+            return;
         }
 
         if (!appSettings.token) {
+            webhookStore.record({
+                projectId: appSettings.id,
+                projectName,
+                source,
+                eventType: event,
+                status: "error",
+                reason: "Webhook secret token is not configured for this project.",
+                candidates
+            });
             res.status(403).send("Webhook secret token is not configured for this project.");
             return;
         }
 
-        if (verifySignature(appSettings.token, req, res)) {
-            const deployment = deploymentService.startDeployment(projectName, appSettings, "webhook");
-            console.log(`Webhook deployment dispatched for ${projectName} (${deployment.id}).`);
-            res.status(200).send("Build worker dispatched");
+        const signature = verifySignatureDetailed(appSettings.token, req);
+        if (!signature.valid) {
+            if (signature.logMessage) {
+                console.warn(signature.logMessage);
+            }
+
+            webhookStore.record({
+                projectId: appSettings.id,
+                projectName,
+                source,
+                eventType: event,
+                status: "error",
+                reason: signature.reason,
+                candidates
+            });
+            res.status(signature.statusCode).send(signature.response);
+            return;
         }
+
+        const deployment = deploymentService.startDeployment(projectName, appSettings, "webhook");
+        webhookStore.record({
+            projectId: appSettings.id,
+            projectName,
+            source,
+            eventType: event,
+            status: "dispatched",
+            reason: "Webhook matched project and dispatched deployment.",
+            candidates,
+            deploymentId: deployment.id
+        });
+        console.log(`Webhook deployment dispatched for ${projectName} (${deployment.id}).`);
+        res.status(200).send("Build worker dispatched");
     }
 }
 
@@ -891,6 +959,10 @@ function registerCiDeployRoute(app: Express, dependencies: Pick<RouteDependencie
 
 function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {
     return ["restart", "start", "stop", "recreate", "pull"].includes(value);
+}
+
+function readHeader(value: string | string[] | undefined) {
+    return Array.isArray(value) ? value[0] : value ?? "";
 }
 
 /**

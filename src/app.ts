@@ -20,6 +20,7 @@ import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { AuthenticatedRequest, RuntimeStatus } from "./types.js";
+import { WebhookStore } from "./webhookStore.js";
 
 /**
  * Express controller bootstrap.
@@ -35,6 +36,7 @@ class App {
     private readonly adminAuth = new AdminAuth();
     private readonly configStore = new ConfigStore(this.database.connection);
     private readonly deploymentStore = new DeploymentStore(this.database.connection);
+    private readonly webhookStore = new WebhookStore(this.database.connection);
     private readonly runtimeOperationStore = new RuntimeOperationStore(this.database.connection);
     private readonly globalSettingsStore = new GlobalSettingsStore(this.database.connection);
     private readonly serverStore = new ServerStore(this.database.connection);
@@ -109,6 +111,7 @@ class App {
             configStore: this.configStore,
             deploymentService: this.deploymentService,
             deploymentStore: this.deploymentStore,
+            webhookStore: this.webhookStore,
             runtimeOperationStore: this.runtimeOperationStore,
             globalSettingsStore: this.globalSettingsStore,
             agentManager: this.agentManager,

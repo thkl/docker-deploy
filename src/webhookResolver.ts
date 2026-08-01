@@ -44,7 +44,7 @@ export function resolveWebhookProject(body: unknown, config: Record<string, Proj
 /**
  * Extracts all useful project identifiers from a GitLab push payload.
  */
-function webhookProjectCandidates(body: unknown) {
+export function webhookProjectCandidates(body: unknown) {
     if (!body || typeof body !== "object") {
         return [];
     }

@@ -177,6 +177,40 @@
     }
   </section>
 
+  <section class="deploy-panel webhook-panel">
+    <div class="deploy-head">
+      <div>
+        <h2>Webhook</h2>
+        <p>Last received webhook routing result for this project.</p>
+      </div>
+      <button type="button" class="secondary" (click)="loadLatestWebhook(project.id)" [disabled]="loadingWebhook()">
+        {{ loadingWebhook() ? 'Refreshing...' : 'Refresh' }}
+      </button>
+    </div>
+
+    @if (loadingWebhook()) {
+      <div class="empty-log">Loading webhook status...</div>
+    } @else if (latestWebhook(); as webhook) {
+      <div class="webhook-summary">
+        <span class="status-chip" [class.running]="webhook.status === 'ignored'" [class.failed]="webhook.status === 'error'">
+          {{ webhookStatusLabel(webhook) }}
+        </span>
+        <span>{{ webhook.eventType || 'event unknown' }}</span>
+        <span>{{ formatDate(webhook.receivedAt) }}</span>
+        <span>{{ webhook.source }}</span>
+        @if (webhook.deploymentId) {
+          <span>Deployment {{ webhook.deploymentId }}</span>
+        }
+      </div>
+      <div class="webhook-detail">
+        <strong>{{ webhook.reason }}</strong>
+        <small>Matched candidates: {{ webhookCandidateLabel(webhook) }}</small>
+      </div>
+    } @else {
+      <div class="empty-log">No webhook has been recorded for this project yet.</div>
+    }
+  </section>
+
   <section class="deploy-panel logs-panel">
     <div class="deploy-head">
       <div>
