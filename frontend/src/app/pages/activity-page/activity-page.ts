@@ -12,6 +12,7 @@ interface ActivityItem {
   time: string;
   tone: 'neutral' | 'success' | 'warning' | 'danger';
   projectId?: string;
+  serverId?: string;
 }
 
 @Component({
@@ -128,6 +129,7 @@ export class ActivityPage implements OnInit, OnDestroy {
           : event.server.status === 'unpaired'
             ? 'warning'
             : 'danger',
+        serverId: event.server.id,
       };
     }
 
@@ -148,6 +150,7 @@ export class ActivityPage implements OnInit, OnDestroy {
             ? 'danger'
             : 'warning',
         projectId: event.projectId,
+        serverId: deployment?.serverId,
       };
     }
 
@@ -179,6 +182,7 @@ export class ActivityPage implements OnInit, OnDestroy {
       time: event.operation.finishedAt,
       tone: event.operation.status === 'succeeded' ? 'success' : 'danger',
       projectId: event.projectId,
+      serverId: event.operation.serverId,
     };
   }
 

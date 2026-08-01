@@ -1279,6 +1279,7 @@ ${composeOverride}
 UPDATER_COMPOSE_EOF
                 cp docker-compose.updater.source.yml docker-compose.updater.yml
                 if [ -n "$COMPOSE_WORKSPACE" ]; then
+                    mkdir -p "$COMPOSE_WORKSPACE"
                     cp docker-compose.updater.source.yml "$COMPOSE_WORKSPACE/docker-compose.updater.source.yml"
                 fi`;
 }

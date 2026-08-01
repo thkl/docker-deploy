@@ -23,6 +23,7 @@ p {
 }
 
 .settings-panel,
+.activity-panel,
 .server-detail,
 .tab-panel,
 .server-row {
@@ -48,6 +49,101 @@ p {
 .server-list {
   display: grid;
   gap: 0.5rem;
+}
+
+.activity-panel {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.activity-head {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.stream-chip {
+  background: var(--button-subtle);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  padding: 0.18rem 0.5rem;
+}
+
+.stream-chip.live {
+  border-color: color-mix(in srgb, var(--running), transparent 42%);
+  color: var(--running);
+}
+
+.stream-chip.error {
+  border-color: color-mix(in srgb, var(--danger), transparent 42%);
+  color: var(--danger);
+}
+
+.server-activity-list {
+  display: grid;
+}
+
+.server-activity-row {
+  align-items: start;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 0.55rem 0;
+}
+
+.server-activity-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.server-activity-row:last-child {
+  padding-bottom: 0;
+}
+
+.server-activity-row > div {
+  display: grid;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.server-activity-row strong,
+.server-activity-row small,
+.server-activity-row time {
+  overflow-wrap: anywhere;
+}
+
+.server-activity-row small,
+.server-activity-row time {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.server-activity-row time {
+  grid-column: 2;
+}
+
+.activity-light {
+  background: var(--muted);
+  border-radius: 999px;
+  height: 0.52rem;
+  margin-top: 0.26rem;
+  width: 0.52rem;
+}
+
+.server-activity-row.success .activity-light {
+  background: var(--running);
+}
+
+.server-activity-row.warning .activity-light {
+  background: var(--warning);
+}
+
+.server-activity-row.danger .activity-light {
+  background: var(--danger);
 }
 
 .server-list-item {

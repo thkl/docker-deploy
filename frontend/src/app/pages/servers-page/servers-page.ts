@@ -1,8 +1,9 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { forkJoin } from 'rxjs';
+import { forkJoin, Subscription } from 'rxjs';
 import { ProjectSummary, ServerRecord, TraefikConfigValidation, TraefikDiagnosticStatus, TraefikImpactPreview } from '../../models/project';
 import { readMigratedSessionStorageKey, removeSessionStorageKeys } from '../../services/browser-storage';
+import { ControllerEvent, EventBusService } from '../../services/event-bus';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -10,16 +11,27 @@ const pairingTokenStorageKey = 'deploy.agentPairingTokens';
 const legacyPairingTokenStorageKey = 'updater.agentPairingTokens';
 type ServerTab = 'name' | 'health' | 'traefik';
 
+interface ServerActivityItem {
+  id: string;
+  serverId: string;
+  title: string;
+  detail: string;
+  time: string;
+  tone: 'neutral' | 'success' | 'warning' | 'danger';
+}
+
 @Component({
   selector: 'app-servers-page',
   imports: [ReactiveFormsModule],
   templateUrl: './servers-page.html',
   styleUrl: './servers-page.scss',
 })
-export class ServersPage implements OnInit {
+export class ServersPage implements OnInit, OnDestroy {
   private readonly api = inject(ProjectApi);
+  private readonly eventBus = inject(EventBusService);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly store = inject(ProjectStore);
+  private eventBusSubscription?: Subscription;
 
   protected readonly savingServer = signal(false);
   protected readonly pairingServer = signal('');
@@ -33,6 +45,8 @@ export class ServersPage implements OnInit {
   protected readonly serverNameDraft = signal('');
   protected readonly selectedServerId = signal('');
   protected readonly activeServerTab = signal<ServerTab>('name');
+  protected readonly serverActivity = signal<ServerActivityItem[]>([]);
+  protected readonly serverActivityState = signal<'connecting' | 'live' | 'error'>('connecting');
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly pairingTokens = signal<Record<string, string>>({});
@@ -48,6 +62,11 @@ export class ServersPage implements OnInit {
   ngOnInit() {
     this.pairingTokens.set(readStoredPairingTokens());
     this.store.loadServers();
+    this.connectServerActivity();
+  }
+
+  ngOnDestroy() {
+    this.eventBusSubscription?.unsubscribe();
   }
 
   protected selectedServer() {
@@ -64,6 +83,18 @@ export class ServersPage implements OnInit {
 
   protected setServerTab(tab: ServerTab) {
     this.activeServerTab.set(tab);
+  }
+
+  protected serverActivityLabel() {
+    return this.serverActivityState() === 'live'
+      ? 'Live'
+      : this.serverActivityState() === 'error'
+        ? 'Stream lost'
+        : 'Connecting';
+  }
+
+  protected visibleServerActivity(server?: ServerRecord) {
+    return this.serverActivity().filter((event) => !server || !event.serverId || event.serverId === server.id).slice(0, 8);
   }
 
   protected saveServer() {
@@ -296,6 +327,100 @@ export class ServersPage implements OnInit {
       dateStyle: 'short',
       timeStyle: 'short',
     }).format(new Date(value));
+  }
+
+  private connectServerActivity() {
+    this.eventBusSubscription = this.eventBus.stream().subscribe({
+      next: (event) => {
+        this.serverActivityState.set('live');
+        const item = this.toServerActivityItem(event);
+        if (item) {
+          this.upsertServerActivity(item);
+        }
+      },
+      error: () => {
+        this.serverActivityState.set('error');
+      },
+    });
+  }
+
+  private upsertServerActivity(item: ServerActivityItem) {
+    this.serverActivity.update((events) => {
+      const next = events.filter((event) => event.id !== item.id);
+      return [item, ...next].slice(0, 80);
+    });
+  }
+
+  private toServerActivityItem(event: ControllerEvent): ServerActivityItem | null {
+    if (event.type === 'connected') {
+      return {
+        id: `connected:${event.connectedAt}`,
+        serverId: '',
+        title: 'Agent activity connected',
+        detail: 'Controller events are flowing to this browser.',
+        time: event.connectedAt,
+        tone: 'success',
+      };
+    }
+
+    if (event.type === 'servers.updated') {
+      return {
+        id: `servers.updated:${event.changedAt}`,
+        serverId: '',
+        title: 'Server list changed',
+        detail: 'Server or agent configuration was updated.',
+        time: event.changedAt,
+        tone: 'neutral',
+      };
+    }
+
+    if (event.type === 'server.health') {
+      const activeJobs = event.server.activeJobs?.length ?? 0;
+      return {
+        id: `server.health:${event.server.id}:${event.server.updatedAt}`,
+        serverId: event.server.id,
+        title: `${event.server.name} ${event.server.status || 'unknown'}`,
+        detail: [
+          event.server.agentVersion ? `version ${event.server.agentVersion}` : 'version unknown',
+          activeJobs === 1 ? '1 active job' : `${activeJobs} active jobs`,
+          event.server.lastHealthError || '',
+        ].filter(Boolean).join(' · '),
+        time: event.server.lastSeenAt || event.server.updatedAt,
+        tone: event.server.status === 'online'
+          ? activeJobs > 0 ? 'warning' : 'success'
+          : event.server.status === 'unpaired'
+            ? 'warning'
+            : 'danger',
+      };
+    }
+
+    if (event.type === 'deployment.updated' && event.deployment?.serverId) {
+      return {
+        id: `deployment.updated:${event.deployment.id}:${event.deployment.status}`,
+        serverId: event.deployment.serverId,
+        title: `${event.deployment.projectName} deployment ${event.deployment.status}`,
+        detail: `${event.deployment.trigger} deploy on ${event.deployment.serverId}`,
+        time: event.deployment.finishedAt || event.deployment.startedAt,
+        tone: event.deployment.status === 'succeeded'
+          ? 'success'
+          : event.deployment.status === 'failed'
+            ? 'danger'
+            : 'warning',
+      };
+    }
+
+    if (event.type === 'runtime.operation.updated') {
+      return {
+        id: `runtime.operation.updated:${event.operation.id}`,
+        serverId: event.operation.serverId,
+        title: `${event.projectName} ${event.operation.action} ${event.operation.status}`,
+        detail: `${event.operation.service} on ${event.operation.serverId}`,
+        time: event.operation.finishedAt,
+        tone: event.operation.status === 'succeeded' ? 'success' : 'danger',
+      };
+    }
+
+    return null;
   }
 
   protected activeJobLabel(server: ServerRecord) {

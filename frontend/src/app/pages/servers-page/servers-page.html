@@ -35,6 +35,29 @@
       }
     </div>
 
+    <section class="activity-panel">
+      <div class="activity-head">
+        <strong>Agent activity</strong>
+        <span class="stream-chip" [class.live]="serverActivityState() === 'live'" [class.error]="serverActivityState() === 'error'">{{ serverActivityLabel() }}</span>
+      </div>
+      @if (visibleServerActivity().length) {
+        <div class="server-activity-list">
+          @for (event of visibleServerActivity(); track event.id) {
+            <article class="server-activity-row" [class.success]="event.tone === 'success'" [class.warning]="event.tone === 'warning'" [class.danger]="event.tone === 'danger'">
+              <span class="activity-light"></span>
+              <div>
+                <strong>{{ event.title }}</strong>
+                <small>{{ event.detail }}</small>
+              </div>
+              <time>{{ formatDate(event.time) }}</time>
+            </article>
+          }
+        </div>
+      } @else {
+        <p class="muted-copy">Waiting for agent events.</p>
+      }
+    </section>
+
     <section class="settings-panel remote-agent-panel" [formGroup]="serverForm">
       <div class="panel-head inline">
         <div>
@@ -252,6 +275,29 @@
               }
             </div>
           }
+
+          <section class="activity-panel detail-activity">
+            <div class="activity-head">
+              <strong>Live activity</strong>
+              <span class="stream-chip" [class.live]="serverActivityState() === 'live'" [class.error]="serverActivityState() === 'error'">{{ serverActivityLabel() }}</span>
+            </div>
+            @if (visibleServerActivity(server).length) {
+              <div class="server-activity-list">
+                @for (event of visibleServerActivity(server); track event.id) {
+                  <article class="server-activity-row" [class.success]="event.tone === 'success'" [class.warning]="event.tone === 'warning'" [class.danger]="event.tone === 'danger'">
+                    <span class="activity-light"></span>
+                    <div>
+                      <strong>{{ event.title }}</strong>
+                      <small>{{ event.detail }}</small>
+                    </div>
+                    <time>{{ formatDate(event.time) }}</time>
+                  </article>
+                }
+              </div>
+            } @else {
+              <p class="muted-copy">No live events for this agent yet.</p>
+            }
+          </section>
         </section>
       }
 

@@ -27,6 +27,9 @@
             @if (event.projectId) {
               <a [routerLink]="['/projects', event.projectId, 'overview']">Open project</a>
             }
+            @if (event.serverId) {
+              <a routerLink="/servers">Open server</a>
+            }
           </div>
         </article>
       }
