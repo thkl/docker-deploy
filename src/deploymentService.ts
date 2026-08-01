@@ -55,6 +55,24 @@ export class DeploymentService {
                     return;
                 }
                 this.activeDeployments.delete(deployment.id);
+                if (error.code === "remote-agent-job-lost") {
+                    this.deploymentStore.append(
+                        projectName,
+                        deployment.id,
+                        "stdout",
+                        "--> Remote agent restarted before deployment completion was recorded. Waiting for runtime reconciliation.\n"
+                    );
+                    this.broadcastDeployment(projectName);
+                    void this.reconcileDeployment(
+                        projectName,
+                        deployment.id,
+                        targetSettings,
+                        globalSettings,
+                        "Remote agent restarted before deployment completion was recorded",
+                        "remote-agent-restart"
+                    );
+                    return;
+                }
                 this.deploymentStore.finish(projectName, deployment.id, "failed", {
                     error: error.message,
                     exitCode: error.code
@@ -250,28 +268,36 @@ export class DeploymentService {
         return this.deploymentStore.latest(appSettings.id ?? projectName);
     }
 
-    private async reconcileDeployment(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings = this.globalSettingsStore.readSettings()) {
+    private async reconcileDeployment(
+        projectName: string,
+        deploymentId: string,
+        appSettings: ProjectSettings,
+        globalSettings = this.globalSettingsStore.readSettings(),
+        reason = "Controller restarted before deployment completion was recorded",
+        exitCode = "controller-restart"
+    ) {
         try {
+            await delay(5000);
             const status = await this.agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettings);
             if (status.status === "running" || status.status === "partial") {
                 this.deploymentStore.append(
                     projectName,
                     deploymentId,
                     "stdout",
-                    `--> Controller restarted before deployment completion was recorded. Runtime status is ${status.status}; marking deployment as succeeded.\n`
+                    `--> ${reason}. Runtime status is ${status.status}; marking deployment as succeeded.\n`
                 );
                 await this.cleanupCheckoutAfterDeploy(projectName, deploymentId, appSettings, globalSettings);
-                this.deploymentStore.finish(projectName, deploymentId, "succeeded", { exitCode: "controller-restart" });
+                this.deploymentStore.finish(projectName, deploymentId, "succeeded", { exitCode });
             } else {
                 this.deploymentStore.finish(projectName, deploymentId, "failed", {
-                    error: `Controller restarted before deployment completion was recorded. Runtime status is ${status.status}.`,
-                    exitCode: "controller-restart"
+                    error: `${reason}. Runtime status is ${status.status}.`,
+                    exitCode
                 });
             }
         } catch (error) {
             this.deploymentStore.finish(projectName, deploymentId, "failed", {
-                error: error instanceof Error ? `Controller restarted and runtime reconciliation failed: ${error.message}` : "Controller restarted and runtime reconciliation failed.",
-                exitCode: "controller-restart"
+                error: error instanceof Error ? `${reason}, and runtime reconciliation failed: ${error.message}` : `${reason}, and runtime reconciliation failed.`,
+                exitCode
             });
         }
 
@@ -291,6 +317,10 @@ function targetServerIds(appSettings: ProjectSettings) {
         .map((serverId) => serverId.trim())
         .filter(Boolean);
     return [...new Set(ids.length ? ids : ["local"])];
+}
+
+function delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isRuntimeLogStream(value: RuntimeLogStream | Promise<RuntimeLogStream | void> | void): value is RuntimeLogStream {

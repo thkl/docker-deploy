@@ -228,6 +228,7 @@ export class HttpAgentClient implements AgentClient {
         let socketOpen = false;
         let pollOffset = 0;
         let reconnects = 0;
+        let missingPolls = 0;
         let pollTimer: NodeJS.Timeout | undefined;
         const handleFrame = (frame: AgentLogFrame) => {
             if (frame.stream === "stdout" || frame.stream === "stderr") {
@@ -260,8 +261,21 @@ export class HttpAgentClient implements AgentClient {
                 pollUrl.searchParams.set("after", String(pollOffset));
                 const response = await fetch(pollUrl);
                 if (!response.ok) {
+                    if (response.status === 404 && pollOffset > 0) {
+                        missingPolls += 1;
+                        if (missingPolls >= 3) {
+                            const failure = new Error("Remote agent restarted and forgot the deployment log stream.") as Error & { code?: string };
+                            failure.code = "remote-agent-job-lost";
+                            hooks.onFailure?.(failure);
+                            stopped = true;
+                            socket?.close();
+                            return;
+                        }
+                        return;
+                    }
                     throw new Error(await response.text());
                 }
+                missingPolls = 0;
                 const body = await response.json() as { next?: number; frames?: SecureEnvelope[] };
                 for (const envelope of body.frames ?? []) {
                     handleFrame(this.openAgentEnvelope<AgentLogFrame>(envelope));
