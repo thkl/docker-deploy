@@ -8,7 +8,7 @@ import { ControllerKeyState } from "./keyStore.js";
 import { GlobalSettings, ProjectSettings, RuntimeServiceAction, ServerRecord } from "./types.js";
 
 /**
- * Controller-side client for a remote updater agent.
+ * Controller-side client for a remote Deploy agent.
  */
 export class HttpAgentClient implements AgentClient {
     private readonly seenNonces = new Set<string>();

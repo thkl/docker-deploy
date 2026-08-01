@@ -1,6 +1,6 @@
 /**
  * Makes a project-root .env available to Docker Compose commands executed from
- * an updater-managed temporary checkout.
+ * a Deploy-managed temporary checkout.
  */
 export function renderProjectRootEnvFileScript() {
     return `

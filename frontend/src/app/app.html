@@ -1,14 +1,14 @@
 @if (!auth.status()) {
-  <main class="auth-loading">Loading updater...</main>
+  <main class="auth-loading">Loading Deploy...</main>
 } @else if (!auth.authenticated()) {
   <router-outlet />
 } @else {
 <div class="shell">
   <aside class="sidebar">
     <a class="brand" routerLink="/projects">
-      <span class="brand-mark">U</span>
+      <span class="brand-mark">D</span>
       <span>
-        <strong>Updater</strong>
+        <strong>Deploy</strong>
         <small>Compose deploys</small>
       </span>
     </a>

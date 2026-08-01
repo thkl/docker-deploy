@@ -197,7 +197,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             const health = await agentHealth.fetchAgentHealth(agentBaseUrl);
             if (!health.ok) {
                 res.status(400).json({
-                    error: `Agent URL is not reaching an updater agent. ${health.message}`
+                    error: `Agent URL is not reaching a Deploy agent. ${health.message}`
                 });
                 return;
             }
@@ -255,7 +255,7 @@ async function createRemoteServer(payload: ServerPayload, serverStore: ServerSto
         const baseUrl = String(payload.baseUrl || "").trim().replace(/\/+$/, "");
         const health = await agentHealth.fetchAgentHealth(baseUrl);
         if (!health.ok || !health.body) {
-            res.status(400).json({ error: `Agent URL is not reaching an updater agent. ${health.message}` });
+            res.status(400).json({ error: `Agent URL is not reaching a Deploy agent. ${health.message}` });
             return;
         }
 

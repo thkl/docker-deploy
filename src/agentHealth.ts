@@ -174,7 +174,7 @@ export class AgentHealthService {
 }
 
 /**
- * Checks that a URL points to the updater agent API.
+ * Checks that a URL points to the Deploy agent API.
  */
 export async function fetchAgentHealth(agentBaseUrl: string, globalSettings: GlobalSettings) {
     if (!agentBaseUrl) {
@@ -195,7 +195,7 @@ export async function fetchAgentHealth(agentBaseUrl: string, globalSettings: Glo
         if (!body.serverId || !body.encryptionPublicKey || !body.signingPublicKey) {
             return {
                 ok: false,
-                message: `${healthUrl} answered, but it did not look like an updater agent.`
+                message: `${healthUrl} answered, but it did not look like a Deploy agent.`
             };
         }
 

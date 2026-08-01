@@ -2,12 +2,12 @@
 
 ## Goal
 
-Migrate the updater from a small Express-rendered admin page into a structured Angular frontend with a stable backend API. The product direction is a lightweight Docker Compose deployment panel: repository compose files stay source-controlled, while the updater manages deployment triggers, generated overrides, Traefik configuration, and operational visibility.
+Migrate Deploy from a small Express-rendered admin page into a structured Angular frontend with a stable backend API. The product direction is a lightweight Docker Compose deployment panel: repository compose files stay source-controlled, while Deploy manages deployment triggers, generated overrides, Traefik configuration, and operational visibility.
 
 ## Principles
 
 - Keep each project repository as the source of truth for its base `docker-compose.yaml`.
-- Let the updater own generated overlays such as `docker-compose.updater.yml`, `docker-compose.traefik.yml`, and future storage overrides.
+- Let Deploy own generated overlays such as `docker-compose.updater.yml`, `docker-compose.traefik.yml`, and future storage overrides.
 - Avoid editing project compose files directly unless explicitly requested.
 - Prefer event-driven deploys: GitLab webhook, CI trigger, and manual deploy.
 - Keep polling out of the design.
@@ -221,7 +221,7 @@ Detect:
 Manage generated files only:
 
 - [x] `docker-compose.updater.yml`
-- [x] Traefik settings merged into updater-owned compose output.
+- [x] Traefik settings merged into Deploy-owned compose output.
 - [ ] Separate `docker-compose.storage.yml`
 - [x] The UI should preview generated overrides before deployment.
 - [x] Compose import and inspection must execute through the target server agent. The controller only receives structured results and file content from the agent.
@@ -358,10 +358,10 @@ Behavior:
 
 - [x] Detect relative bind mounts such as `./data:/app/data`.
 - [x] Offer rewrite to `/root/docker-data/<project>/...`.
-- [x] Generate updater-owned compose output instead of changing the repository compose file.
+- [x] Generate Deploy-owned compose output instead of changing the repository compose file.
 - [x] Block repository cleanup if unsafe bind mounts remain.
 - [x] Allow cleanup after deploy only when data paths are externalized.
-- [x] Deploy from an updater-managed temporary checkout and persist rendered Compose files outside the checkout.
+- [x] Deploy from a Deploy-managed temporary checkout and persist rendered Compose files outside the checkout.
 
 Example target layout:
 
@@ -386,7 +386,7 @@ Example target layout:
 
 ## Explicit Non-Goals For Now
 
-- [x] Full Docker Compose editor. Built as an updater-owned compose builder/editor instead of direct repository edits.
+- [x] Full Docker Compose editor. Built as a Deploy-owned compose builder/editor instead of direct repository edits.
 - [x] Editing repository-owned compose files directly remains avoided.
 - [x] Polling GitLab for changes remains avoided.
 - [ ] Multi-user permissions.

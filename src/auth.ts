@@ -8,7 +8,7 @@ import { NextFunction, Request, Response } from "express";
  * a token exists, API and WebSocket callers must provide it as a bearer token.
  */
 export class AdminAuth {
-    private readonly adminToken = process.env.UPDATER_ADMIN_TOKEN || process.env.ADMIN_TOKEN || "";
+    private readonly adminToken = process.env.DEPLOY_ADMIN_TOKEN || process.env.UPDATER_ADMIN_TOKEN || process.env.ADMIN_TOKEN || "";
 
     /**
      * Returns true when API callers must authenticate.

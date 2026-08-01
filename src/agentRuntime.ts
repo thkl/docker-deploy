@@ -22,12 +22,12 @@ interface AgentJobState {
 }
 
 /**
- * Standalone HTTP/WebSocket runtime for `UPDATER_ROLE=agent`.
+ * Standalone HTTP/WebSocket runtime for `DEPLOY_ROLE=agent`.
  */
 export class AgentRuntime {
     private readonly app: Express = express();
-    private readonly port = parseInt(process.env.UPDATER_AGENT_PORT || process.env.PORT || "3998");
-    private readonly host = process.env.UPDATER_AGENT_HOST || "0.0.0.0";
+    private readonly port = parseInt(process.env.DEPLOY_AGENT_PORT || process.env.UPDATER_AGENT_PORT || process.env.PORT || "3998");
+    private readonly host = process.env.DEPLOY_AGENT_HOST || process.env.UPDATER_AGENT_HOST || "0.0.0.0";
     private readonly localAgent = new LocalAgent();
     private readonly jobs = new Map<string, AgentJobState>();
     private state: AgentState = ensureAgentState();
@@ -42,7 +42,7 @@ export class AgentRuntime {
         const server = createServer(this.app);
         this.registerLogStreams(server);
         server.listen(this.port, this.host, () => {
-            console.log(`Updater agent listening on ${this.host}:${this.port}.`);
+            console.log(`Deploy agent listening on ${this.host}:${this.port}.`);
             console.log(`Agent server ID: ${this.state.serverId}`);
             if (this.state.controllerPublicEncryptionKey && this.state.controllerPublicSigningKey) {
                 console.log("Agent is already paired. Pairing file removed.");

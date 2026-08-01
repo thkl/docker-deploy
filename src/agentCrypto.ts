@@ -33,7 +33,7 @@ export interface OpenEnvelopeKeys {
 const maxEnvelopeAgeMs = 5 * 60 * 1000;
 
 /**
- * Encrypts and signs a JSON payload for another updater runtime.
+ * Encrypts and signs a JSON payload for another Deploy runtime.
  */
 export function sealEnvelope(payload: unknown, metadata: Pick<SecureEnvelope, "senderId" | "recipientId" | "messageType">, keys: EnvelopeKeys): SecureEnvelope {
     const aesKey = randomBytes(32);

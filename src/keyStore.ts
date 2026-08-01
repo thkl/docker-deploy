@@ -43,7 +43,7 @@ export function ensureAgentState(path = join("./data", "agent-state.json")): Age
     }
 
     const state: AgentState = {
-        serverId: process.env.UPDATER_SERVER_ID || `agent-${randomUUID().slice(0, 8)}`,
+        serverId: process.env.DEPLOY_SERVER_ID || process.env.UPDATER_SERVER_ID || `agent-${randomUUID().slice(0, 8)}`,
         pairingToken: randomUUID(),
         ...generateRuntimeKeys(),
         seenNonces: {}

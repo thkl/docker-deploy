@@ -2,10 +2,10 @@ version: '3.8'
 
 services:
 
-  # The automation sidecar
-  webhook-updater:
+  # The Deploy controller
+  deploy:
     build:
-      context: /root/updater # path to your Node.js files
+      context: .
       target: runtime
     env_file:
       - .env

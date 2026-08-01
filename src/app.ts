@@ -204,11 +204,11 @@ class App {
     }
 }
 
-const role = process.env.UPDATER_ROLE || "standalone";
+const role = process.env.DEPLOY_ROLE || process.env.UPDATER_ROLE || "standalone";
 if (role === "agent") {
     new AgentRuntime().start();
 } else if (role === "standalone" || role === "controller") {
     new App().init();
 } else {
-    throw new Error(`Unsupported UPDATER_ROLE: ${role}`);
+    throw new Error(`Unsupported DEPLOY_ROLE: ${role}`);
 }

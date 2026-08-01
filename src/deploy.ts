@@ -175,7 +175,7 @@ export async function stopProjectContainers(repoName: string, appSettings: Proje
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
 
                 if [ -f "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" ]; then
-                    echo "--> Using persisted updater Compose file."
+                    echo "--> Using persisted Deploy Compose file."
                     COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
                 else
                     cd "$PROJECT_ROOT"

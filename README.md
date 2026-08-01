@@ -1,6 +1,6 @@
-# Docker Updater
+# Docker Deploy
 
-Docker Updater is a lightweight Docker Compose deployment panel. It connects a controller UI to one or more Docker hosts, pulls project repositories, builds and starts Compose applications, stores deployment history, and manages generated Compose overrides for Traefik routing.
+Docker Deploy is a lightweight Docker Compose deployment panel. It connects a controller UI to one or more Docker hosts, pulls project repositories, builds and starts Compose applications, stores deployment history, and manages generated Compose overrides for Traefik routing.
 
 ## Features
 
@@ -29,7 +29,7 @@ The controller listens on `PORT`, defaulting to `3999`.
 Optional admin token:
 
 ```bash
-UPDATER_ADMIN_TOKEN=change-me
+DEPLOY_ADMIN_TOKEN=change-me
 ```
 
 When set, browser API requests must authenticate with that token.
@@ -42,7 +42,7 @@ On a Docker host managed by the controller:
 docker compose -f docker-compose-agent.yaml up -d
 ```
 
-The agent listens on `UPDATER_AGENT_PORT`, defaulting to `3998`, and writes pairing data to:
+The agent listens on `DEPLOY_AGENT_PORT`, defaulting to `3998`, and writes pairing data to:
 
 ```text
 ./data/agent/agent-pairing.json
@@ -59,7 +59,7 @@ In the controller UI, open global settings, add the agent URL, paste the pairing
 5. Configure either repository Compose usage or a stored Compose override.
 6. Save or Save & deploy.
 
-The target path is a persistent project root on the selected Docker server, not the controller machine. Deployments clone into an updater-managed temporary checkout below that root.
+The target path is a persistent project root on the selected Docker server, not the controller machine. Deployments clone into a temporary checkout managed by Deploy below that root.
 
 ## Compose Builder
 
@@ -132,7 +132,7 @@ Set a CI deploy token in project settings, then call:
 ```bash
 curl -X POST \
   -H "Authorization: Bearer $DEPLOY_TOKEN" \
-  https://updater.example.com/api/deploy/<project-id-or-name>
+  https://deploy.example.com/api/deploy/<project-id-or-name>
 ```
 
 ## Deploy From GitLab Webhook
@@ -140,7 +140,7 @@ curl -X POST \
 Set the project webhook secret in project settings, then configure a GitLab Push Hook pointing to:
 
 ```text
-https://updater.example.com/webhook
+https://deploy.example.com/webhook
 ```
 
 The webhook resolver maps incoming GitLab project data to the configured project and dispatches a deploy.
