@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
-import { renderPersistedEnvFileRewriteScript, renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { renderPersistedEnvFileRewriteScript, renderProjectRootEnvFileScript, renderProjectRootStorageOverlayScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 
@@ -55,7 +55,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const secretOverlayScript = renderSecretComposeOverlayScript(appSettings.envSecrets);
     const projectRootEnvFileScript = renderProjectRootEnvFileScript();
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
-    const projectRootBindMountRewriteScript = renderProjectRootBindMountRewriteScript();
+    const projectRootStorageOverlayScript = renderProjectRootStorageOverlayScript();
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
@@ -63,7 +63,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
     const workerScript = `
-                apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
+                apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git jq openssh-client > /dev/null 2>&1
 
                 PROJECT_ROOT=${quotedHostAppsPath}
                 PROJECT_NAME=${shellQuote(composeProjectName)}
@@ -89,9 +89,9 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
 
 ${composeOverrideScript}
 ${tempBuildContextRewriteScript}
-${projectRootBindMountRewriteScript}
 ${composeSelectionScript}
 ${projectRootEnvFileScript}
+${projectRootStorageOverlayScript}
 ${traefikOverrideScript}
 ${secretOverlayScript}
 

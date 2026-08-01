@@ -223,7 +223,7 @@ Manage generated files only:
 
 - [x] `docker-compose.updater.yml`
 - [x] Traefik settings merged into Deploy-owned compose output.
-- [ ] Separate `docker-compose.storage.yml`
+- [x] Separate `docker-compose.storage.yml`
 - [x] The UI should preview generated overrides before deployment.
 - [x] Compose import and inspection must execute through the target server agent. The controller only receives structured results and file content from the agent.
 

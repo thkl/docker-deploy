@@ -207,6 +207,14 @@ If a Compose file references `env_file: .env`, the worker uses `.env` from the p
 
 If a Compose file uses an absolute build context that points at the project root, for example `build.context: /root/docker-apps/my-project`, the worker rewrites only that build context to `.updater/tmpdeploy`. Relative bind mounts such as `./data:/app/data` are rewritten to the persistent project root, for example `/root/docker-apps/my-project/data:/app/data`.
 
+Deploy writes those data-path rewrites as a separate generated overlay at:
+
+```text
+.updater/compose/docker-compose.storage.yml
+```
+
+The repository compose file and stored Deploy compose file stay unchanged; deployment and validation include the storage overlay when temporary-checkout bind mounts need to point back at persistent project data.
+
 Use the Compose builder storage mapping preview to move relative data paths to an external host path such as `/root/docker-apps/<project>/data`. If unsafe mounts remain, the deploy still succeeds and the deployment log explains why checkout cleanup was skipped.
 
 ## Development

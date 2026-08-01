@@ -60,6 +60,45 @@ export function renderProjectRootBindMountRewriteScript() {
 }
 
 /**
+ * Generates a Deploy-owned storage overlay that rewrites bind mounts expanded
+ * against the temporary checkout back to the persistent project root.
+ */
+export function renderProjectRootStorageOverlayScript() {
+    return `
+                if [ -n "$COMPOSE_WORKSPACE" ] && [ -n "$TMP_DEPLOY" ]; then
+                    mkdir -p "$COMPOSE_WORKSPACE"
+                    PROJECT_ROOT_NO_SLASH="\${PROJECT_ROOT%/}"
+                    TMP_DEPLOY_NO_SLASH="\${TMP_DEPLOY%/}"
+                    if docker compose $COMPOSE_FILES config --format json > /tmp/deploy-compose-storage-source.json 2> /tmp/deploy-compose-storage-error.txt; then
+                        jq --arg root "$PROJECT_ROOT_NO_SLASH" --arg tmp "$TMP_DEPLOY_NO_SLASH" '
+                            (.services // {}) | to_entries | map(
+                                . as $service |
+                                ($service.value.volumes // []) as $volumes |
+                                ($volumes | map(
+                                    if .type == "bind"
+                                       and (.source | type) == "string"
+                                       and (.source == $tmp or (.source | startswith($tmp + "/")))
+                                    then .source = ($root + (.source[($tmp | length):]))
+                                    else .
+                                    end
+                                )) as $rewritten |
+                                select($rewritten != $volumes) |
+                                { key: $service.key, value: { volumes: $rewritten } }
+                            ) | from_entries | select(length > 0) | { services: . }
+                        ' /tmp/deploy-compose-storage-source.json > "$COMPOSE_WORKSPACE/docker-compose.storage.yml"
+                        if [ -s "$COMPOSE_WORKSPACE/docker-compose.storage.yml" ]; then
+                            echo "--> Writing storage bind-mount override."
+                            COMPOSE_FILES="$COMPOSE_FILES -f $COMPOSE_WORKSPACE/docker-compose.storage.yml"
+                        else
+                            rm -f "$COMPOSE_WORKSPACE/docker-compose.storage.yml"
+                        fi
+                    else
+                        cat /tmp/deploy-compose-storage-error.txt >&2
+                    fi
+                fi`;
+}
+
+/**
  * Keeps the persisted deploy compose file independent from the temporary
  * checkout when Docker Compose expands env_file paths to absolute paths.
  */
