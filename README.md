@@ -144,6 +144,8 @@ The diagnostic checks:
 
 This is aimed at common `504 Gateway Timeout` failures where Traefik matched the router but cannot connect to the backend.
 
+The Servers page also shows a read-only Traefik inventory per agent: detected containers, networks, entrypoints, certificate resolvers, Docker provider network, ACME storage, and mounted config paths when these can be inferred from the Traefik container.
+
 ## Deploy From CI
 
 Set a CI deploy token in project settings, then call:

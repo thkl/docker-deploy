@@ -127,10 +127,74 @@
       </div>
 
       <section class="traefik-panel">
-        <div>
-          <strong>Traefik management</strong>
-          <span>Deploy can detect Traefik and generate project labels today. Server-level Traefik config editing should be added as a dedicated, guarded workflow.</span>
+        <div class="traefik-head">
+          <div>
+            <strong>Traefik inventory</strong>
+            <span>Read-only server proxy configuration discovered from containers, args, networks, and mounts.</span>
+          </div>
+          <span class="server-chip" [class.offline]="!server.capabilities?.traefik?.available">{{ traefikLabel(server) }}</span>
         </div>
+
+        @if (server.capabilities?.traefik; as traefik) {
+          <div class="traefik-summary">
+            <span>
+              <strong>{{ traefikValue(traefik.entryPoints) }}</strong>
+              <small>entrypoints</small>
+            </span>
+            <span>
+              <strong>{{ traefikValue(traefik.certResolvers) }}</strong>
+              <small>cert resolvers</small>
+            </span>
+            <span>
+              <strong>{{ traefikProviderNetwork(server) }}</strong>
+              <small>Docker provider network</small>
+            </span>
+            <span>
+              <strong>{{ traefikAcmeStorage(server) }}</strong>
+              <small>ACME storage</small>
+            </span>
+          </div>
+
+          @if (traefik.staticConfigPaths?.length || traefik.dynamicConfigPaths?.length) {
+            <div class="traefik-paths">
+              @if (traefik.staticConfigPaths?.length) {
+                <span>Static config: {{ traefikValue(traefik.staticConfigPaths) }}</span>
+              }
+              @if (traefik.dynamicConfigPaths?.length) {
+                <span>Dynamic config: {{ traefikValue(traefik.dynamicConfigPaths) }}</span>
+              }
+            </div>
+          }
+
+          @if (traefik.containers?.length) {
+            <div class="traefik-containers">
+              @for (container of traefik.containers; track container.id || container.name) {
+                <article class="traefik-container">
+                  <div>
+                    <strong>{{ container.name || container.id }}</strong>
+                    <span>{{ container.image || 'unknown image' }} · {{ container.state || 'unknown state' }}</span>
+                    @if (container.ports) {
+                      <small>{{ container.ports }}</small>
+                    }
+                  </div>
+
+                  <div class="service-chip-list">
+                    @for (network of container.networks; track network) {
+                      <span>{{ network }}</span>
+                    }
+                    @for (mount of container.mounts; track mount.source + mount.target) {
+                      <span>{{ traefikMountLabel(mount) }}</span>
+                    }
+                  </div>
+                </article>
+              }
+            </div>
+          } @else {
+            <p class="muted-copy">No Traefik containers were detected on this server.</p>
+          }
+        } @else {
+          <p class="muted-copy">Refresh health to inspect Traefik on this server.</p>
+        }
       </section>
 
       <section class="managed-panel">

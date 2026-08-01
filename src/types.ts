@@ -147,8 +147,30 @@ export interface ServerCapabilities {
         containerCount: number;
         networkPresent: boolean;
         checkedAt: string;
+        containers?: TraefikContainerInventory[];
+        networks?: string[];
+        entryPoints?: string[];
+        certResolvers?: string[];
+        dockerProviderNetwork?: string;
+        acmeStorage?: string;
+        staticConfigPaths?: string[];
+        dynamicConfigPaths?: string[];
     };
     system?: ServerSystemMetrics;
+}
+
+export interface TraefikContainerInventory {
+    id?: string;
+    name?: string;
+    image?: string;
+    state?: string;
+    ports?: string;
+    networks: string[];
+    mounts: Array<{
+        source: string;
+        target: string;
+    }>;
+    configArgs: string[];
 }
 
 export interface ServerSystemMetrics {

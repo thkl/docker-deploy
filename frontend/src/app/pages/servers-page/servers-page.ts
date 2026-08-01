@@ -274,6 +274,22 @@ export class ServersPage implements OnInit {
     return traefik.networkPresent ? 'Network exists, no container' : 'Not detected';
   }
 
+  protected traefikValue(values?: string[], fallback = 'Not detected') {
+    return values?.length ? values.join(', ') : fallback;
+  }
+
+  protected traefikProviderNetwork(server: ServerRecord) {
+    return server.capabilities?.traefik.dockerProviderNetwork || 'Not detected';
+  }
+
+  protected traefikAcmeStorage(server: ServerRecord) {
+    return server.capabilities?.traefik.acmeStorage || 'Not detected';
+  }
+
+  protected traefikMountLabel(mount: { source: string; target: string }) {
+    return `${mount.source} -> ${mount.target}`;
+  }
+
   protected memoryLabel(server: ServerRecord) {
     const memory = server.capabilities?.system?.memory;
     if (!memory) {

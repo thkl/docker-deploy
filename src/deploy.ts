@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
+import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -393,21 +393,42 @@ function isPathInside(parentPath: string, candidatePath: string) {
  */
 export async function detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]> {
     const networkName = globalSettings.defaultTraefikNetwork || "proxy";
-    const command = `CONTAINERS="$(docker ps -a --format '{{.Image}} {{.Names}} {{.Labels}}' | grep -Ei '(^|[ /])traefik(:| |,|$)|org.opencontainers.image.title=Traefik' | wc -l | tr -d ' ')"
+    const command = `TRAEFIK_IDS="$(docker ps -aq --filter label=org.opencontainers.image.title=Traefik)"
+if [ -z "$TRAEFIK_IDS" ]; then
+    TRAEFIK_IDS="$(docker ps -a --format '{{.ID}} {{.Image}} {{.Names}}' | grep -Ei '(^|[ /])traefik(:| |$)' | awk '{print $1}')"
+fi
+CONTAINERS="$(printf '%s\\n' "$TRAEFIK_IDS" | sed '/^$/d' | wc -l | tr -d ' ')"
 NETWORK_PRESENT="$(docker network inspect ${shellQuote(networkName)} > /dev/null 2>&1 && echo true || echo false)"
-printf '{"containerCount":%s,"networkPresent":%s}\\n' "$CONTAINERS" "$NETWORK_PRESENT"`;
+printf '{"containerCount":%s,"networkPresent":%s,"inspect":' "$CONTAINERS" "$NETWORK_PRESENT"
+if [ -n "$TRAEFIK_IDS" ]; then
+    docker inspect $TRAEFIK_IDS
+else
+    printf '[]'
+fi
+printf '}\\n'`;
 
     try {
         const { stdout } = await execAsync(command, { maxBuffer: 1024 * 1024 });
-        const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) || "{}") as { containerCount?: number; networkPresent?: boolean };
+        const result = JSON.parse(stdout.trim() || "{}") as { containerCount?: number; networkPresent?: boolean; inspect?: DockerInspectContainerWithMounts[] };
         const containerCount = Number(result.containerCount || 0);
         const networkPresent = Boolean(result.networkPresent);
+        const containers = (result.inspect ?? []).map(parseTraefikContainerInventory);
+        const configArgs = containers.flatMap((container) => container.configArgs);
+        const mountedTargets = containers.flatMap((container) => container.mounts.map((mount) => mount.target));
 
         return {
             available: containerCount > 0 || networkPresent,
             containerCount,
             networkPresent,
-            checkedAt: new Date().toISOString()
+            checkedAt: new Date().toISOString(),
+            ...(containers.length ? { containers } : {}),
+            ...(unique(containers.flatMap((container) => container.networks)).length ? { networks: unique(containers.flatMap((container) => container.networks)) } : {}),
+            ...(extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./).length ? { entryPoints: extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./) } : {}),
+            ...(extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./).length ? { certResolvers: extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./) } : {}),
+            ...(extractTraefikValue(configArgs, "--providers.docker.network=") ? { dockerProviderNetwork: extractTraefikValue(configArgs, "--providers.docker.network=") } : {}),
+            ...(extractTraefikValue(configArgs, "--certificatesresolvers.", ".acme.storage=") ? { acmeStorage: extractTraefikValue(configArgs, "--certificatesresolvers.", ".acme.storage=") } : {}),
+            ...(mountedTargets.filter(isLikelyTraefikStaticConfigPath).length ? { staticConfigPaths: unique(mountedTargets.filter(isLikelyTraefikStaticConfigPath)) } : {}),
+            ...(mountedTargets.filter(isLikelyTraefikDynamicConfigPath).length ? { dynamicConfigPaths: unique(mountedTargets.filter(isLikelyTraefikDynamicConfigPath)) } : {})
         };
     } catch (error) {
         return {
@@ -417,6 +438,46 @@ printf '{"containerCount":%s,"networkPresent":%s}\\n' "$CONTAINERS" "$NETWORK_PR
             checkedAt: new Date().toISOString()
         };
     }
+}
+
+function parseTraefikContainerInventory(container: DockerInspectContainerWithMounts): TraefikContainerInventory {
+    const args = [...(container.Args ?? []), ...(container.Config?.Cmd ?? [])].filter((arg) => arg.startsWith("--"));
+    const networks = Object.keys(container.NetworkSettings?.Networks ?? {});
+    return {
+        ...(container.Id ? { id: container.Id.slice(0, 12) } : {}),
+        ...(container.Name ? { name: container.Name.replace(/^\/+/, "") } : {}),
+        ...(container.Config?.Image ? { image: container.Config.Image } : {}),
+        ...(container.State?.Status ? { state: container.State.Status } : {}),
+        ...(formatPublishedPorts(container.NetworkSettings?.Ports) ? { ports: formatPublishedPorts(container.NetworkSettings?.Ports) } : {}),
+        networks,
+        mounts: (container.Mounts ?? []).map((mount) => ({ source: mount.Source, target: mount.Destination })),
+        configArgs: args
+    };
+}
+
+function extractTraefikKeys(args: string[], pattern: RegExp) {
+    return unique(args.flatMap((arg) => arg.match(pattern)?.[1] ?? []));
+}
+
+function extractTraefikValue(args: string[], prefix: string, suffix = "") {
+    const arg = args.find((candidate) => candidate.startsWith(prefix) && (!suffix || candidate.includes(suffix)));
+    if (!arg) {
+        return "";
+    }
+
+    return suffix ? arg.slice(arg.indexOf(suffix) + suffix.length) : arg.slice(prefix.length);
+}
+
+function isLikelyTraefikStaticConfigPath(path: string) {
+    return /traefik\.ya?ml$|traefik\.toml$/.test(path);
+}
+
+function isLikelyTraefikDynamicConfigPath(path: string) {
+    return /dynamic|\/conf(?:ig)?\.d\//i.test(path);
+}
+
+function unique(values: string[]) {
+    return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
 }
 
 /**
@@ -871,8 +932,10 @@ type DockerPortBindings = Record<string, Array<{ HostIp?: string; HostPort?: str
 interface DockerInspectContainer {
     Id?: string;
     Name?: string;
+    Args?: string[];
     Config?: {
         Image?: string;
+        Cmd?: string[];
         Labels?: Record<string, string>;
         ExposedPorts?: Record<string, unknown>;
     };
