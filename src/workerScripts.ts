@@ -61,25 +61,75 @@ export function renderProjectRootBindMountRewriteScript() {
 
 /**
  * Rewrites the final Deploy-owned compose file after Docker Compose has
- * rendered absolute bind mount sources. Compose merges volume lists by
- * appending, so the storage overlay alone cannot reliably replace an existing
- * bind mount entry.
+ * rendered absolute paths. Runtime bind mounts under common data directories
+ * are externalized to the project root. Read-only checkout-local mounts are
+ * moved to a stable Deploy release checkout. Writable checkout-local mounts
+ * that are not clearly data paths are left untouched so the guard fails before
+ * containers are replaced.
  */
 export function renderPersistedStorageRewriteScript(targetFile: string) {
     return `
-                if [ -f ${targetFile} ] && [ -n "$TMP_DEPLOY" ]; then
+                if [ -f ${targetFile} ] && [ -n "$TMP_DEPLOY" ] && [ -n "$RELEASE_DEPLOY" ]; then
                     PROJECT_ROOT_NO_SLASH="\${PROJECT_ROOT%/}"
                     TMP_DEPLOY_NO_SLASH="\${TMP_DEPLOY%/}"
-                    echo "--> Rewriting persisted temporary-checkout bind mount sources."
-                    sed -i.bak \\
-                        -e "s|^\\([[:space:]]*source:[[:space:]]*\\)\\\"$TMP_DEPLOY_NO_SLASH\\([^\\\"]*\\)\\\"\\([[:space:]]*\\)$|\\1\\\"$PROJECT_ROOT_NO_SLASH\\2\\\"\\3|" \\
-                        -e "s|^\\([[:space:]]*source:[[:space:]]*\\)'$TMP_DEPLOY_NO_SLASH\\([^']*\\)'\\([[:space:]]*\\)$|\\1'$PROJECT_ROOT_NO_SLASH\\2'\\3|" \\
-                        -e "s|^\\([[:space:]]*source:[[:space:]]*\\)$TMP_DEPLOY_NO_SLASH\\(/[^[:space:]]*\\)\\([[:space:]]*\\)$|\\1$PROJECT_ROOT_NO_SLASH\\2\\3|" \\
-                        -e "s|^\\([[:space:]]*-[[:space:]]*\\)\\\"$TMP_DEPLOY_NO_SLASH\\([^\\\"]*:[^\\\"]*\\)\\\"\\([[:space:]]*\\)$|\\1\\\"$PROJECT_ROOT_NO_SLASH\\2\\\"\\3|" \\
-                        -e "s|^\\([[:space:]]*-[[:space:]]*\\)'$TMP_DEPLOY_NO_SLASH\\([^']*:[^']*\\)'\\([[:space:]]*\\)$|\\1'$PROJECT_ROOT_NO_SLASH\\2'\\3|" \\
-                        -e "s|^\\([[:space:]]*-[[:space:]]*\\)$TMP_DEPLOY_NO_SLASH\\(/[^:]*:.*\\)$|\\1$PROJECT_ROOT_NO_SLASH\\2|" \\
-                        ${targetFile}
-                    rm -f ${targetFile}.bak
+                    RELEASE_DEPLOY_NO_SLASH="\${RELEASE_DEPLOY%/}"
+                    echo "--> Rewriting persisted temporary-checkout paths."
+                    if docker compose -f ${targetFile} config --format json > /tmp/deploy-compose-persisted-before.json 2> /tmp/deploy-compose-persisted-rewrite-error.txt; then
+                        jq --arg root "$PROJECT_ROOT_NO_SLASH" --arg tmp "$TMP_DEPLOY_NO_SLASH" --arg release "$RELEASE_DEPLOY_NO_SLASH" '
+                            def tmp_suffix($path): $path[($tmp | length):];
+                            def top_segment($path):
+                                (tmp_suffix($path) | sub("^/"; "") | split("/") | .[0] // "");
+                            def external_data_path($path):
+                                (top_segment($path) | test("^(data|storage|uploads|upload|db|database)$"; "i"));
+                            def rewrite_checkout_path($path; $read_only):
+                                if ($path == $tmp or ($path | startswith($tmp + "/"))) then
+                                    if external_data_path($path) then
+                                        $root + tmp_suffix($path)
+                                    elif $read_only then
+                                        $release + tmp_suffix($path)
+                                    else
+                                        $path
+                                    end
+                                else
+                                    $path
+                                end;
+                            def rewrite_volume_string($volume):
+                                ($volume | split(":")) as $parts |
+                                if (($parts | length) > 1) and (($parts[0] == $tmp) or ($parts[0] | startswith($tmp + "/"))) then
+                                    ([rewrite_checkout_path($parts[0]; ($parts[2:] | index("ro") != null))] + $parts[1:]) | join(":")
+                                else
+                                    $volume
+                                end;
+                            .services = ((.services // {}) | with_entries(
+                                .value |= (
+                                    if (.build | type) == "object" and (.build.context | type) == "string" then
+                                        .build.context = rewrite_checkout_path(.build.context; true)
+                                    elif (.build | type) == "string" then
+                                        .build = rewrite_checkout_path(.build; true)
+                                    else
+                                        .
+                                    end
+                                    | if (.volumes | type) == "array" then
+                                        .volumes |= map(
+                                            if type == "string" then
+                                                rewrite_volume_string(.)
+                                            elif type == "object" and (.source | type) == "string" then
+                                                .source = rewrite_checkout_path(.source; ((.read_only // .readonly // false) == true))
+                                            else
+                                                .
+                                            end
+                                        )
+                                    else
+                                        .
+                                    end
+                                )
+                            ))
+                        ' /tmp/deploy-compose-persisted-before.json > /tmp/deploy-compose-persisted-after.json
+                        docker compose -f /tmp/deploy-compose-persisted-after.json config --no-interpolate > ${targetFile}
+                    else
+                        cat /tmp/deploy-compose-persisted-rewrite-error.txt >&2
+                        exit 1
+                    fi
                 fi`;
 }
 

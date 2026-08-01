@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
-import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderProjectRootStorageOverlayScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 
@@ -55,8 +55,6 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const secretOverlayScript = renderSecretComposeOverlayScript(appSettings.envSecrets);
     const projectRootEnvFileScript = renderProjectRootEnvFileScript();
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
-    const projectRootBindMountRewriteScript = renderProjectRootBindMountRewriteScript();
-    const projectRootStorageOverlayScript = renderProjectRootStorageOverlayScript();
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const persistedStorageRewriteScript = renderPersistedStorageRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const persistedStorageGuardScript = renderPersistedStorageGuardScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
@@ -71,6 +69,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 PROJECT_ROOT=${quotedHostAppsPath}
                 PROJECT_NAME=${shellQuote(composeProjectName)}
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/tmpdeploy"
+                RELEASE_DEPLOY="$PROJECT_ROOT/.updater/release"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
                 mkdir -p "$COMPOSE_WORKSPACE"
 
@@ -89,13 +88,17 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
 
                 echo "--> Fetching latest changes..."
                 git pull --ff-only
+                if [ "$PWD" = "$TMP_DEPLOY" ]; then
+                    echo "--> Updating stable release checkout..."
+                    rm -rf "$RELEASE_DEPLOY"
+                    mkdir -p "$(dirname "$RELEASE_DEPLOY")"
+                    cp -a "$TMP_DEPLOY" "$RELEASE_DEPLOY"
+                fi
 
 ${composeOverrideScript}
 ${tempBuildContextRewriteScript}
-${projectRootBindMountRewriteScript}
 ${composeSelectionScript}
 ${projectRootEnvFileScript}
-${projectRootStorageOverlayScript}
 ${traefikOverrideScript}
 ${secretOverlayScript}
 
