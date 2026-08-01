@@ -129,6 +129,24 @@
   color: var(--accent);
 }
 
+.icon-button {
+  justify-content: center;
+  min-height: 34px;
+  padding: 0;
+  width: 34px;
+}
+
+.icon-button .icon {
+  fill: currentColor;
+  height: 1rem;
+  width: 1rem;
+}
+
+.icon-button.live-active {
+  border-color: color-mix(in srgb, var(--running), transparent 30%);
+  color: var(--running);
+}
+
 .notice {
   background: var(--button-subtle);
   border: 1px solid var(--line);

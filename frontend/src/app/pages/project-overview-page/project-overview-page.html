@@ -71,12 +71,6 @@
     </div>
 
     <div class="command-group">
-      <button type="button" class="secondary" (click)="loadRuntimeLogs(project.id)" [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed' || !runtimeStatus()?.services?.length">
-        {{ loadingRuntimeLogs() ? 'Loading logs...' : 'Load logs' }}
-      </button>
-      <button type="button" class="secondary" (click)="toggleRuntimeLogStream(project.id)" [disabled]="loadingRuntimeLogs() || !runtimeStatus()?.services?.length">
-        {{ runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live' : 'Live logs' }}
-      </button>
       <a class="secondary" [routerLink]="['/projects', project.id, 'settings']">Settings</a>
       <button type="button" class="danger-action" (click)="openDelete(project)">Delete</button>
     </div>
@@ -218,6 +212,39 @@
         <p>Runtime output, deployment output, and service action history in one place.</p>
       </div>
       <div class="deploy-head-actions">
+        <button
+          type="button"
+          class="secondary icon-button"
+          (click)="loadRuntimeLogs(project.id)"
+          [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed' || !runtimeStatus()?.services?.length"
+          [attr.aria-label]="loadingRuntimeLogs() ? 'Loading runtime logs' : 'Load runtime logs'"
+          [attr.title]="loadingRuntimeLogs() ? 'Loading runtime logs' : 'Load runtime logs'"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="icon">
+            <path d="M8 5v14l11-7z"></path>
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="secondary icon-button"
+          [class.live-active]="runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting'"
+          (click)="toggleRuntimeLogStream(project.id)"
+          [disabled]="loadingRuntimeLogs() || !runtimeStatus()?.services?.length"
+          [attr.aria-label]="runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live runtime logs' : 'Start live runtime logs'"
+          [attr.title]="runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live runtime logs' : 'Start live runtime logs'"
+        >
+          @if (runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting') {
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon">
+              <path d="M8 7h3v10H8zM13 7h3v10h-3z"></path>
+            </svg>
+          } @else {
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon">
+              <path d="M12 18.5 9.8 16.3a3.1 3.1 0 0 1 4.4 0L12 18.5z"></path>
+              <path d="m7 13.5 1.5 1.5a5 5 0 0 1 7 0l1.5-1.5a7.1 7.1 0 0 0-10 0z"></path>
+              <path d="m4.2 10.7 1.5 1.5a9 9 0 0 1 12.6 0l1.5-1.5a11.1 11.1 0 0 0-15.6 0z"></path>
+            </svg>
+          }
+        </button>
         <span
           class="stream-chip"
           [class.live]="runtimeLogStreamState() === 'live'"
