@@ -88,6 +88,33 @@ export class DeploymentStore {
     }
 
     /**
+     * Returns one deployment by ID, independent of project ordering.
+     */
+    get(deploymentId: string) {
+        const row = this.database
+            .prepare(
+                `SELECT
+                    d.id,
+                    d.project_id AS projectId,
+                    p.name AS projectName,
+                    d.server_id AS serverId,
+                    d.trigger,
+                    d.status,
+                    d.started_at AS startedAt,
+                    d.finished_at AS finishedAt,
+                    d.exit_code AS exitCode,
+                    d.error
+                 FROM deployments d
+                 JOIN projects p ON p.id = d.project_id
+                 WHERE d.id = ?
+                 LIMIT 1`
+            )
+            .get(deploymentId) as DeploymentRow | undefined;
+
+        return row ? this.rowToRecord(row) : null;
+    }
+
+    /**
      * Returns deployment records that were still running when this controller
      * process started. Their worker callbacks cannot fire anymore.
      */

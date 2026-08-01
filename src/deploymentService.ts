@@ -50,7 +50,8 @@ export class DeploymentService {
                 void this.finishSuccessfulDeployment(projectName, deployment.id, targetSettings, globalSettings);
             },
             onFailure: (error) => {
-                if (!this.activeDeployments.has(deployment.id)) {
+                const current = this.deploymentStore.get(deployment.id);
+                if (current?.status !== "running") {
                     return;
                 }
                 this.activeDeployments.delete(deployment.id);
@@ -68,8 +69,8 @@ export class DeploymentService {
         }
 
         Promise.resolve(deploymentRun).then((stream) => {
-            const latest = this.deploymentStore.latest(appSettings.id ?? projectName);
-            if (stream && latest?.id === deployment.id && latest.status === "running") {
+            const current = this.deploymentStore.get(deployment.id);
+            if (stream && current?.status === "running") {
                 this.activeDeployments.set(deployment.id, stream);
             }
         }).catch((error) => {
@@ -86,7 +87,8 @@ export class DeploymentService {
     }
 
     private async finishSuccessfulDeployment(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
-        if (!this.activeDeployments.has(deploymentId)) {
+        const current = this.deploymentStore.get(deploymentId);
+        if (current?.status !== "running") {
             return;
         }
 
@@ -104,6 +106,7 @@ export class DeploymentService {
 
     private async cleanupTempDeploymentCheckout(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, deploymentId?: string) {
         if (!globalSettings.cleanupAfterDeploy) {
+            this.logCleanupLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy disabled in global settings.");
             return;
         }
 
@@ -227,7 +230,9 @@ export class DeploymentService {
                 continue;
             }
 
-            await this.cleanupTempDeploymentCheckout(projectName, appSettings, globalSettings);
+            for (const serverId of targetServerIds(appSettings)) {
+                await this.cleanupTempDeploymentCheckout(projectName, { ...appSettings, serverId }, globalSettings);
+            }
         }
     }
 
