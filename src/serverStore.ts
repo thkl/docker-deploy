@@ -114,7 +114,16 @@ export class ServerStore {
             throw new Error("Cannot remove this agent while projects still target it.");
         }
 
-        this.database.prepare("DELETE FROM servers WHERE id = ?").run(server.id);
+        this.database.exec("BEGIN");
+        try {
+            this.database.prepare("DELETE FROM runtime_operations WHERE server_id = ?").run(server.id);
+            this.database.prepare("DELETE FROM deployments WHERE server_id = ?").run(server.id);
+            this.database.prepare("DELETE FROM servers WHERE id = ?").run(server.id);
+            this.database.exec("COMMIT");
+        } catch (error) {
+            this.database.exec("ROLLBACK");
+            throw error;
+        }
     }
 
     /**
