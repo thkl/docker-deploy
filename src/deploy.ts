@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { GlobalSettings, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
+import { renderPersistedEnvFileRewriteScript, renderProjectRootEnvFileScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 
@@ -51,6 +52,8 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
+    const projectRootEnvFileScript = renderProjectRootEnvFileScript();
+    const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const quotedHostAppsVolume = shellQuote(`${hostAppsPath}:${hostAppsPath}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
@@ -90,10 +93,12 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
 
 ${composeOverrideScript}
 ${composeSelectionScript}
+${projectRootEnvFileScript}
 ${traefikOverrideScript}
 
                 echo "--> Rendering persistent Compose deployment file..."
                 docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --no-interpolate > "$COMPOSE_WORKSPACE/docker-compose.deploy.yml"
+${persistedEnvFileRewriteScript}
                 COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
                 
                 echo "--> Testing build for new changes..."

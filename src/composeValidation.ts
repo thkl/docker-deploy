@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { ComposeValidation, GlobalSettings, ProjectSettings } from "./types.js";
+import { renderProjectRootEnvFileScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 const composeFileNames = ["docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml"];
@@ -27,6 +28,7 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
     const composeSearch = composeFileNames.map(shellQuote).join(" ");
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(Boolean(composeOverride), composeSearch);
+    const projectRootEnvFileScript = renderProjectRootEnvFileScript();
     const traefikOverrideScript = renderTraefikOverrideScript(projectName, appSettings, globalSettings);
 
     const dockerRunCommand = `docker run -i --rm \
@@ -57,6 +59,7 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
 
 ${composeOverrideScript}
 ${composeSelectionScript}
+${projectRootEnvFileScript}
 ${traefikOverrideScript}
 
                 echo "${composeFileMarker}$COMPOSE_FILES"
