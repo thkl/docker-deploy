@@ -1,4 +1,5 @@
 import { AppDatabase, runDatabaseTransaction, upsertProject } from "./database.js";
+import { decryptSecret } from "./secretStore.js";
 import { ProjectConfig, ProjectSettings } from "./types.js";
 
 /**
@@ -148,9 +149,9 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
     return {
         id: row.id,
         serverId: row.serverId || "local",
-        ...(row.token ? { token: row.token } : {}),
+        ...(row.token ? { token: decryptSecret(row.token) } : {}),
         ...(row.repositoryUrl ? { repositoryUrl: row.repositoryUrl } : {}),
-        ...(row.deployToken ? { deployToken: row.deployToken } : {}),
+        ...(row.deployToken ? { deployToken: decryptSecret(row.deployToken) } : {}),
         ...(row.path ? { path: row.path } : {}),
         ...(row.composeOverride ? { composeOverride: row.composeOverride } : {}),
         ...(row.traefikEnabled === null

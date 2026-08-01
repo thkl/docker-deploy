@@ -34,6 +34,14 @@ DEPLOY_ADMIN_TOKEN=change-me
 
 When set, browser API requests must authenticate with that token.
 
+Project webhook secrets and CI deploy tokens are encrypted in SQLite with a controller-local AES-256-GCM key stored at:
+
+```text
+./data/controller-secret-key.json
+```
+
+Keep this file with the controller data volume. Existing `UPDATER_SECRET_KEY` or new `DEPLOY_SECRET_KEY` can also provide a 32-byte base64 key explicitly.
+
 ## Run A Remote Agent
 
 On a Docker host managed by the controller:

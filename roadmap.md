@@ -74,7 +74,7 @@ Requirements:
 - [x] Add a migration runner.
 - [x] Import existing `config.json`, `settings.json`, and `deployments.json` on first startup.
 - [x] Keep API response shapes stable during the migration.
-- [ ] Store project secrets carefully; encrypted storage can be added after the schema is stable.
+- [x] Store project secrets carefully; encrypted storage can be added after the schema is stable.
 
 ## Phase 1: Backend API Foundation
 
@@ -397,7 +397,7 @@ Example target layout:
 - [x] Add an Activity page backed by the global controller event stream.
 - [x] Show last webhook receipt/match/ignore/error details per project.
 - [ ] Finish moving page-specific live updates onto the global event stream where it makes sense, while keeping raw log streams separate if needed.
-- [ ] Add encrypted-at-rest storage for project secrets.
+- [x] Add encrypted-at-rest storage for project secrets.
 - [ ] Add explicit `queued` deployment status if deployments become queued before workers start.
 - [ ] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
 - [x] Add cleanup-after-deploy enforcement based on externalized storage mappings.

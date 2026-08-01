@@ -4,8 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { GlobalSettings, GlobalSettingsPayload, ProjectConfig, ProjectSettings, ServerActiveJob, ServerRecord } from "./types.js";
 import type { DeploymentRecord } from "./deploymentStore.js";
+import { encryptSecret, isEncryptedSecret } from "./secretStore.js";
 
-const schemaVersion = 3;
+const schemaVersion = 4;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     defaultTraefikNetwork: "proxy",
@@ -33,6 +34,7 @@ export class AppDatabase {
         this.migrate();
         this.ensureDefaultLocalServer();
         this.importLegacyJsonOnce();
+        this.encryptStoredProjectSecrets();
     }
 
     /**
@@ -393,6 +395,25 @@ export class AppDatabase {
             }
         }
     }
+
+    /**
+     * Encrypts older plaintext project tokens in-place after the controller key
+     * is available. Reads stay backward-compatible through ConfigStore.
+     */
+    private encryptStoredProjectSecrets() {
+        const rows = this.connection.prepare("SELECT id, token, deploy_token AS deployToken FROM projects").all() as unknown as Array<{ id: string; token: string | null; deployToken: string | null }>;
+        const update = this.connection.prepare("UPDATE projects SET token = ?, deploy_token = ? WHERE id = ?");
+
+        runDatabaseTransaction(this.connection, () => {
+            for (const row of rows) {
+                const token = row.token && !isEncryptedSecret(row.token) ? encryptSecret(row.token) : row.token;
+                const deployToken = row.deployToken && !isEncryptedSecret(row.deployToken) ? encryptSecret(row.deployToken) : row.deployToken;
+                if (token !== row.token || deployToken !== row.deployToken) {
+                    update.run(token ?? null, deployToken ?? null, row.id);
+                }
+            }
+        });
+    }
 }
 
 /**
@@ -517,7 +538,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
                 compose_override = excluded.compose_override,
                 updated_at = excluded.updated_at`
         )
-        .run(projectId, name, serverId, settings.token ?? null, settings.repositoryUrl ?? null, settings.deployToken ?? null, settings.path ?? null, settings.composeOverride ?? null, existing?.createdAt ?? now, now);
+        .run(projectId, name, serverId, encryptSecret(settings.token), settings.repositoryUrl ?? null, encryptSecret(settings.deployToken), settings.path ?? null, settings.composeOverride ?? null, existing?.createdAt ?? now, now);
 
     database.prepare("DELETE FROM project_traefik_settings WHERE project_id = ?").run(projectId);
     if (!settings.traefik) {
