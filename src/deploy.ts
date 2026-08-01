@@ -412,9 +412,15 @@ printf '}\\n'`;
         const result = JSON.parse(stdout.trim() || "{}") as { containerCount?: number; networkPresent?: boolean; inspect?: DockerInspectContainerWithMounts[] };
         const containerCount = Number(result.containerCount || 0);
         const networkPresent = Boolean(result.networkPresent);
-        const containers = (result.inspect ?? []).map(parseTraefikContainerInventory);
+        const inspectedContainers = result.inspect ?? [];
+        const containers = inspectedContainers.map(parseTraefikContainerInventory);
         const configArgs = containers.flatMap((container) => container.configArgs);
         const mountedTargets = containers.flatMap((container) => container.mounts.map((mount) => mount.target));
+        const staticConfig = await readTraefikStaticConfigInventory(inspectedContainers);
+        const entryPoints = unique([...extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./), ...staticConfig.entryPoints]);
+        const certResolvers = unique([...extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./), ...staticConfig.certResolvers]);
+        const dockerProviderNetwork = extractTraefikValue(configArgs, "--providers.docker.network=") || staticConfig.dockerProviderNetwork;
+        const acmeStorage = extractTraefikValue(configArgs, "--certificatesresolvers.", ".acme.storage=") || staticConfig.acmeStorage;
 
         return {
             available: containerCount > 0 || networkPresent,
@@ -423,10 +429,10 @@ printf '}\\n'`;
             checkedAt: new Date().toISOString(),
             ...(containers.length ? { containers } : {}),
             ...(unique(containers.flatMap((container) => container.networks)).length ? { networks: unique(containers.flatMap((container) => container.networks)) } : {}),
-            ...(extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./).length ? { entryPoints: extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./) } : {}),
-            ...(extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./).length ? { certResolvers: extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./) } : {}),
-            ...(extractTraefikValue(configArgs, "--providers.docker.network=") ? { dockerProviderNetwork: extractTraefikValue(configArgs, "--providers.docker.network=") } : {}),
-            ...(extractTraefikValue(configArgs, "--certificatesresolvers.", ".acme.storage=") ? { acmeStorage: extractTraefikValue(configArgs, "--certificatesresolvers.", ".acme.storage=") } : {}),
+            ...(entryPoints.length ? { entryPoints } : {}),
+            ...(certResolvers.length ? { certResolvers } : {}),
+            ...(dockerProviderNetwork ? { dockerProviderNetwork } : {}),
+            ...(acmeStorage ? { acmeStorage } : {}),
             ...(mountedTargets.filter(isLikelyTraefikStaticConfigPath).length ? { staticConfigPaths: unique(mountedTargets.filter(isLikelyTraefikStaticConfigPath)) } : {}),
             ...(mountedTargets.filter(isLikelyTraefikDynamicConfigPath).length ? { dynamicConfigPaths: unique(mountedTargets.filter(isLikelyTraefikDynamicConfigPath)) } : {})
         };
@@ -453,6 +459,178 @@ function parseTraefikContainerInventory(container: DockerInspectContainerWithMou
         mounts: (container.Mounts ?? []).map((mount) => ({ source: mount.Source, target: mount.Destination })),
         configArgs: args
     };
+}
+
+async function readTraefikStaticConfigInventory(containers: DockerInspectContainerWithMounts[]) {
+    const inventory = {
+        entryPoints: [] as string[],
+        certResolvers: [] as string[],
+        dockerProviderNetwork: "",
+        acmeStorage: ""
+    };
+
+    for (const container of containers) {
+        if (!container.Id) {
+            continue;
+        }
+
+        const staticPaths = unique((container.Mounts ?? []).map((mount) => mount.Destination).filter(isLikelyTraefikStaticConfigPath));
+        for (const staticPath of staticPaths) {
+            const content = await readContainerFile(container.Id, staticPath);
+            const parsed = parseTraefikStaticConfig(content);
+            inventory.entryPoints.push(...parsed.entryPoints);
+            inventory.certResolvers.push(...parsed.certResolvers);
+            inventory.dockerProviderNetwork ||= parsed.dockerProviderNetwork;
+            inventory.acmeStorage ||= parsed.acmeStorage;
+        }
+    }
+
+    return {
+        entryPoints: unique(inventory.entryPoints),
+        certResolvers: unique(inventory.certResolvers),
+        dockerProviderNetwork: inventory.dockerProviderNetwork,
+        acmeStorage: inventory.acmeStorage
+    };
+}
+
+async function readContainerFile(containerId: string, path: string) {
+    try {
+        const { stdout } = await execAsync(
+            `docker run --rm --volumes-from ${shellQuote(`${containerId}:ro`)} alpine:latest sh -c 'cat "$1" 2>/dev/null || true' sh ${shellQuote(path)}`,
+            { maxBuffer: 256 * 1024 }
+        );
+        return stdout;
+    } catch {
+        return "";
+    }
+}
+
+function parseTraefikStaticConfig(content: string) {
+    return {
+        entryPoints: unique([...parseYamlTopLevelObjectKeys(content, "entryPoints"), ...parseTomlSectionKeys(content, "entryPoints")]),
+        certResolvers: unique([...parseYamlTopLevelObjectKeys(content, "certificatesResolvers"), ...parseTomlSectionKeys(content, "certificatesResolvers")]),
+        dockerProviderNetwork: parseYamlNestedScalar(content, ["providers", "docker", "network"]) || parseTomlScalar(content, "providers.docker", "network"),
+        acmeStorage: parseYamlAcmeStorage(content) || parseTomlAcmeStorage(content)
+    };
+}
+
+function parseYamlTopLevelObjectKeys(content: string, key: string) {
+    const lines = content.split(/\r?\n/);
+    const startIndex = lines.findIndex((line) => line.trim() === `${key}:` && countIndent(line) === 0);
+    if (startIndex === -1) {
+        return [];
+    }
+
+    const keys: string[] = [];
+    for (const line of lines.slice(startIndex + 1)) {
+        const indent = countIndent(line);
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) {
+            continue;
+        }
+        if (indent === 0) {
+            break;
+        }
+        if (indent === 2 && /^[A-Za-z0-9_.-]+:\s*$/.test(trimmed)) {
+            keys.push(trimmed.slice(0, -1));
+        }
+    }
+
+    return keys;
+}
+
+function parseYamlNestedScalar(content: string, path: string[]) {
+    const lines = content.split(/\r?\n/);
+    let startIndex = 0;
+    let parentIndent = -1;
+    for (let level = 0; level < path.length - 1; level += 1) {
+        const foundIndex = lines.findIndex((line, index) => {
+            if (index < startIndex) {
+                return false;
+            }
+
+            const trimmed = line.trim();
+            const indent = countIndent(line);
+            if (!trimmed || trimmed.startsWith("#")) {
+                return false;
+            }
+            if (parentIndent >= 0 && indent <= parentIndent) {
+                return false;
+            }
+
+            return trimmed === `${path[level]}:`;
+        });
+        if (foundIndex === -1) {
+            return "";
+        }
+        parentIndent = countIndent(lines[foundIndex]);
+        startIndex = foundIndex + 1;
+    }
+
+    const target = path.at(-1);
+    for (const line of lines.slice(startIndex)) {
+        const indent = countIndent(line);
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) {
+            continue;
+        }
+        if (indent <= parentIndent) {
+            break;
+        }
+        if (trimmed.startsWith(`${target}:`)) {
+            return unquoteConfigScalar(trimmed.slice(String(target).length + 1));
+        }
+    }
+
+    return "";
+}
+
+function parseYamlAcmeStorage(content: string) {
+    for (const resolver of parseYamlTopLevelObjectKeys(content, "certificatesResolvers")) {
+        const storage = parseYamlNestedScalar(content, ["certificatesResolvers", resolver, "acme", "storage"]);
+        if (storage) {
+            return storage;
+        }
+    }
+
+    return "";
+}
+
+function parseTomlSectionKeys(content: string, section: string) {
+    const pattern = new RegExp(`^\\[${escapeRegExp(section)}\\.([^\\.\\]]+)`, "gm");
+    return unique([...content.matchAll(pattern)].map((match) => match[1]));
+}
+
+function parseTomlScalar(content: string, section: string, key: string) {
+    const sectionPattern = new RegExp(`^\\[${escapeRegExp(section)}\\]\\s*$([\\s\\S]*?)(?=^\\[|(?![\\s\\S]))`, "m");
+    const sectionMatch = content.match(sectionPattern);
+    const body = sectionMatch?.[1] ?? "";
+    const valueMatch = body.match(new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*(.+?)\\s*$`, "m"));
+    return valueMatch ? unquoteConfigScalar(valueMatch[1]) : "";
+}
+
+function parseTomlAcmeStorage(content: string) {
+    const match = content.match(/^\[certificatesResolvers\.[^.]+\.(?:acme|ACME)\]\s*$([\s\S]*?)(?=^\[|(?![\s\S]))/m);
+    const body = match?.[1] ?? "";
+    const valueMatch = body.match(/^\s*storage\s*=\s*(.+?)\s*$/m);
+    return valueMatch ? unquoteConfigScalar(valueMatch[1]) : "";
+}
+
+function countIndent(line: string) {
+    return line.match(/^ */)?.[0].length ?? 0;
+}
+
+function unquoteConfigScalar(value: string) {
+    const trimmed = value.trim().replace(/\s+#.*$/, "");
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+        return trimmed.slice(1, -1);
+    }
+
+    return trimmed;
+}
+
+function escapeRegExp(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function extractTraefikKeys(args: string[], pattern: RegExp) {
