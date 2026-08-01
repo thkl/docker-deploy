@@ -78,6 +78,28 @@
       </p>
     </section>
 
+    <section class="settings-panel">
+      <div class="panel-head">
+        <h3>Backup and recovery</h3>
+        <span>Projects, servers, settings, and controller keys</span>
+      </div>
+
+      <p class="muted-copy">
+        Backup files contain controller key material and encrypted secrets. Store them like passwords. Deployment logs and runtime history are not included.
+      </p>
+
+      <div class="backup-actions">
+        <button type="button" class="secondary" (click)="exportBackup()" [disabled]="exportingBackup() || restoringBackup()">
+          {{ exportingBackup() ? 'Exporting...' : 'Export backup' }}
+        </button>
+
+        <label class="secondary file-action" [class.disabled]="exportingBackup() || restoringBackup()">
+          <input type="file" accept="application/json,.json" (change)="restoreBackup($event)" [disabled]="exportingBackup() || restoringBackup()" />
+          {{ restoringBackup() ? 'Restoring...' : 'Restore backup' }}
+        </label>
+      </div>
+    </section>
+
     <footer class="form-actions">
       <button type="submit" [disabled]="saving()">
         {{ saving() ? 'Saving...' : 'Save settings' }}

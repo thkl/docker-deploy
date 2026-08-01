@@ -112,6 +112,7 @@ class App {
         this.app.use(apiEnvelopeMiddleware);
         registerRoutes(this.app, {
             adminAuth: this.adminAuth,
+            database: this.database,
             configStore: this.configStore,
             deploymentService: this.deploymentService,
             deploymentStore: this.deploymentStore,

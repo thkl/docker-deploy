@@ -75,6 +75,16 @@ The controller database defaults to `./data/updater.sqlite`; set `DEPLOY_DATABAS
 
 Keep this file with the controller data volume. Existing `UPDATER_SECRET_KEY` or new `DEPLOY_SECRET_KEY` can also provide a 32-byte base64 key explicitly.
 
+## Backup And Recovery
+
+Open Global settings -> Backup and recovery.
+
+- **Export backup** downloads a JSON file containing global settings, servers, agents, projects, project Traefik settings, controller pairing keys, and the controller secret key file when present.
+- **Restore backup** replaces those essential controller records from a backup JSON and broadcasts project/server updates to connected browsers.
+- Deployment history, deployment logs, runtime logs, webhook events, and runtime operation history are intentionally skipped.
+
+The backup includes key material needed to decrypt stored project secrets and keep remote agents paired. Store it like a password.
+
 ## Run A Remote Agent
 
 On a Docker host managed by the controller:

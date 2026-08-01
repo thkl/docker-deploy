@@ -13,6 +13,7 @@ import { DeploymentService } from "./deploymentService.js";
 import { EventBus } from "./eventBus.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ControllerKeyState } from "./keyStore.js";
+import { AppDatabase, ControllerStateBackup } from "./database.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
@@ -28,6 +29,7 @@ import { WebhookStore } from "./webhookStore.js";
  */
 export interface RouteDependencies {
     adminAuth: AdminAuth;
+    database: AppDatabase;
     configStore: ConfigStore;
     deploymentService: DeploymentService;
     deploymentStore: DeploymentStore;
@@ -46,7 +48,7 @@ export interface RouteDependencies {
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
+    const { adminAuth, database, configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -70,7 +72,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/projects", adminAuth.requireAuth);
     app.use("/api/servers", adminAuth.requireAuth);
 
-    registerSettingsRoutes(app, globalSettingsStore);
+    registerSettingsRoutes(app, { database, globalSettingsStore, eventBus });
     registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
     registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus });
     registerWebhookRoute(app, { configStore, deploymentService, webhookStore });
@@ -81,7 +83,9 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
 /**
  * Registers global settings read/write endpoints.
  */
-function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSettingsStore) {
+function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependencies, "database" | "globalSettingsStore" | "eventBus">) {
+    const { database, globalSettingsStore, eventBus } = dependencies;
+
     app.get("/api/settings", (req: Request, res: Response) => {
         res.json(globalSettingsStore.readSettings());
     });
@@ -92,6 +96,27 @@ function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSetting
             res.json(settings);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not save global settings." });
+        }
+    });
+
+    app.get("/api/settings/backup", (req: Request, res: Response) => {
+        try {
+            const backup = database.exportBackup();
+            res.setHeader("content-disposition", `attachment; filename="deploy-backup-${backup.createdAt.slice(0, 10)}.json"`);
+            res.json(backup);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not export backup." });
+        }
+    });
+
+    app.post("/api/settings/backup/restore", (req: Request, res: Response) => {
+        try {
+            database.restoreBackup(req.body as ControllerStateBackup);
+            eventBus.publish({ type: "servers.updated", changedAt: new Date().toISOString() });
+            eventBus.publish({ type: "projects.updated", changedAt: new Date().toISOString() });
+            res.json({ restored: true, restartRecommended: Boolean(req.body?.keys?.controllerKeys) });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not restore backup." });
         }
     });
 }

@@ -108,10 +108,40 @@ button.secondary {
   color: var(--accent-strong);
 }
 
-button.secondary:hover {
+button.secondary:hover,
+.file-action:hover {
   background: transparent;
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.backup-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.file-action {
+  align-items: center;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 28%);
+  border-radius: 6px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  display: inline-flex;
+  min-height: 38px;
+  padding: 0.58rem 0.85rem;
+}
+
+.file-action.disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.file-action input {
+  display: none;
 }
 
 button.danger-action {

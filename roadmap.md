@@ -73,6 +73,7 @@ Requirements:
 
 - [x] Add a migration runner.
 - [x] Import existing `config.json`, `settings.json`, and `deployments.json` on first startup.
+- [x] Export and restore essential controller state backups for settings, servers, agents, projects, Traefik settings, and controller keys.
 - [x] Keep API response shapes stable during the migration.
 - [x] Store project secrets carefully; encrypted storage can be added after the schema is stable.
 

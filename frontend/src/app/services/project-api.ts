@@ -85,6 +85,14 @@ export class ProjectApi {
     return this.http.put<GlobalSettings>('/api/settings', payload);
   }
 
+  exportBackup(): Observable<unknown> {
+    return this.http.get<unknown>('/api/settings/backup');
+  }
+
+  restoreBackup(backup: unknown): Observable<{ restored: boolean; restartRecommended?: boolean }> {
+    return this.http.post<{ restored: boolean }>('/api/settings/backup/restore', backup);
+  }
+
   listServers(): Observable<ServerRecord[]> {
     return this.http.get<ServerRecord[]>('/api/servers');
   }

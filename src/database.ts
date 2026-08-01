@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { GlobalSettings, GlobalSettingsPayload, ProjectConfig, ProjectSettings, ServerActiveJob, ServerRecord } from "./types.js";
@@ -15,6 +15,22 @@ const legacyDefaultGlobalSettings: GlobalSettings = {
     sshKeyPath: "~/.ssh",
     cleanupAfterDeploy: false
 };
+
+const backupVersion = 1;
+const backupTables = ["settings", "servers", "agents", "projects", "project_traefik_settings"] as const;
+
+export interface ControllerStateBackup {
+    version: 1;
+    createdAt: string;
+    warning: string;
+    databasePath: string;
+    keys: {
+        controllerKeys?: unknown;
+        controllerSecretKey?: unknown;
+        missing: string[];
+    };
+    tables: Record<(typeof backupTables)[number], Array<Record<string, unknown>>>;
+}
 
 /**
  * Small synchronous SQLite database wrapper for controller state.
@@ -423,6 +439,92 @@ export class AppDatabase {
     }
 
     /**
+     * Exports essential controller state without deployment/runtime logs.
+     */
+    exportBackup(): ControllerStateBackup {
+        return {
+            version: backupVersion,
+            createdAt: new Date().toISOString(),
+            warning: "This backup contains controller key material and encrypted secrets. Store it like a password.",
+            databasePath: this.databasePath,
+            keys: this.readBackupKeys(),
+            tables: Object.fromEntries(
+                backupTables.map((table) => [table, this.connection.prepare(`SELECT * FROM ${table}`).all() as Array<Record<string, unknown>>])
+            ) as ControllerStateBackup["tables"]
+        };
+    }
+
+    /**
+     * Restores essential controller state from a Deploy JSON backup.
+     */
+    restoreBackup(backup: ControllerStateBackup) {
+        if (!backup || backup.version !== backupVersion || !backup.tables) {
+            throw new Error("Backup file is not a supported Deploy backup.");
+        }
+
+        runDatabaseTransaction(this.connection, () => {
+            this.connection.prepare("DELETE FROM project_traefik_settings").run();
+            this.connection.prepare("DELETE FROM projects").run();
+            this.connection.prepare("DELETE FROM agents").run();
+            this.connection.prepare("DELETE FROM servers").run();
+            this.connection.prepare("DELETE FROM settings").run();
+
+            this.insertRows("settings", backup.tables.settings ?? []);
+            this.insertRows("servers", backup.tables.servers ?? []);
+            this.insertRows("agents", backup.tables.agents ?? []);
+            this.insertRows("projects", backup.tables.projects ?? []);
+            this.insertRows("project_traefik_settings", backup.tables.project_traefik_settings ?? []);
+        });
+
+        this.writeBackupKeys(backup.keys);
+        this.ensureDefaultLocalServer();
+    }
+
+    private readBackupKeys(): ControllerStateBackup["keys"] {
+        const missing: string[] = [];
+        const controllerKeys = this.readOptionalJson("controller-keys.json", missing);
+        const controllerSecretKey = this.readOptionalJson("controller-secret-key.json", missing);
+        return {
+            ...(controllerKeys ? { controllerKeys } : {}),
+            ...(controllerSecretKey ? { controllerSecretKey } : {}),
+            missing
+        };
+    }
+
+    private readOptionalJson(fileName: string, missing: string[]) {
+        const path = this.legacyDataFile(fileName);
+        if (!existsSync(path)) {
+            missing.push(fileName);
+            return undefined;
+        }
+
+        return JSON.parse(readFileSync(path, "utf8")) as unknown;
+    }
+
+    private writeBackupKeys(keys: ControllerStateBackup["keys"] | undefined) {
+        if (keys?.controllerKeys) {
+            writeFileSync(this.legacyDataFile("controller-keys.json"), `${JSON.stringify(keys.controllerKeys, null, 2)}\n`, { mode: 0o600 });
+        }
+
+        if (keys?.controllerSecretKey) {
+            writeFileSync(this.legacyDataFile("controller-secret-key.json"), `${JSON.stringify(keys.controllerSecretKey, null, 2)}\n`, { mode: 0o600 });
+        }
+    }
+
+    private insertRows(tableName: (typeof backupTables)[number], rows: Array<Record<string, unknown>>) {
+        for (const row of rows) {
+            const columns = Object.keys(row);
+            if (!columns.length) {
+                continue;
+            }
+
+            const quotedColumns = columns.map((column) => `"${column.replace(/"/g, "\"\"")}"`).join(", ");
+            const placeholders = columns.map(() => "?").join(", ");
+            this.connection.prepare(`INSERT INTO ${tableName} (${quotedColumns}) VALUES (${placeholders})`).run(...columns.map((column) => toSqlValue(row[column])));
+        }
+    }
+
+    /**
      * Encrypts older plaintext project tokens in-place after the controller key
      * is available. Reads stay backward-compatible through ConfigStore.
      */
@@ -523,6 +625,22 @@ function parseActiveJobs(value: string): ServerActiveJob[] {
     } catch {
         return [];
     }
+}
+
+function toSqlValue(value: unknown) {
+    if (value === undefined) {
+        return null;
+    }
+
+    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
+        return value;
+    }
+
+    if (typeof value === "boolean") {
+        return value ? 1 : 0;
+    }
+
+    return JSON.stringify(value);
 }
 
 /**
