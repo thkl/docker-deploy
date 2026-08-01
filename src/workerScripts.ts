@@ -22,6 +22,7 @@ export function renderTempBuildContextRewriteScript() {
                     if [ ! -f "$COMPOSE_REWRITE_FILE" ]; then
                         continue
                     fi
+                    echo "--> Rewriting project-root build contexts in $COMPOSE_REWRITE_FILE."
                     sed -i.bak \\
                         -e "s|^\\([[:space:]]*context:[[:space:]]*\\)$PROJECT_ROOT_NO_SLASH/|\\1$TMP_DEPLOY_NO_SLASH/|" \\
                         -e "s|^\\([[:space:]]*context:[[:space:]]*\\)$PROJECT_ROOT_NO_SLASH/\\{0,1\\}\\([[:space:]]*\\)$|\\1$TMP_DEPLOY_NO_SLASH\\2|" \\
@@ -29,6 +30,30 @@ export function renderTempBuildContextRewriteScript() {
                         -e "s|^\\([[:space:]]*build:[[:space:]]*\\)$PROJECT_ROOT_NO_SLASH/|\\1$TMP_DEPLOY_NO_SLASH/|" \\
                         -e "s|^\\([[:space:]]*build:[[:space:]]*\\)$PROJECT_ROOT_NO_SLASH/\\{0,1\\}\\([[:space:]]*\\)$|\\1$TMP_DEPLOY_NO_SLASH\\2|" \\
                         -e "s|^\\([[:space:]]*build:[[:space:]]*\\)$PROJECT_ROOT_NO_SLASH/\\{0,1\\}\\([[:space:]]*#.*\\)$|\\1$TMP_DEPLOY_NO_SLASH\\2|" \\
+                        "$COMPOSE_REWRITE_FILE"
+                    rm -f "$COMPOSE_REWRITE_FILE.bak"
+                done`;
+}
+
+/**
+ * Rewrites relative bind mount sources to the persistent project root before
+ * Compose expands them against the temporary checkout directory.
+ */
+export function renderProjectRootBindMountRewriteScript() {
+    return `
+                PROJECT_ROOT_NO_SLASH="\${PROJECT_ROOT%/}"
+                for COMPOSE_REWRITE_FILE in docker-compose.updater.yml docker-compose.yaml docker-compose.yml compose.yaml compose.yml; do
+                    if [ ! -f "$COMPOSE_REWRITE_FILE" ]; then
+                        continue
+                    fi
+                    echo "--> Rewriting relative bind mounts in $COMPOSE_REWRITE_FILE to the project root."
+                    sed -i.bak \\
+                        -e "s|^\\([[:space:]]*-[[:space:]]*\\)\\\"\\./\\([^:][^:]*:[^\\\"]*\\)\\\"\\([[:space:]]*\\)$|\\1\\\"$PROJECT_ROOT_NO_SLASH/\\2\\\"\\3|" \\
+                        -e "s|^\\([[:space:]]*-[[:space:]]*\\)'\\./\\([^:][^:]*:[^']*\\)'\\([[:space:]]*\\)$|\\1'$PROJECT_ROOT_NO_SLASH/\\2'\\3|" \\
+                        -e "s|^\\([[:space:]]*-[[:space:]]*\\)\\./\\([^:][^:]*:.*\\)$|\\1$PROJECT_ROOT_NO_SLASH/\\2|" \\
+                        -e "s|^\\([[:space:]]*source:[[:space:]]*\\)\\\"\\./\\([^\\\"]*\\)\\\"\\([[:space:]]*\\)$|\\1\\\"$PROJECT_ROOT_NO_SLASH/\\2\\\"\\3|" \\
+                        -e "s|^\\([[:space:]]*source:[[:space:]]*\\)'\\./\\([^']*\\)'\\([[:space:]]*\\)$|\\1'$PROJECT_ROOT_NO_SLASH/\\2'\\3|" \\
+                        -e "s|^\\([[:space:]]*source:[[:space:]]*\\)\\./\\([^[:space:]]*\\)\\([[:space:]]*\\)$|\\1$PROJECT_ROOT_NO_SLASH/\\2\\3|" \\
                         "$COMPOSE_REWRITE_FILE"
                     rm -f "$COMPOSE_REWRITE_FILE.bak"
                 done`;

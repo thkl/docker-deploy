@@ -176,7 +176,7 @@ Enable cleanup in Settings when project data no longer lives inside the temporar
 
 If a Compose file references `env_file: .env`, the worker uses `.env` from the persistent project root when the cloned repository does not contain one. The persisted deploy compose is rewritten to reference that project-root `.env`, so later runtime actions still work after temporary checkout cleanup.
 
-If a Compose file uses an absolute build context that points at the project root, for example `build.context: /root/docker-apps/my-project`, the worker rewrites only that build context to `.updater/tmpdeploy`. Host bind mounts are not rewritten by this step.
+If a Compose file uses an absolute build context that points at the project root, for example `build.context: /root/docker-apps/my-project`, the worker rewrites only that build context to `.updater/tmpdeploy`. Relative bind mounts such as `./data:/app/data` are rewritten to the persistent project root, for example `/root/docker-apps/my-project/data:/app/data`.
 
 Use the Compose builder storage mapping preview to move relative data paths to an external host path such as `/root/docker-apps/<project>/data`. If unsafe mounts remain, the deploy still succeeds and the deployment log explains why checkout cleanup was skipped.
 

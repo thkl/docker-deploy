@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { GlobalSettings, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
-import { renderPersistedEnvFileRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { renderPersistedEnvFileRewriteScript, renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 
@@ -54,6 +54,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
     const projectRootEnvFileScript = renderProjectRootEnvFileScript();
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
+    const projectRootBindMountRewriteScript = renderProjectRootBindMountRewriteScript();
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const quotedHostAppsVolume = shellQuote(`${hostAppsPath}:${hostAppsPath}`);
@@ -94,6 +95,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
 
 ${composeOverrideScript}
 ${tempBuildContextRewriteScript}
+${projectRootBindMountRewriteScript}
 ${composeSelectionScript}
 ${projectRootEnvFileScript}
 ${traefikOverrideScript}

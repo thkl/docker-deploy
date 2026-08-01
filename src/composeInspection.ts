@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve } from "node:path/posix";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { ComposeInspection, ComposeMountInspection, ComposePortInspection, ComposeResourceInspection, ComposeServiceInspection, ComposeStorageMapping, GlobalSettings, ProjectSettings } from "./types.js";
-import { renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 const composeFileNames = ["docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml"];
@@ -32,6 +32,7 @@ async function inspectStoredOverride(projectName: string, appSettings: ProjectSe
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
     const projectRootEnvFileScript = renderProjectRootEnvFileScript();
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
+    const projectRootBindMountRewriteScript = renderProjectRootBindMountRewriteScript();
 
     const dockerRunCommand = `docker run -i --rm \
             -v ${quotedProjectVolume} \
@@ -59,6 +60,7 @@ async function inspectStoredOverride(projectName: string, appSettings: ProjectSe
 ${composeOverride}
 UPDATER_COMPOSE_EOF
 ${tempBuildContextRewriteScript}
+${projectRootBindMountRewriteScript}
 ${projectRootEnvFileScript}
                 echo "${composeFileMarker}docker-compose.updater.yml"
                 echo "${composeJsonBeginMarker}"
@@ -82,6 +84,7 @@ async function inspectRepositoryCompose(projectName: string, appSettings: Projec
     const composeSearch = composeFileNames.map(shellQuote).join(" ");
     const projectRootEnvFileScript = renderProjectRootEnvFileScript();
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
+    const projectRootBindMountRewriteScript = renderProjectRootBindMountRewriteScript();
 
     const dockerRunCommand = `docker run -i --rm \
             -v ${quotedProjectVolume} \
@@ -123,6 +126,7 @@ async function inspectRepositoryCompose(projectName: string, appSettings: Projec
                 fi
 
 ${tempBuildContextRewriteScript}
+${projectRootBindMountRewriteScript}
 ${projectRootEnvFileScript}
                 echo "${composeFileMarker}$COMPOSE_FILE"
                 echo "${composeJsonBeginMarker}"

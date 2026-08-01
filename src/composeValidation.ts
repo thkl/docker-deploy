@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { ComposeValidation, GlobalSettings, ProjectSettings } from "./types.js";
-import { renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 const composeFileNames = ["docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml"];
@@ -30,6 +30,7 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
     const composeSelectionScript = renderComposeSelectionScript(Boolean(composeOverride), composeSearch);
     const projectRootEnvFileScript = renderProjectRootEnvFileScript();
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
+    const projectRootBindMountRewriteScript = renderProjectRootBindMountRewriteScript();
     const traefikOverrideScript = renderTraefikOverrideScript(projectName, appSettings, globalSettings);
 
     const dockerRunCommand = `docker run -i --rm \
@@ -60,6 +61,7 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
 
 ${composeOverrideScript}
 ${tempBuildContextRewriteScript}
+${projectRootBindMountRewriteScript}
 ${composeSelectionScript}
 ${projectRootEnvFileScript}
 ${traefikOverrideScript}
