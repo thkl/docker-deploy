@@ -67,6 +67,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git jq openssh-client > /dev/null 2>&1
 
                 PROJECT_ROOT=${quotedHostAppsPath}
+                PROJECT_ROOT="\${PROJECT_ROOT%/}"
                 PROJECT_NAME=${shellQuote(composeProjectName)}
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/tmpdeploy"
                 RELEASE_DEPLOY="$PROJECT_ROOT/.updater/release"

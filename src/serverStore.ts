@@ -116,8 +116,15 @@ export class ServerStore {
 
         this.database.exec("BEGIN");
         try {
+            this.database
+                .prepare("UPDATE webhook_events SET deployment_id = NULL WHERE deployment_id IN (SELECT id FROM deployments WHERE server_id = ?)")
+                .run(server.id);
+            this.database
+                .prepare("DELETE FROM deployment_logs WHERE deployment_id IN (SELECT id FROM deployments WHERE server_id = ?)")
+                .run(server.id);
             this.database.prepare("DELETE FROM runtime_operations WHERE server_id = ?").run(server.id);
             this.database.prepare("DELETE FROM deployments WHERE server_id = ?").run(server.id);
+            this.database.prepare("DELETE FROM agents WHERE server_id = ?").run(server.id);
             this.database.prepare("DELETE FROM servers WHERE id = ?").run(server.id);
             this.database.exec("COMMIT");
         } catch (error) {
