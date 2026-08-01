@@ -1,0 +1,39 @@
+<section class="page-head">
+  <div>
+    <h2>Activity</h2>
+    <p>Live controller events from projects, servers, deployments, and runtime actions.</p>
+  </div>
+  <span class="stream-chip" [class.live]="streamState() === 'live'" [class.error]="streamState() === 'error'">
+    {{ streamLabel() }}
+  </span>
+</section>
+
+<section class="activity-panel">
+  @if (events().length) {
+    <div class="activity-list">
+      @for (event of events(); track event.id) {
+        <article class="activity-row" [class.success]="event.tone === 'success'" [class.warning]="event.tone === 'warning'" [class.danger]="event.tone === 'danger'">
+          <span class="activity-light"></span>
+          <div class="activity-main">
+            <div class="activity-title">
+              <strong>{{ event.title }}</strong>
+              <span>{{ eventTypeLabel(event.type) }}</span>
+            </div>
+            <p>{{ event.detail }}</p>
+          </div>
+          <div class="activity-meta">
+            <time>{{ formatDate(event.time) }}</time>
+            @if (event.projectId) {
+              <a [routerLink]="['/projects', event.projectId, 'overview']">Open project</a>
+            }
+          </div>
+        </article>
+      }
+    </div>
+  } @else {
+    <div class="empty-state">
+      <strong>No activity yet</strong>
+      <span>Events will appear here when the controller stream receives updates.</span>
+    </div>
+  }
+</section>

@@ -168,7 +168,7 @@ Initial routes:
 Layout:
 
 - [x] Left navigation: Projects and Settings.
-- [ ] Activity navigation.
+- [x] Activity navigation.
 - [x] Project list entries show the selected target agent/server.
 - [x] Project overview has a status and command bar with deploy/runtime actions.
 - [x] Main area uses dense operational views.
@@ -330,6 +330,26 @@ Agent job additions:
 - [x] `runtimeLogs`
 - [x] `runtimeAction`
 
+## Phase 6.7: Server-Level Traefik Management
+
+Add guarded Traefik management for target servers without making accidental global proxy changes easy.
+
+Discovery and status:
+
+- [x] Detect Traefik availability per server.
+- [x] Show Traefik container/network status in the server view.
+- [x] Generate and diagnose project-level Traefik labels.
+
+Management workflow:
+
+- [ ] Inventory Traefik containers, static config paths, dynamic config paths, entrypoints, cert resolvers, Docker provider network, and ACME storage.
+- [ ] Show read-only server-level Traefik configuration before offering edits.
+- [ ] Add explicit backup/export before writing any Traefik config.
+- [ ] Manage common defaults: entrypoints, cert resolvers, Docker network, wildcard domains, and ACME email/storage.
+- [ ] Validate generated Traefik config with the target agent before applying.
+- [ ] Apply changes through the target server agent and keep rollback instructions/output.
+- [ ] Surface affected projects before changing a shared Traefik network or entrypoint.
+
 ## Phase 7: Storage Cleanup And Data Mapping
 
 Add advanced cleanup support only after compose inspection exists.
@@ -373,12 +393,12 @@ Example target layout:
 
 ## Current Remaining Work
 
-- [ ] Add an Activity page backed by the global controller event stream.
+- [x] Add an Activity page backed by the global controller event stream.
 - [ ] Show last webhook receipt/match/ignore/error details per project.
 - [ ] Finish moving page-specific live updates onto the global event stream where it makes sense, while keeping raw log streams separate if needed.
 - [ ] Add encrypted-at-rest storage for project secrets.
 - [ ] Add explicit `queued` deployment status if deployments become queued before workers start.
 - [ ] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
 - [ ] Add cleanup-after-deploy enforcement based on externalized storage mappings.
-- [ ] Design guarded server-level Traefik management for entrypoints, cert resolvers, networks, and static/dynamic config.
+- [ ] Build guarded server-level Traefik management for entrypoints, cert resolvers, networks, and static/dynamic config.
 - [ ] Decide whether the product name should change now that it manages servers, compose, agents, and proxy diagnostics.

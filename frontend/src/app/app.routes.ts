@@ -41,4 +41,9 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/servers-page/servers-page').then((m) => m.ServersPage),
   },
+  {
+    path: 'activity',
+    loadComponent: () =>
+      import('./pages/activity-page/activity-page').then((m) => m.ActivityPage),
+  },
 ];

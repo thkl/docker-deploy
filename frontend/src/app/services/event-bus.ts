@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { Observable, share } from 'rxjs';
+import { Observable, shareReplay } from 'rxjs';
 import { DeploymentRecord, RuntimeOperationRecord, RuntimeStatus, ServerRecord } from '../models/project';
 import { AuthService } from './auth';
 
@@ -15,7 +15,7 @@ export type ControllerEvent =
 @Injectable({ providedIn: 'root' })
 export class EventBusService {
   private readonly auth = inject(AuthService);
-  private readonly events$ = this.createStream().pipe(share());
+  private readonly events$ = this.createStream().pipe(shareReplay({ bufferSize: 200, refCount: true }));
 
   stream() {
     return this.events$;
