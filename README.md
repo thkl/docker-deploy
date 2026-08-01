@@ -85,6 +85,14 @@ Raw YAML mode remains available for Compose options the builder cannot safely ed
 
 Sensitive environment variables are kept outside the raw Compose YAML. In **Docker secret file** mode, Deploy sets `KEY_FILE=/run/secrets/<service>_<key>` and mounts the value as a Compose secret file. The application must read the `_FILE` variable. In **Runtime env** mode, Deploy injects `KEY=value` during deployment for legacy apps that only read normal environment variables; this is less secure because Docker can expose container environment values.
 
+Example:
+
+```
+const dbPass =
+    process.env.DB_PASS ??
+    readFileSync(process.env.DB_PASS_FILE!, 'utf8').trim();
+```
+
 ## Compose Validation
 
 Use Project settings -> Docker Compose -> **Validate compose** before deploying.
