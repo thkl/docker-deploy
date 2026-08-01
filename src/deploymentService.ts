@@ -44,7 +44,7 @@ export class DeploymentService {
         const deploymentRun = agent.deployProject(projectName, targetSettings, globalSettings, {
             onOutput: (stream, chunk) => {
                 this.deploymentStore.append(projectName, deployment.id, stream, chunk);
-                this.broadcastDeploymentUpdate(projectName);
+                this.broadcastDeployment(projectName);
             },
             onSuccess: () => {
                 void this.finishSuccessfulDeployment(projectName, deployment.id, targetSettings, globalSettings);
@@ -140,7 +140,7 @@ export class DeploymentService {
 
     private appendDeploymentLine(projectName: string, deploymentId: string, stream: "stdout" | "stderr", message: string) {
         this.deploymentStore.append(projectName, deploymentId, stream, `${message}\n`);
-        this.broadcastDeploymentUpdate(projectName);
+        this.broadcastDeployment(projectName);
     }
 
     private logCleanupLine(projectName: string, deploymentId: string | undefined, stream: "stdout" | "stderr", message: string) {

@@ -85,7 +85,7 @@ class App {
             type: "deployment.updated",
             projectId: deployment?.projectId,
             projectName,
-            deployment
+            deployment: deployment ? { ...deployment, log: "" } : null
         }),
         async (serverId) => {
             await this.agentHealth.refreshServer(serverId);

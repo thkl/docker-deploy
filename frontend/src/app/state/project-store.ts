@@ -165,11 +165,17 @@ export class ProjectStore {
 
     if (event.type === 'deployment.updated') {
       this.projects.update((projects) =>
-        projects.map((project) =>
-          project.id === event.projectId || project.name === event.projectName
-            ? { ...project, lastDeployment: event.deployment }
-            : project,
-        ),
+        projects.map((project) => {
+          if (project.id !== event.projectId && project.name !== event.projectName) {
+            return project;
+          }
+
+          const previous = project.lastDeployment;
+          const next = event.deployment && previous?.id === event.deployment.id && !event.deployment.log
+            ? { ...event.deployment, log: previous.log }
+            : event.deployment;
+          return { ...project, lastDeployment: next };
+        }),
       );
     }
   }
