@@ -60,6 +60,30 @@ export function renderProjectRootBindMountRewriteScript() {
 }
 
 /**
+ * Rewrites the final Deploy-owned compose file after Docker Compose has
+ * rendered absolute bind mount sources. Compose merges volume lists by
+ * appending, so the storage overlay alone cannot reliably replace an existing
+ * bind mount entry.
+ */
+export function renderPersistedStorageRewriteScript(targetFile: string) {
+    return `
+                if [ -f ${targetFile} ] && [ -n "$TMP_DEPLOY" ]; then
+                    PROJECT_ROOT_NO_SLASH="\${PROJECT_ROOT%/}"
+                    TMP_DEPLOY_NO_SLASH="\${TMP_DEPLOY%/}"
+                    echo "--> Rewriting persisted temporary-checkout bind mount sources."
+                    sed -i.bak \\
+                        -e "s|^\\([[:space:]]*source:[[:space:]]*\\)\\\"$TMP_DEPLOY_NO_SLASH\\([^\\\"]*\\)\\\"\\([[:space:]]*\\)$|\\1\\\"$PROJECT_ROOT_NO_SLASH\\2\\\"\\3|" \\
+                        -e "s|^\\([[:space:]]*source:[[:space:]]*\\)'$TMP_DEPLOY_NO_SLASH\\([^']*\\)'\\([[:space:]]*\\)$|\\1'$PROJECT_ROOT_NO_SLASH\\2'\\3|" \\
+                        -e "s|^\\([[:space:]]*source:[[:space:]]*\\)$TMP_DEPLOY_NO_SLASH\\(/[^[:space:]]*\\)\\([[:space:]]*\\)$|\\1$PROJECT_ROOT_NO_SLASH\\2\\3|" \\
+                        -e "s|^\\([[:space:]]*-[[:space:]]*\\)\\\"$TMP_DEPLOY_NO_SLASH\\([^\\\"]*:[^\\\"]*\\)\\\"\\([[:space:]]*\\)$|\\1\\\"$PROJECT_ROOT_NO_SLASH\\2\\\"\\3|" \\
+                        -e "s|^\\([[:space:]]*-[[:space:]]*\\)'$TMP_DEPLOY_NO_SLASH\\([^']*:[^']*\\)'\\([[:space:]]*\\)$|\\1'$PROJECT_ROOT_NO_SLASH\\2'\\3|" \\
+                        -e "s|^\\([[:space:]]*-[[:space:]]*\\)$TMP_DEPLOY_NO_SLASH\\(/[^:]*:.*\\)$|\\1$PROJECT_ROOT_NO_SLASH\\2|" \\
+                        ${targetFile}
+                    rm -f ${targetFile}.bak
+                fi`;
+}
+
+/**
  * Generates a Deploy-owned storage overlay that rewrites bind mounts expanded
  * against the temporary checkout back to the persistent project root.
  */
