@@ -78,7 +78,6 @@ export function renderProjectRootStorageOverlayScript() {
                                     if type == "string" and (. == $tmp or startswith($tmp + ":") or startswith($tmp + "/"))
                                     then ($root + (.[($tmp | length):]))
                                     elif type == "object"
-                                         and .type == "bind"
                                          and (.source | type) == "string"
                                          and (.source == $tmp or (.source | startswith($tmp + "/")))
                                     then .source = ($root + (.source[($tmp | length):]))
@@ -115,7 +114,7 @@ export function renderPersistedStorageGuardScript(targetFile: string) {
                                 (.services // {})[]?.volumes[]? |
                                 if type == "string" then
                                     (. == $tmp or startswith($tmp + ":") or startswith($tmp + "/"))
-                                elif type == "object" and .type == "bind" and (.source | type) == "string" then
+                                elif type == "object" and (.source | type) == "string" then
                                     (.source == $tmp or (.source | startswith($tmp + "/")))
                                 else
                                     false
