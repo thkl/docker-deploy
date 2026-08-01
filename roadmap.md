@@ -95,13 +95,13 @@ Endpoints:
 
 Response shapes:
 
-- [ ] Standardize success responses as:
+- [x] Standardize success responses as:
 
 ```json
 { "data": {} }
 ```
 
-- [ ] Standardize error responses as:
+- [x] Standardize error responses as:
 
 ```json
 { "error": { "message": "...", "code": "..." } }

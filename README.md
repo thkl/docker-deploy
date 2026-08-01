@@ -35,6 +35,22 @@ DEPLOY_ADMIN_TOKEN=change-me
 
 When set, browser API requests must authenticate with that token.
 
+## API Shape
+
+Controller `/api/*` JSON responses use a stable envelope:
+
+```json
+{ "data": {} }
+```
+
+Errors use:
+
+```json
+{ "error": { "message": "...", "code": "..." } }
+```
+
+Legacy webhook routes keep their plain text responses for GitLab compatibility.
+
 Project webhook secrets and CI deploy tokens are encrypted in SQLite with a controller-local AES-256-GCM key stored at:
 
 ```text

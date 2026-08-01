@@ -3,6 +3,7 @@ import express, { NextFunction, Request, Response } from "express";
 import { AgentManager } from "./agentManager.js";
 import { AgentHealthService } from "./agentHealth.js";
 import { AgentRuntime } from "./agentRuntime.js";
+import { apiEnvelopeMiddleware, apiError } from "./apiEnvelope.js";
 import { AdminAuth } from "./auth.js";
 import { AppDatabase } from "./database.js";
 import { ConfigStore } from "./configStore.js";
@@ -108,6 +109,7 @@ class App {
         await this.deploymentService.reconcileRunningDeployments(config);
         await this.deploymentService.cleanupStaleTempDeployments(config);
         this.configureBodyParsing();
+        this.app.use(apiEnvelopeMiddleware);
         registerRoutes(this.app, {
             adminAuth: this.adminAuth,
             configStore: this.configStore,
@@ -201,7 +203,7 @@ class App {
     private registerErrorHandler() {
         this.app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
             console.error(error);
-            res.status(500).json({ error: error.message || "Internal server error." });
+            res.status(500).json(apiError(error.message || "Internal server error.", 500));
         });
     }
 }
