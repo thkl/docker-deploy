@@ -404,27 +404,30 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const globalSettings = globalSettingsStore.readSettings();
             const config = configStore.readConfig();
             await deploymentService.reconcileRunningDeployments(config);
-            // Shape the storage record into the UI-facing project summary.
             const projects = Object.entries(config)
                 .sort(([left], [right]) => left.localeCompare(right))
-                .map(([name, settings]) => ({
-                    id: settings.id,
-                    name,
-                    serverId: settings.serverId ?? "local",
-                    repositoryUrl: settings.repositoryUrl ?? "",
-                    path: settings.path ?? defaultProjectPath(globalSettings, name),
-                    token: settings.token ? maskToken(settings.token) : "",
-                    deployToken: settings.deployToken ? maskToken(settings.deployToken) : "",
-                    composeOverride: settings.composeOverride ?? "",
-                    envSecrets: maskEnvSecrets(settings.envSecrets),
-                    hasComposeOverride: Boolean(settings.composeOverride),
-                    traefik: settings.traefik ?? { enabled: false },
-                    lastDeployment: deploymentStore.latest(settings.id ?? name)
-                }));
+                .map(([name, settings]) => projectSummary(name, settings, globalSettings, deploymentStore));
 
             res.json(projects);
         } catch (error) {
             next(error);
+        }
+    });
+
+    app.get("/api/projects/:name", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            if (!project) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            await deploymentService.reconcileLatestDeployment(project.name, project.settings);
+            res.json(projectSummary(project.name, project.settings, globalSettingsStore.readSettings(), deploymentStore));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not load project." });
         }
     });
 
@@ -1057,6 +1060,23 @@ function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {
 
 function readHeader(value: string | string[] | undefined) {
     return Array.isArray(value) ? value[0] : value ?? "";
+}
+
+function projectSummary(name: string, settings: ProjectSettings, globalSettings: ReturnType<GlobalSettingsStore["readSettings"]>, deploymentStore: DeploymentStore) {
+    return {
+        id: settings.id,
+        name,
+        serverId: settings.serverId ?? "local",
+        repositoryUrl: settings.repositoryUrl ?? "",
+        path: settings.path ?? defaultProjectPath(globalSettings, name),
+        token: settings.token ? maskToken(settings.token) : "",
+        deployToken: settings.deployToken ? maskToken(settings.deployToken) : "",
+        composeOverride: settings.composeOverride ?? "",
+        envSecrets: maskEnvSecrets(settings.envSecrets),
+        hasComposeOverride: Boolean(settings.composeOverride),
+        traefik: settings.traefik ?? { enabled: false },
+        lastDeployment: deploymentStore.latest(settings.id ?? name)
+    };
 }
 
 function maskEnvSecrets(secrets: ProjectEnvironmentSecret[] | undefined) {

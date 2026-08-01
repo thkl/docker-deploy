@@ -84,7 +84,7 @@ Endpoints:
 
 - [x] `GET /api/projects`
 - [x] `POST /api/projects`
-- [ ] `GET /api/projects/:name`
+- [x] `GET /api/projects/:name`
 - [x] `PUT /api/projects/:name`
 - [x] `POST /api/projects/:name/deploy`
 - [x] `POST /api/deploy/:name`
