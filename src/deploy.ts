@@ -419,7 +419,7 @@ printf '}\\n'`;
         const staticConfig = await readTraefikStaticConfigInventory(inspectedContainers);
         const entryPoints = unique([...extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./), ...staticConfig.entryPoints]);
         const certResolvers = unique([...extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./), ...staticConfig.certResolvers]);
-        const dockerProviderNetwork = extractTraefikValue(configArgs, "--providers.docker.network=") || staticConfig.dockerProviderNetwork;
+        const dockerProviderNetwork = extractTraefikValue(configArgs, "--providers.docker.network=") || staticConfig.dockerProviderNetwork || inferTraefikDockerNetwork(containers, networkName);
         const acmeStorage = extractTraefikValue(configArgs, "--certificatesresolvers.", ".acme.storage=") || staticConfig.acmeStorage;
 
         return {
@@ -459,6 +459,16 @@ function parseTraefikContainerInventory(container: DockerInspectContainerWithMou
         mounts: (container.Mounts ?? []).map((mount) => ({ source: mount.Source, target: mount.Destination })),
         configArgs: args
     };
+}
+
+function inferTraefikDockerNetwork(containers: TraefikContainerInventory[], preferredNetwork: string) {
+    const networks = unique(containers.flatMap((container) => container.networks));
+    if (preferredNetwork && networks.includes(preferredNetwork)) {
+        return preferredNetwork;
+    }
+
+    const candidates = networks.filter((network) => !["bridge", "host", "none"].includes(network));
+    return candidates.length === 1 ? candidates[0] : "";
 }
 
 async function readTraefikStaticConfigInventory(containers: DockerInspectContainerWithMounts[]) {
