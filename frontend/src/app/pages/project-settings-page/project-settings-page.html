@@ -3,20 +3,20 @@
     <h2>{{ title() }}</h2>
     <p>
       @if (isNew()) {
-        Configure repository access, compose data, and optional Traefik routing.
+      Configure repository access, compose data, and optional Traefik routing.
       } @else {
-        Leave secret fields empty to keep the current values.
+      Leave secret fields empty to keep the current values.
       }
     </p>
   </div>
 </section>
 
 @if (error()) {
-  <p class="notice error">{{ error() }}</p>
+<p class="notice error">{{ error() }}</p>
 }
 
 @if (message()) {
-  <p class="notice">{{ message() }}</p>
+<p class="notice">{{ message() }}</p>
 }
 
 <form [formGroup]="form" (ngSubmit)="save('save')" class="settings-form">
@@ -36,16 +36,17 @@
         <span>Target server</span>
         <select formControlName="serverId">
           @for (server of servers(); track server.id) {
-            <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
+          <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
           } @empty {
-            <option value="local">Local Server · local</option>
+          <option value="local">Local Server · local</option>
           }
         </select>
       </label>
 
       <label>
         <span>Repository URL</span>
-        <input formControlName="repositoryUrl" autocomplete="off" placeholder="git@gitlab.example.com:team/service-a.git" />
+        <input formControlName="repositoryUrl" autocomplete="off"
+          placeholder="git@gitlab.example.com:team/service-a.git" />
       </label>
 
       <label>
@@ -55,22 +56,15 @@
 
       <label>
         <span>Webhook secret</span>
-        <input
-          formControlName="token"
-          autocomplete="new-password"
+        <input formControlName="token" autocomplete="new-password"
           [placeholder]="isNew() ? 'optional for UI/CI deploys' : 'leave blank to keep current secret'"
-          type="password"
-        />
+          type="password" />
       </label>
 
       <label>
         <span>CI deploy token</span>
-        <input
-          formControlName="deployToken"
-          autocomplete="new-password"
-          placeholder="leave blank to keep or skip"
-          type="password"
-        />
+        <input formControlName="deployToken" autocomplete="new-password" placeholder="leave blank to keep or skip"
+          type="password" />
       </label>
     </div>
   </section>
@@ -82,516 +76,565 @@
         <span>Stored compose file for projects that should not use the repository file</span>
       </div>
 
-      <button type="button" class="secondary" (click)="importCompose()" [disabled]="saving() !== '' || importingCompose()">
+      <button type="button" class="secondary" (click)="importCompose()"
+        [disabled]="saving() !== '' || importingCompose()">
         {{ importingCompose() ? 'Importing...' : 'Import from repo' }}
       </button>
-      <button type="button" class="secondary" (click)="inspectCompose()" [disabled]="saving() !== '' || inspectingCompose()">
+      <button type="button" class="secondary" (click)="inspectCompose()"
+        [disabled]="saving() !== '' || inspectingCompose()">
         {{ inspectingCompose() ? 'Inspecting...' : 'Inspect settings' }}
       </button>
-      <button type="button" class="secondary" (click)="validateCompose()" [disabled]="saving() !== '' || validatingCompose()">
+      <button type="button" class="secondary" (click)="validateCompose()"
+        [disabled]="saving() !== '' || validatingCompose()">
         {{ validatingCompose() ? 'Validating...' : 'Validate compose' }}
       </button>
     </div>
 
     <div class="compose-tabs" role="tablist" aria-label="Compose editor mode">
-      <button type="button" role="tab" [attr.aria-selected]="composeMode() === 'builder'" [class.active]="composeMode() === 'builder'" (click)="setComposeMode('builder')">
+      <button type="button" role="tab" [attr.aria-selected]="composeMode() === 'builder'"
+        [class.active]="composeMode() === 'builder'" (click)="setComposeMode('builder')">
         Builder
       </button>
-      <button type="button" role="tab" [attr.aria-selected]="composeMode() === 'yaml'" [class.active]="composeMode() === 'yaml'" (click)="setComposeMode('yaml')">
+      <button type="button" role="tab" [attr.aria-selected]="composeMode() === 'yaml'"
+        [class.active]="composeMode() === 'yaml'" (click)="setComposeMode('yaml')">
         YAML
       </button>
     </div>
 
     @if (composeMode() === 'builder') {
-      <div class="compose-builder">
-        <div class="builder-head">
-          <div>
-            <strong>Compose builder</strong>
-            <span>Create a stored override when the repository does not provide a Compose file.</span>
-          </div>
-          <div class="builder-actions">
-            <button type="button" class="secondary" (click)="loadBuilderFromComposeOverride()">Load from override</button>
-            <button type="button" class="secondary" (click)="generateComposeOverride()">Generate override</button>
-          </div>
+    <div class="compose-builder">
+      <div class="builder-head">
+        <div>
+          <strong>Compose builder</strong>
+          <span>Create a stored override when the repository does not provide a Compose file.</span>
         </div>
-
-        <div class="builder-shell">
-          <nav class="builder-rail" aria-label="Compose builder sections">
-            <button type="button" [class.active]="builderSection() === 'services'" (click)="setBuilderSection('services')">
-              <strong>Services</strong>
-              <span>{{ builderServices().length }}</span>
-            </button>
-            <button type="button" [class.active]="builderSection() === 'networks'" (click)="setBuilderSection('networks')">
-              <strong>Networks</strong>
-              <span>{{ builderNetworks().length }}</span>
-            </button>
-            <button type="button" [class.active]="builderSection() === 'volumes'" (click)="setBuilderSection('volumes')">
-              <strong>Volumes</strong>
-              <span>{{ builderVolumes().length }}</span>
-            </button>
-            <button type="button" [class.active]="builderSection() === 'traefik'" (click)="setBuilderSection('traefik')">
-              <strong>Traefik</strong>
-              <span>{{ traefikEnabled() ? 'on' : 'off' }}</span>
-            </button>
-          </nav>
-
-          <div class="builder-workspace">
-            @if (builderDiagnostics().length) {
-              <div class="builder-diagnostics">
-                @for (diagnostic of builderDiagnostics(); track diagnostic) {
-                  <p>{{ diagnostic }}</p>
-                }
-              </div>
-            }
-
-            @if (builderSection() === 'services') {
-              <div class="section-toolbar">
-                <div>
-                  <strong>Services</strong>
-                  <span>Container definitions and service relationships</span>
-                </div>
-                <button type="button" class="secondary" (click)="addBuilderService()">Add service</button>
-              </div>
-
-              @for (service of builderServices(); track service.id) {
-                <section class="builder-service">
-                  <div class="builder-service-head">
-                    <strong>{{ service.name || 'Unnamed service' }}</strong>
-                    <div class="remove-action">
-                      <button type="button" class="secondary" (click)="removeBuilderService(service.id)" [disabled]="!canRemoveBuilderService(service)">Remove</button>
-                      @if (serviceRemoveReason(service)) {
-                        <small>{{ serviceRemoveReason(service) }}</small>
-                      }
-                    </div>
-                  </div>
-
-                  <div class="field-grid">
-                    <label>
-                      <span>Service name</span>
-                      <input [value]="service.name" (input)="updateBuilderService(service.id, 'name', $event)" placeholder="app" />
-                    </label>
-                    <label>
-                      <span>Image</span>
-                      <input [value]="service.image" (input)="updateBuilderService(service.id, 'image', $event)" placeholder="ghcr.io/team/app:latest" />
-                    </label>
-                    <label>
-                      <span>Build context</span>
-                      <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)" placeholder="." />
-                    </label>
-                    <label>
-                      <span>Dockerfile</span>
-                      <input [value]="service.dockerfile" (input)="updateBuilderService(service.id, 'dockerfile', $event)" placeholder="Dockerfile" />
-                    </label>
-                    <label>
-                      <span>Build target</span>
-                      <input [value]="service.buildTarget" (input)="updateBuilderService(service.id, 'buildTarget', $event)" placeholder="runtime" />
-                    </label>
-                    <label>
-                      <span>Container name</span>
-                      <input [value]="service.containerName" (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay" />
-                    </label>
-                    <label>
-                      <span>Restart policy</span>
-                      <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)">
-                        <option value="">none</option>
-                        <option value="unless-stopped">unless-stopped</option>
-                        <option value="always">always</option>
-                        <option value="on-failure">on-failure</option>
-                        <option value="no">no</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>Network mode</span>
-                      <input [value]="service.networkMode" (input)="updateBuilderService(service.id, 'networkMode', $event)" placeholder="host" />
-                    </label>
-                    <label class="check-row inline-check">
-                      <input type="checkbox" [checked]="service.init" (change)="updateBuilderService(service.id, 'init', $event)" />
-                      <span>Init process</span>
-                    </label>
-                  </div>
-
-                  <div class="choice-grid">
-                    <fieldset>
-                      <legend>Networks</legend>
-                      @for (networkName of builderNetworkNames(); track networkName) {
-                        <label class="check-row">
-                          <input
-                            type="checkbox"
-                            [checked]="isBuilderServiceListValueSelected(service, 'networks', networkName)"
-                            (change)="toggleBuilderServiceListValue(service.id, 'networks', networkName, $event)"
-                          />
-                          <span>{{ networkName }}</span>
-                        </label>
-                      } @empty {
-                        <small>Add networks before assigning them to services.</small>
-                      }
-                    </fieldset>
-
-                    <fieldset>
-                      <legend>Depends on</legend>
-                      @for (serviceName of builderServiceNames(); track serviceName) {
-                        @if (serviceName !== service.name) {
-                          <label class="check-row">
-                            <input
-                              type="checkbox"
-                              [checked]="isBuilderServiceListValueSelected(service, 'dependsOn', serviceName)"
-                              [disabled]="service.dependsOnAdvanced !== ''"
-                              (change)="toggleBuilderServiceListValue(service.id, 'dependsOn', serviceName, $event)"
-                            />
-                            <span>{{ serviceName }}</span>
-                          </label>
-                        }
-                      } @empty {
-                        <small>Add another service before setting dependencies.</small>
-                      }
-                      @if (service.dependsOnAdvanced) {
-                        <small>Advanced dependency options are preserved in YAML.</small>
-                      }
-                    </fieldset>
-                  </div>
-
-                  <div class="structured-editors">
-                    <fieldset>
-                      <legend>Ports</legend>
-
-                      <div class="list-editor-head">
-                        <span></span>
-                        <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'ports', '8080:80')">Add</button>
-                      </div>
-                      @for (port of builderServiceListItems(service, 'ports'); track $index) {
-                        <div class="list-row">
-                          <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'ports', $index, $event)" placeholder="8080:80" />
-                          <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'ports', $index)">Remove</button>
-                        </div>
-                      } @empty {
-                        <small>No published ports configured.</small>
-                      }
-                    </fieldset>
-
-                    <fieldset>
-                      <legend>Environment</legend>
-                      <div class="list-editor-head">
-                        <button type="button" class="secondary compact" (click)="addBuilderEnvironmentEntry(service.id)">Add</button>
-                      </div>
-                      @for (entry of builderEnvironmentEntries(service); track $index) {
-                        <div class="list-row env-row">
-                          <input [value]="entry.key" (input)="updateBuilderEnvironmentEntry(service.id, $index, 'key', $event)" placeholder="NODE_ENV" />
-                          <input [value]="entry.value" (input)="updateBuilderEnvironmentEntry(service.id, $index, 'value', $event)" placeholder="production" />
-                          <button type="button" class="secondary compact" (click)="removeBuilderEnvironmentEntry(service.id, $index)">Remove</button>
-                        </div>
-                      } @empty {
-                        <small>No environment variables configured.</small>
-                      }
-                    </fieldset>
-
-                    <fieldset>
-                      <legend>Sensitive environment</legend>
-                      <div class="list-editor-head">
-                        <button type="button" class="secondary compact" (click)="addBuilderSecretEnvironmentEntry(service.id)">Add</button>
-                      </div>
-                      @for (entry of service.secretEnvironment; track $index) {
-                        <div class="list-row secret-env-row">
-                          <input [value]="entry.key" (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'key', $event)" placeholder="DB_PASS" />
-                          <input [value]="entry.value" (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'value', $event)" placeholder="secret value" />
-                          <select [value]="entry.mode" (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'mode', $event)">
-                            <option value="docker_secret">Docker secret file</option>
-                            <option value="env">Runtime env</option>
-                          </select>
-                          <button type="button" class="secondary compact" (click)="removeBuilderSecretEnvironmentEntry(service.id, $index)">Remove</button>
-                        </div>
-                      } @empty {
-                        <small>No sensitive environment variables configured.</small>
-                      }
-                    </fieldset>
-
-                    <fieldset>
-                      <legend>Volumes</legend>
-                      <div class="list-editor-head">
-                        <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'volumes', './data:/data')">Add</button>
-                      </div>
-                      @for (volume of builderServiceListItems(service, 'volumes'); track $index) {
-                        <div class="list-row">
-                          <input [value]="volume" (input)="updateBuilderServiceListItem(service.id, 'volumes', $index, $event)" placeholder="app-data:/app/data" />
-                          <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'volumes', $index)">Remove</button>
-                        </div>
-                      } @empty {
-                        <small>No volume mounts configured.</small>
-                      }
-                    </fieldset>
-
-                    <fieldset>
-                      <legend>Expose container ports</legend>
-                      <div class="list-editor-head">
-                        <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'expose', '3000')">Add</button>
-                      </div>
-                      @for (port of builderServiceListItems(service, 'expose'); track $index) {
-                        <div class="list-row">
-                          <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'expose', $index, $event)" placeholder="3000" />
-                          <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'expose', $index)">Remove</button>
-                        </div>
-                      } @empty {
-                        <small>No exposed container ports configured.</small>
-                      }
-                    </fieldset>
-                  </div>
-
-                  <div class="field-grid">
-                    <section class="list-editor inline-list-editor">
-                      <div class="list-editor-head">
-                        <span>Profiles</span>
-                        <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'profiles', 'dev')">Add</button>
-                      </div>
-                      @for (profile of builderServiceListItems(service, 'profiles'); track $index) {
-                        <div class="list-row">
-                          <input [value]="profile" (input)="updateBuilderServiceListItem(service.id, 'profiles', $index, $event)" placeholder="dev" />
-                          <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'profiles', $index)">Remove</button>
-                        </div>
-                      } @empty {
-                        <small>No profiles configured.</small>
-                      }
-                    </section>
-                    <label>
-                      <span>Command</span>
-                      <input [value]="service.command" (input)="updateBuilderService(service.id, 'command', $event)" placeholder="npm start" />
-                    </label>
-                  </div>
-
-                  <label class="compose-field">
-                    <span>Advanced service YAML</span>
-                    <textarea [value]="service.extra" (input)="updateBuilderService(service.id, 'extra', $event)" placeholder="healthcheck:&#10;  test: ['CMD', 'curl', '-f', 'http://localhost']"></textarea>
-                  </label>
-                </section>
-              }
-            }
-
-            @if (builderSection() === 'networks') {
-              <div class="section-toolbar">
-                <div>
-                  <strong>Networks</strong>
-                  <span>Named Docker networks services can join</span>
-                </div>
-                <button type="button" class="secondary" (click)="addBuilderNetwork()">Add network</button>
-              </div>
-
-              @for (network of builderNetworks(); track network.id) {
-                <div class="resource-row">
-                  <input [value]="network.name" (input)="updateBuilderNetwork(network.id, 'name', $event)" placeholder="app" />
-                  <input [value]="network.driver" (input)="updateBuilderNetwork(network.id, 'driver', $event)" placeholder="driver" />
-                  <label class="check-row">
-                    <input type="checkbox" [checked]="network.external" (change)="updateBuilderNetwork(network.id, 'external', $event)" />
-                    <span>External</span>
-                  </label>
-                  <div class="remove-action">
-                    <button type="button" class="secondary" (click)="removeBuilderNetwork(network.id)" [disabled]="!canRemoveBuilderNetwork(network)">Remove</button>
-                    @if (networkRemoveReason(network)) {
-                      <small>{{ networkRemoveReason(network) }}</small>
-                    }
-                  </div>
-                </div>
-              }
-            }
-
-            @if (builderSection() === 'volumes') {
-              <div class="section-toolbar">
-                <div>
-                  <strong>Volumes</strong>
-                  <span>Named storage resources and host bind mappings</span>
-                </div>
-                <button type="button" class="secondary" (click)="addBuilderVolume()">Add volume</button>
-              </div>
-
-              @if (builderHostVolumeMounts().length) {
-                <section class="host-mounts">
-                  <strong>Host mappings</strong>
-                  @for (mount of builderHostVolumeMounts(); track mount.service + mount.mount) {
-                    <div>
-                      <span>{{ mount.service }}</span>
-                      <code>{{ mount.mount }}</code>
-                    </div>
-                  }
-                </section>
-              }
-
-              @for (volume of builderVolumes(); track volume.id) {
-                <div class="resource-row">
-                  <input [value]="volume.name" (input)="updateBuilderVolume(volume.id, 'name', $event)" placeholder="app-data" />
-                  <input [value]="volume.driver" (input)="updateBuilderVolume(volume.id, 'driver', $event)" placeholder="driver" />
-                  <label class="check-row">
-                    <input type="checkbox" [checked]="volume.external" (change)="updateBuilderVolume(volume.id, 'external', $event)" />
-                    <span>External</span>
-                  </label>
-                  <div class="remove-action">
-                    <button type="button" class="secondary" (click)="removeBuilderVolume(volume.id)" [disabled]="!canRemoveBuilderVolume(volume)">Remove</button>
-                    @if (volumeRemoveReason(volume)) {
-                      <small>{{ volumeRemoveReason(volume) }}</small>
-                    }
-                  </div>
-                </div>
-              }
-            }
-
-            @if (builderSection() === 'traefik') {
-              @if (traefikAvailable()) {
-                <div class="section-toolbar">
-                  <div>
-                    <strong>Traefik</strong>
-                    <span>Labels and proxy network for one service</span>
-                  </div>
-                  <div class="builder-actions">
-                    <button type="button" class="secondary" (click)="diagnoseTraefik()" [disabled]="saving() !== '' || diagnosingTraefik() || !traefikEnabled()">
-                      {{ diagnosingTraefik() ? 'Checking...' : 'Run diagnostics' }}
-                    </button>
-                    <label class="switch">
-                      <input type="checkbox" formControlName="traefikEnabled" />
-                      <span>Enabled</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div class="field-grid" [class.is-disabled]="!traefikEnabled()">
-                  <label>
-                    <span>Hostname</span>
-                    <input formControlName="traefikHostname" placeholder="service-a.example.com" />
-                  </label>
-
-                  <label>
-                    <span>Service name</span>
-                    <select formControlName="traefikService" [disabled]="builderServiceNames().length === 0">
-                      @for (serviceName of builderServiceNames(); track serviceName) {
-                        <option [value]="serviceName">{{ serviceName }}</option>
-                      }
-                    </select>
-                  </label>
-
-                  <label>
-                    <span>Container port</span>
-                    <input formControlName="traefikPort" inputmode="numeric" placeholder="3000" />
-                  </label>
-
-                  <label>
-                    <span>Entry points</span>
-                    <input formControlName="traefikEntryPoints" placeholder="websecure" />
-                  </label>
-
-                  <label>
-                    <span>Certificate resolver</span>
-                    <input formControlName="traefikCertResolver" placeholder="letsencrypt" />
-                  </label>
-
-                  <label>
-                    <span>Docker network</span>
-                    <select formControlName="traefikNetwork" [disabled]="builderNetworkNames().length === 0">
-                      @for (networkName of builderNetworkNames(); track networkName) {
-                        <option [value]="networkName">{{ networkName }}</option>
-                      }
-                    </select>
-                  </label>
-                </div>
-
-                <div class="toggle-grid">
-                  <label class="check-row">
-                    <input type="checkbox" formControlName="traefikRemovePublishedPorts" />
-                    <span>Remove published ports when Traefik is enabled</span>
-                  </label>
-
-                  <label class="check-row">
-                    <input type="checkbox" formControlName="traefikWebsocket" />
-                    <span>Add explicit WebSocket middleware labels</span>
-                  </label>
-
-                  <label class="check-row">
-                    <input type="checkbox" formControlName="traefikWildcardCertificate" />
-                    <span>Use wildcard certificate labels</span>
-                  </label>
-                </div>
-
-                @if (wildcardCertificate()) {
-                  <label class="wildcard-field">
-                    <span>Wildcard base domain</span>
-                    <input formControlName="traefikWildcardDomain" placeholder="bla.network" />
-                  </label>
-                }
-
-                @if (traefikDiagnostics(); as diagnostics) {
-                  <section class="traefik-diagnostics" [class.fail]="diagnostics.status === 'fail'" [class.warn]="diagnostics.status === 'warn'">
-                    <div>
-                      <strong>Diagnostics {{ diagnostics.status }}</strong>
-                      <span>{{ diagnostics.service }}:{{ diagnostics.port }} on {{ diagnostics.network }}</span>
-                    </div>
-                    @if (diagnostics.error) {
-                      <p>{{ diagnostics.error }}</p>
-                    }
-                    @for (check of diagnostics.checks; track check.key) {
-                      <div class="diagnostic-row" [class.fail]="check.status === 'fail'" [class.warn]="check.status === 'warn'">
-                        <strong>{{ check.label }}</strong>
-                        <span>{{ check.detail }}</span>
-                      </div>
-                    }
-                  </section>
-                }
-              }
-            }
-          </div>
+        <div class="builder-actions">
+          <button type="button" class="secondary" (click)="loadBuilderFromComposeOverride()">Load from override</button>
+          <button type="button" class="secondary" (click)="generateComposeOverride()">Generate override</button>
         </div>
       </div>
+
+      <div class="builder-shell">
+        <nav class="builder-rail" aria-label="Compose builder sections">
+          <button type="button" [class.active]="builderSection() === 'services'"
+            (click)="setBuilderSection('services')">
+            <strong>Services</strong>
+            <span>{{ builderServices().length }}</span>
+          </button>
+          <button type="button" [class.active]="builderSection() === 'networks'"
+            (click)="setBuilderSection('networks')">
+            <strong>Networks</strong>
+            <span>{{ builderNetworks().length }}</span>
+          </button>
+          <button type="button" [class.active]="builderSection() === 'volumes'" (click)="setBuilderSection('volumes')">
+            <strong>Volumes</strong>
+            <span>{{ builderVolumes().length }}</span>
+          </button>
+          <button type="button" [class.active]="builderSection() === 'traefik'" (click)="setBuilderSection('traefik')">
+            <strong>Traefik</strong>
+            <span>{{ traefikEnabled() ? 'on' : 'off' }}</span>
+          </button>
+        </nav>
+
+        <div class="builder-workspace">
+          @if (builderDiagnostics().length) {
+          <div class="builder-diagnostics">
+            @for (diagnostic of builderDiagnostics(); track diagnostic) {
+            <p>{{ diagnostic }}</p>
+            }
+          </div>
+          }
+
+          @if (builderSection() === 'services') {
+          <div class="section-toolbar">
+            <div>
+              <strong>Services</strong>
+              <span>Container definitions and service relationships</span>
+            </div>
+            <button type="button" class="secondary" (click)="addBuilderService()">Add service</button>
+          </div>
+
+          @for (service of builderServices(); track service.id) {
+          <section class="builder-service">
+            <div class="builder-service-head">
+              <strong>{{ service.name || 'Unnamed service' }}</strong>
+              <div class="remove-action">
+                <button type="button" class="secondary" (click)="removeBuilderService(service.id)"
+                  [disabled]="!canRemoveBuilderService(service)">Remove</button>
+                @if (serviceRemoveReason(service)) {
+                <small>{{ serviceRemoveReason(service) }}</small>
+                }
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>Service name</span>
+                <input [value]="service.name" (input)="updateBuilderService(service.id, 'name', $event)"
+                  placeholder="app" />
+              </label>
+              <label>
+                <span>Image</span>
+                <input [value]="service.image" (input)="updateBuilderService(service.id, 'image', $event)"
+                  placeholder="ghcr.io/team/app:latest" />
+              </label>
+              <label>
+                <span>Build context</span>
+                <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)"
+                  placeholder="." />
+              </label>
+              <label>
+                <span>Dockerfile</span>
+                <input [value]="service.dockerfile" (input)="updateBuilderService(service.id, 'dockerfile', $event)"
+                  placeholder="Dockerfile" />
+              </label>
+              <label>
+                <span>Build target</span>
+                <input [value]="service.buildTarget" (input)="updateBuilderService(service.id, 'buildTarget', $event)"
+                  placeholder="runtime" />
+              </label>
+              <label>
+                <span>Container name</span>
+                <input [value]="service.containerName"
+                  (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay" />
+              </label>
+              <label>
+                <span>Restart policy</span>
+                <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)">
+                  <option value="">none</option>
+                  <option value="unless-stopped">unless-stopped</option>
+                  <option value="always">always</option>
+                  <option value="on-failure">on-failure</option>
+                  <option value="no">no</option>
+                </select>
+              </label>
+              <label>
+                <span>Network mode</span>
+                <input [value]="service.networkMode" (input)="updateBuilderService(service.id, 'networkMode', $event)"
+                  placeholder="host" />
+              </label>
+              <label class="check-row inline-check">
+                <input type="checkbox" [checked]="service.init"
+                  (change)="updateBuilderService(service.id, 'init', $event)" />
+                <span>Init process</span>
+              </label>
+            </div>
+
+            <div class="choice-grid">
+              <fieldset>
+                <legend>Networks</legend>
+                @for (networkName of builderNetworkNames(); track networkName) {
+                <label class="check-row">
+                  <input type="checkbox" [checked]="isBuilderServiceListValueSelected(service, 'networks', networkName)"
+                    (change)="toggleBuilderServiceListValue(service.id, 'networks', networkName, $event)" />
+                  <span>{{ networkName }}</span>
+                </label>
+                } @empty {
+                <small>Add networks before assigning them to services.</small>
+                }
+              </fieldset>
+
+              <fieldset>
+                <legend>Depends on</legend>
+                @for (serviceName of builderServiceNames(); track serviceName) {
+                @if (serviceName !== service.name) {
+                <label class="check-row">
+                  <input type="checkbox"
+                    [checked]="isBuilderServiceListValueSelected(service, 'dependsOn', serviceName)"
+                    [disabled]="service.dependsOnAdvanced !== ''"
+                    (change)="toggleBuilderServiceListValue(service.id, 'dependsOn', serviceName, $event)" />
+                  <span>{{ serviceName }}</span>
+                </label>
+                }
+                } @empty {
+                <small>Add another service before setting dependencies.</small>
+                }
+                @if (service.dependsOnAdvanced) {
+                <small>Advanced dependency options are preserved in YAML.</small>
+                }
+              </fieldset>
+            </div>
+
+            <div class="structured-editors">
+              
+              <fieldset>
+                <legend>Ports</legend>
+
+                <div class="list-editor-head">
+                  <span></span>
+                  <button type="button" class="secondary compact"
+                    (click)="addBuilderServiceListItem(service.id, 'ports', '8080:80')">Add</button>
+                </div>
+                @for (port of builderServiceListItems(service, 'ports'); track $index) {
+                <div class="list-row">
+                  <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'ports', $index, $event)"
+                    placeholder="8080:80" />
+                  <button type="button" class="secondary compact"
+                    (click)="removeBuilderServiceListItem(service.id, 'ports', $index)">Remove</button>
+                </div>
+                } @empty {
+                <small>No published ports configured.</small>
+                }
+              </fieldset>
+
+              <fieldset>
+                <legend>Environment</legend>
+                <div class="list-editor-head">
+                  <button type="button" class="secondary compact"
+                    (click)="addBuilderEnvironmentEntry(service.id)">Add</button>
+                </div>
+                @for (entry of builderEnvironmentEntries(service); track $index) {
+                <div class="list-row env-row">
+                  <input [value]="entry.key" (input)="updateBuilderEnvironmentEntry(service.id, $index, 'key', $event)"
+                    placeholder="NODE_ENV" />
+                  <input [value]="entry.value"
+                    (input)="updateBuilderEnvironmentEntry(service.id, $index, 'value', $event)"
+                    placeholder="production" />
+                  <button type="button" class="secondary compact"
+                    (click)="removeBuilderEnvironmentEntry(service.id, $index)">Remove</button>
+                </div>
+                } @empty {
+                <small>No environment variables configured.</small>
+                }
+              </fieldset>
+
+              <fieldset>
+                <legend>Sensitive environment</legend>
+                <div class="list-editor-head">
+                  <button type="button" class="secondary compact"
+                    (click)="addBuilderSecretEnvironmentEntry(service.id)">Add</button>
+                </div>
+                @for (entry of service.secretEnvironment; track $index) {
+                <div class="list-row secret-env-row">
+                  <input [value]="entry.key"
+                    (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'key', $event)"
+                    placeholder="DB_PASS" />
+                  <input [value]="entry.value"
+                    (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'value', $event)"
+                    placeholder="secret value" />
+                  <select [value]="entry.mode"
+                    (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'mode', $event)">
+                    <option value="docker_secret">Docker secret file</option>
+                    <option value="env">Runtime env</option>
+                  </select>
+                  <button type="button" class="secondary compact"
+                    (click)="removeBuilderSecretEnvironmentEntry(service.id, $index)">Remove</button>
+                </div>
+                } @empty {
+                <small>No sensitive environment variables configured.</small>
+                }
+              </fieldset>
+
+              <fieldset>
+                <legend>Volumes</legend>
+                <div class="list-editor-head">
+                  <button type="button" class="secondary compact"
+                    (click)="addBuilderServiceListItem(service.id, 'volumes', './data:/data')">Add</button>
+                </div>
+                @for (volume of builderServiceListItems(service, 'volumes'); track $index) {
+                <div class="list-row">
+                  <input [value]="volume" (input)="updateBuilderServiceListItem(service.id, 'volumes', $index, $event)"
+                    placeholder="app-data:/app/data" />
+                  <button type="button" class="secondary compact"
+                    (click)="removeBuilderServiceListItem(service.id, 'volumes', $index)">Remove</button>
+                </div>
+                } @empty {
+                <small>No volume mounts configured.</small>
+                }
+              </fieldset>
+
+              <fieldset>
+                <legend>Expose container ports</legend>
+                <div class="list-editor-head">
+                  <button type="button" class="secondary compact"
+                    (click)="addBuilderServiceListItem(service.id, 'expose', '3000')">Add</button>
+                </div>
+                @for (port of builderServiceListItems(service, 'expose'); track $index) {
+                <div class="list-row">
+                  <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'expose', $index, $event)"
+                    placeholder="3000" />
+                  <button type="button" class="secondary compact"
+                    (click)="removeBuilderServiceListItem(service.id, 'expose', $index)">Remove</button>
+                </div>
+                } @empty {
+                <small>No exposed container ports configured.</small>
+                }
+              </fieldset>
+            
+            </div>
+
+            <div class="field-grid">
+              <fieldset>
+                <legend>Profiles</legend>
+                <div class="list-editor-head">
+                  <span></span>
+                  <button type="button" class="secondary compact"
+                    (click)="addBuilderServiceListItem(service.id, 'profiles', 'dev')">Add</button>
+                </div>
+                @for (profile of builderServiceListItems(service, 'profiles'); track $index) {
+                <div class="list-row">
+                  <input [value]="profile"
+                    (input)="updateBuilderServiceListItem(service.id, 'profiles', $index, $event)" placeholder="dev" />
+                  <button type="button" class="secondary compact"
+                    (click)="removeBuilderServiceListItem(service.id, 'profiles', $index)">Remove</button>
+                </div>
+                } @empty {
+                <small>No profiles configured.</small>
+                }
+              </fieldset>
+              <fieldset>
+                <legend>Command</legend>
+                <input [value]="service.command" (input)="updateBuilderService(service.id, 'command', $event)"
+                  placeholder="npm start" />
+              </fieldset>
+            </div>
+
+            <label class="compose-field">
+              <span>Advanced service YAML</span>
+              <textarea [value]="service.extra" (input)="updateBuilderService(service.id, 'extra', $event)"
+                placeholder="healthcheck:&#10;  test: ['CMD', 'curl', '-f', 'http://localhost']"></textarea>
+            </label>
+          </section>
+          }
+          }
+
+          @if (builderSection() === 'networks') {
+          <div class="section-toolbar">
+            <div>
+              <strong>Networks</strong>
+              <span>Named Docker networks services can join</span>
+            </div>
+            <button type="button" class="secondary" (click)="addBuilderNetwork()">Add network</button>
+          </div>
+
+          @for (network of builderNetworks(); track network.id) {
+          <div class="resource-row">
+            <input [value]="network.name" (input)="updateBuilderNetwork(network.id, 'name', $event)"
+              placeholder="app" />
+            <input [value]="network.driver" (input)="updateBuilderNetwork(network.id, 'driver', $event)"
+              placeholder="driver" />
+            <label class="check-row">
+              <input type="checkbox" [checked]="network.external"
+                (change)="updateBuilderNetwork(network.id, 'external', $event)" />
+              <span>External</span>
+            </label>
+            <div class="remove-action">
+              <button type="button" class="secondary" (click)="removeBuilderNetwork(network.id)"
+                [disabled]="!canRemoveBuilderNetwork(network)">Remove</button>
+              @if (networkRemoveReason(network)) {
+              <small>{{ networkRemoveReason(network) }}</small>
+              }
+            </div>
+          </div>
+          }
+          }
+
+          @if (builderSection() === 'volumes') {
+          <div class="section-toolbar">
+            <div>
+              <strong>Volumes</strong>
+              <span>Named storage resources and host bind mappings</span>
+            </div>
+            <button type="button" class="secondary" (click)="addBuilderVolume()">Add volume</button>
+          </div>
+
+          @if (builderHostVolumeMounts().length) {
+          <section class="host-mounts">
+            <strong>Host mappings</strong>
+            @for (mount of builderHostVolumeMounts(); track mount.service + mount.mount) {
+            <div>
+              <span>{{ mount.service }}</span>
+              <code>{{ mount.mount }}</code>
+            </div>
+            }
+          </section>
+          }
+
+          @for (volume of builderVolumes(); track volume.id) {
+          <div class="resource-row">
+            <input [value]="volume.name" (input)="updateBuilderVolume(volume.id, 'name', $event)"
+              placeholder="app-data" />
+            <input [value]="volume.driver" (input)="updateBuilderVolume(volume.id, 'driver', $event)"
+              placeholder="driver" />
+            <label class="check-row">
+              <input type="checkbox" [checked]="volume.external"
+                (change)="updateBuilderVolume(volume.id, 'external', $event)" />
+              <span>External</span>
+            </label>
+            <div class="remove-action">
+              <button type="button" class="secondary" (click)="removeBuilderVolume(volume.id)"
+                [disabled]="!canRemoveBuilderVolume(volume)">Remove</button>
+              @if (volumeRemoveReason(volume)) {
+              <small>{{ volumeRemoveReason(volume) }}</small>
+              }
+            </div>
+          </div>
+          }
+          }
+
+          @if (builderSection() === 'traefik') {
+          @if (traefikAvailable()) {
+          <div class="section-toolbar">
+            <div>
+              <strong>Traefik</strong>
+              <span>Labels and proxy network for one service</span>
+            </div>
+            <div class="builder-actions">
+              <button type="button" class="secondary" (click)="diagnoseTraefik()"
+                [disabled]="saving() !== '' || diagnosingTraefik() || !traefikEnabled()">
+                {{ diagnosingTraefik() ? 'Checking...' : 'Run diagnostics' }}
+              </button>
+              <label class="switch">
+                <input type="checkbox" formControlName="traefikEnabled" />
+                <span>Enabled</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field-grid" [class.is-disabled]="!traefikEnabled()">
+            <label>
+              <span>Hostname</span>
+              <input formControlName="traefikHostname" placeholder="service-a.example.com" />
+            </label>
+
+            <label>
+              <span>Service name</span>
+              <select formControlName="traefikService" [disabled]="builderServiceNames().length === 0">
+                @for (serviceName of builderServiceNames(); track serviceName) {
+                <option [value]="serviceName">{{ serviceName }}</option>
+                }
+              </select>
+            </label>
+
+            <label>
+              <span>Container port</span>
+              <input formControlName="traefikPort" inputmode="numeric" placeholder="3000" />
+            </label>
+
+            <label>
+              <span>Entry points</span>
+              <input formControlName="traefikEntryPoints" placeholder="websecure" />
+            </label>
+
+            <label>
+              <span>Certificate resolver</span>
+              <input formControlName="traefikCertResolver" placeholder="letsencrypt" />
+            </label>
+
+            <label>
+              <span>Docker network</span>
+              <select formControlName="traefikNetwork" [disabled]="builderNetworkNames().length === 0">
+                @for (networkName of builderNetworkNames(); track networkName) {
+                <option [value]="networkName">{{ networkName }}</option>
+                }
+              </select>
+            </label>
+          </div>
+
+          <div class="toggle-grid">
+            <label class="check-row">
+              <input type="checkbox" formControlName="traefikRemovePublishedPorts" />
+              <span>Remove published ports when Traefik is enabled</span>
+            </label>
+
+            <label class="check-row">
+              <input type="checkbox" formControlName="traefikWebsocket" />
+              <span>Add explicit WebSocket middleware labels</span>
+            </label>
+
+            <label class="check-row">
+              <input type="checkbox" formControlName="traefikWildcardCertificate" />
+              <span>Use wildcard certificate labels</span>
+            </label>
+          </div>
+
+          @if (wildcardCertificate()) {
+          <label class="wildcard-field">
+            <span>Wildcard base domain</span>
+            <input formControlName="traefikWildcardDomain" placeholder="bla.network" />
+          </label>
+          }
+
+          @if (traefikDiagnostics(); as diagnostics) {
+          <section class="traefik-diagnostics" [class.fail]="diagnostics.status === 'fail'"
+            [class.warn]="diagnostics.status === 'warn'">
+            <div>
+              <strong>Diagnostics {{ diagnostics.status }}</strong>
+              <span>{{ diagnostics.service }}:{{ diagnostics.port }} on {{ diagnostics.network }}</span>
+            </div>
+            @if (diagnostics.error) {
+            <p>{{ diagnostics.error }}</p>
+            }
+            @for (check of diagnostics.checks; track check.key) {
+            <div class="diagnostic-row" [class.fail]="check.status === 'fail'" [class.warn]="check.status === 'warn'">
+              <strong>{{ check.label }}</strong>
+              <span>{{ check.detail }}</span>
+            </div>
+            }
+          </section>
+          }
+          }
+          }
+        </div>
+      </div>
+    </div>
     } @else {
-      <label class="compose-field">
-        <span>docker-compose.yaml override</span>
-        <textarea
-          formControlName="composeOverride"
-          spellcheck="false"
-          placeholder="services:&#10;  app:&#10;    image: registry.example.com/service-a:latest"
-        ></textarea>
-      </label>
+    <label class="compose-field">
+      <span>docker-compose.yaml override</span>
+      <textarea formControlName="composeOverride" spellcheck="false"
+        placeholder="services:&#10;  app:&#10;    image: registry.example.com/service-a:latest"></textarea>
+    </label>
     }
 
     @if (composeInspection(); as compose) {
-      <div class="compose-inspection">
-        <div>
-          <strong>{{ compose.services.length }} services</strong>
-          <span>{{ compose.composeFile }} · {{ compose.source === 'storedOverride' ? 'stored override' : 'repository compose' }}</span>
-        </div>
-        @if (compose.unsafeRelativeBindMounts > 0) {
-          <p class="notice error">{{ compose.unsafeRelativeBindMounts }} checkout-local bind mounts need data mapping before cleanup is safe.</p>
-        }
-        @for (service of compose.services; track service.name) {
-          <div class="compose-service">
-            <div>
-              <strong>{{ service.name }}</strong>
-              <span>{{ service.image || service.build || 'no image or build' }}</span>
-              <small>{{ servicePortsLabel(service) }} · {{ serviceMountsLabel(service) }}</small>
-            </div>
-            <button type="button" class="secondary" (click)="applyTraefikTarget(service)" [disabled]="!traefikAvailable()">
-              Use for Traefik
-            </button>
-          </div>
-        }
+    <div class="compose-inspection">
+      <div>
+        <strong>{{ compose.services.length }} services</strong>
+        <span>{{ compose.composeFile }} · {{ compose.source === 'storedOverride' ? 'stored override' : 'repository
+          compose' }}</span>
       </div>
+      @if (compose.unsafeRelativeBindMounts > 0) {
+      <p class="notice error">{{ compose.unsafeRelativeBindMounts }} checkout-local bind mounts need data mapping before
+        cleanup is safe.</p>
+      }
+      @for (service of compose.services; track service.name) {
+      <div class="compose-service">
+        <div>
+          <strong>{{ service.name }}</strong>
+          <span>{{ service.image || service.build || 'no image or build' }}</span>
+          <small>{{ servicePortsLabel(service) }} · {{ serviceMountsLabel(service) }}</small>
+        </div>
+        <button type="button" class="secondary" (click)="applyTraefikTarget(service)" [disabled]="!traefikAvailable()">
+          Use for Traefik
+        </button>
+      </div>
+      }
+    </div>
     }
 
     @if (composeValidation(); as validation) {
-      <div class="compose-validation" [class.invalid]="!validation.valid">
-        <div>
-          <strong>{{ validation.valid ? 'Compose valid' : 'Compose invalid' }}</strong>
-          <span>{{ validation.composeFile || validation.source }} · {{ validation.checkedAt }}</span>
-        </div>
-        @if (validation.error) {
-          <pre>{{ validation.error }}</pre>
-        }
-        @if (validation.warnings.length) {
-          <div class="validation-warnings">
-            @for (warning of validation.warnings; track warning) {
-              <p>{{ warning }}</p>
-            }
-          </div>
-        }
-        @if (validation.effectiveYaml) {
-          <label class="compose-field">
-            <span>Effective compose YAML</span>
-            <textarea [value]="validation.effectiveYaml" readonly spellcheck="false"></textarea>
-          </label>
+    <div class="compose-validation" [class.invalid]="!validation.valid">
+      <div>
+        <strong>{{ validation.valid ? 'Compose valid' : 'Compose invalid' }}</strong>
+        <span>{{ validation.composeFile || validation.source }} · {{ validation.checkedAt }}</span>
+      </div>
+      @if (validation.error) {
+      <pre>{{ validation.error }}</pre>
+      }
+      @if (validation.warnings.length) {
+      <div class="validation-warnings">
+        @for (warning of validation.warnings; track warning) {
+        <p>{{ warning }}</p>
         }
       </div>
+      }
+      @if (validation.effectiveYaml) {
+      <label class="compose-field">
+        <span>Effective compose YAML</span>
+        <textarea [value]="validation.effectiveYaml" readonly spellcheck="false"></textarea>
+      </label>
+      }
+    </div>
     }
   </section>
 
