@@ -26,7 +26,7 @@ const legacyDefaultGlobalSettings: GlobalSettings = {
 export class AppDatabase {
     readonly connection: DatabaseSync;
 
-    constructor(private readonly databasePath = join("./data", "updater.sqlite")) {
+    constructor(private readonly databasePath = process.env.DEPLOY_DATABASE_PATH || process.env.DATABASE_PATH || join("./data", "updater.sqlite")) {
         mkdirSync(dirname(this.databasePath), { recursive: true });
         this.connection = new DatabaseSync(this.databasePath);
         this.connection.exec("PRAGMA foreign_keys = ON;");
@@ -34,6 +34,7 @@ export class AppDatabase {
         this.migrate();
         this.ensureDefaultLocalServer();
         this.importLegacyJsonOnce();
+        this.restoreLegacyProjectsIfDatabaseIsEmpty();
         this.encryptStoredProjectSecrets();
     }
 
@@ -364,10 +365,26 @@ export class AppDatabase {
     }
 
     /**
+     * Recovers projects when a deployment starts with a fresh SQLite database
+     * but still has the legacy config file mounted in the data directory.
+     */
+    private restoreLegacyProjectsIfDatabaseIsEmpty() {
+        const row = this.connection.prepare("SELECT COUNT(*) AS count FROM projects").get() as { count: number };
+        if (row.count > 0 || !existsSync(this.legacyDataFile("config.json"))) {
+            return;
+        }
+
+        runDatabaseTransaction(this.connection, () => {
+            this.importLegacyProjects();
+            this.importLegacyDeployments();
+        });
+    }
+
+    /**
      * Imports `data/settings.json` into key-value settings rows.
      */
     private importLegacySettings() {
-        const settings = readLegacyJson<GlobalSettingsPayload>(join("./data", "settings.json"));
+        const settings = readLegacyJson<GlobalSettingsPayload>(this.legacyDataFile("settings.json"));
         const normalized = normalizeLegacyGlobalSettings(settings ?? legacyDefaultGlobalSettings);
         for (const [key, value] of Object.entries(normalized)) {
             this.connection.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, JSON.stringify(value));
@@ -378,7 +395,7 @@ export class AppDatabase {
      * Imports `data/config.json` into project and Traefik tables.
      */
     private importLegacyProjects() {
-        const config = readLegacyJson<ProjectConfig>(join("./data", "config.json")) ?? {};
+        const config = readLegacyJson<ProjectConfig>(this.legacyDataFile("config.json")) ?? {};
         for (const [projectName, settings] of Object.entries(config)) {
             upsertProject(this.connection, projectName, normalizeProjectForDatabase(settings));
         }
@@ -388,7 +405,7 @@ export class AppDatabase {
      * Imports `data/deployments.json` into deployment rows and log chunks.
      */
     private importLegacyDeployments() {
-        const deployments = readLegacyJson<Record<string, DeploymentRecord[]>>(join("./data", "deployments.json")) ?? {};
+        const deployments = readLegacyJson<Record<string, DeploymentRecord[]>>(this.legacyDataFile("deployments.json")) ?? {};
         for (const [projectName, records] of Object.entries(deployments)) {
             if (!projectExists(this.connection, projectName)) {
                 continue;
@@ -398,6 +415,10 @@ export class AppDatabase {
                 upsertDeployment(this.connection, normalizeLegacyDeploymentRecord(projectName, record), "local");
             }
         }
+    }
+
+    private legacyDataFile(fileName: string) {
+        return join(dirname(this.databasePath), fileName);
     }
 
     /**
