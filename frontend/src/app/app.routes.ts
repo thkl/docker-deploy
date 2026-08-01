@@ -27,6 +27,21 @@ export const routes: Routes = [
       import('./pages/project-overview-page/project-overview-page').then((m) => m.ProjectOverviewPage),
   },
   {
+    path: 'projects/:name/compose',
+    loadComponent: () =>
+      import('./pages/project-overview-page/project-overview-page').then((m) => m.ProjectOverviewPage),
+  },
+  {
+    path: 'projects/:name/deployments',
+    loadComponent: () =>
+      import('./pages/project-overview-page/project-overview-page').then((m) => m.ProjectOverviewPage),
+  },
+  {
+    path: 'projects/:name/logs',
+    loadComponent: () =>
+      import('./pages/project-overview-page/project-overview-page').then((m) => m.ProjectOverviewPage),
+  },
+  {
     path: 'projects/:name/settings',
     loadComponent: () =>
       import('./pages/project-settings-page/project-settings-page').then((m) => m.ProjectSettingsPage),

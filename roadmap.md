@@ -163,7 +163,7 @@ Initial routes:
 - [x] `/projects/:id/settings`
 - [x] Compose settings inside `/projects/:id/settings`
 - [x] Deployments/logs inside `/projects/:id/overview`
-- [ ] Dedicated `/projects/:id/compose`, `/projects/:id/deployments`, and `/projects/:id/logs` child routes.
+- [x] Dedicated `/projects/:id/compose`, `/projects/:id/deployments`, and `/projects/:id/logs` child routes.
 
 Layout:
 
@@ -200,7 +200,7 @@ Each project should have tabs or child routes:
 - [x] **Compose:** detected compose file, generated overrides, services, networks, volumes in settings.
 - [x] **Proxy:** Traefik settings and generated label preview in settings.
 - [x] **Settings:** tokens, paths, CI trigger snippet.
-- [ ] Split these into dedicated child routes if the UI grows again.
+- [x] Split these into dedicated child routes if the UI grows again.
 
 ## Phase 5: Compose Intelligence
 
@@ -400,7 +400,7 @@ Example target layout:
 - [ ] Finish moving page-specific live updates onto the global event stream where it makes sense, while keeping raw log streams separate if needed.
 - [x] Add encrypted-at-rest storage for project secrets.
 - [ ] Add explicit `queued` deployment status if deployments become queued before workers start.
-- [ ] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
+- [x] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
 - [x] Add cleanup-after-deploy enforcement based on externalized storage mappings.
 - [ ] Build guarded server-level Traefik management for entrypoints, cert resolvers, networks, and static/dynamic config.
 - [x] Rename the user-facing product to Deploy while keeping legacy `.updater`, `docker-compose.updater.yml`, and `UPDATER_*` compatibility.

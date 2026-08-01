@@ -1,5 +1,5 @@
 import { Component, computed, effect, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, WebhookEventRecord } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
@@ -10,7 +10,7 @@ import { ProjectStore } from '../../state/project-store';
 
 @Component({
   selector: 'app-project-overview-page',
-  imports: [RouterLink],
+  imports: [RouterLink, RouterLinkActive],
   templateUrl: './project-overview-page.html',
   styleUrl: './project-overview-page.scss',
 })
@@ -43,6 +43,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeActionOutput = signal('');
   protected readonly selectedRuntimeOperationId = signal('');
   protected readonly selectedLogView = signal<'runtime' | 'deployment' | 'actions'>('runtime');
+  protected readonly projectSection = signal<'overview' | 'compose' | 'deployments' | 'logs'>('overview');
   protected readonly selectedRuntimeService = signal('');
   protected readonly runtimeLogTail = signal(200);
   protected readonly runtimeLogStreamState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
@@ -97,6 +98,16 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   @ViewChild('runtimeLog') private runtimeLog?: ElementRef<HTMLElement>;
 
   ngOnInit() {
+    this.route.url.subscribe((segments) => {
+      const section = segments[2]?.path;
+      this.projectSection.set(section === 'compose' || section === 'deployments' || section === 'logs' ? section : 'overview');
+      if (section === 'deployments') {
+        this.queueLogScroll();
+      } else if (section === 'logs') {
+        this.queueRuntimeLogScroll();
+      }
+    });
+
     this.route.paramMap.subscribe((params) => {
       const projectRef = params.get('name');
       if (projectRef) {
@@ -823,13 +834,15 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.latestDeployment.set(deployment);
     if (deployment?.status === 'running') {
       this.deploymentLogExpanded.set(true);
-      this.selectedLogView.set('deployment');
+      if (this.projectSection() !== 'deployments') {
+        void this.router.navigate(['/projects', this.activeProjectRef, 'deployments']);
+      }
     }
     this.queueLogScroll();
   }
 
   private queueLogScroll() {
-    if (!this.autoScroll() || !this.deploymentLogExpanded()) {
+    if (!this.autoScroll() || this.projectSection() !== 'deployments') {
       return;
     }
 

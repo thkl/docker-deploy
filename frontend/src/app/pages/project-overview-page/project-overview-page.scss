@@ -94,6 +94,30 @@
   padding: 0.75rem 0.95rem;
 }
 
+.project-subnav {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+  padding: 0.45rem;
+}
+
+.project-subnav a {
+  border-radius: 6px;
+  color: var(--muted);
+  min-height: 34px;
+  padding: 0.45rem 0.7rem;
+}
+
+.project-subnav a:hover,
+.project-subnav a.active {
+  background: var(--panel-soft);
+  color: var(--accent-strong);
+}
+
 .command-group {
   align-items: center;
   display: flex;
@@ -193,6 +217,10 @@
   margin: 0;
 }
 
+.deploy-head a.secondary {
+  text-decoration: none;
+}
+
 .deploy-head-actions {
   align-items: center;
   display: flex;
@@ -270,6 +298,36 @@
 .webhook-detail small {
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+.compose-grid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0.9rem;
+}
+
+.proxy-grid {
+  border-top: 1px solid var(--line);
+}
+
+.compose-grid span {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+  padding: 0.65rem;
+}
+
+.compose-grid strong,
+.compose-grid small {
+  overflow-wrap: anywhere;
+}
+
+.compose-grid small {
+  color: var(--muted);
 }
 
 .status-chip {
@@ -496,6 +554,16 @@
   }
 
   .runtime-panel .service-row {
+    grid-template-columns: 1fr;
+  }
+
+  .compose-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .compose-grid {
     grid-template-columns: 1fr;
   }
 }

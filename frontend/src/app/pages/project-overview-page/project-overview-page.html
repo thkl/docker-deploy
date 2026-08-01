@@ -76,6 +76,13 @@
     </div>
   </section>
 
+  <nav class="project-subnav" aria-label="Project sections">
+    <a [routerLink]="['/projects', project.id, 'overview']" routerLinkActive="active">Overview</a>
+    <a [routerLink]="['/projects', project.id, 'compose']" routerLinkActive="active">Compose</a>
+    <a [routerLink]="['/projects', project.id, 'deployments']" routerLinkActive="active">Deployments</a>
+    <a [routerLink]="['/projects', project.id, 'logs']" routerLinkActive="active">Logs</a>
+  </nav>
+
   @if (deployMessage()) {
     <p class="notice">{{ deployMessage() }}</p>
   }
@@ -84,206 +91,169 @@
     <p class="notice error">{{ deployError() }}</p>
   }
 
-  <section class="deploy-panel runtime-panel">
-    <div class="deploy-head">
-      <div>
-        <h2>Runtime services</h2>
-        @if (loadingRuntimeStatus()) {
-          <p>Checking Compose containers on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
-        } @else if (runtimeStatus(); as status) {
-          <p>Checked {{ formatDate(status.checkedAt) }} on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
-        } @else {
-          <p>Inspect Compose containers on the target server.</p>
-        }
-      </div>
-    </div>
-
-    @if (runtimeStatusError()) {
-      <p class="notice error">{{ runtimeStatusError() }}</p>
-    }
-
-    @if (runtimeActionMessage()) {
-      <p class="notice inline-notice">{{ runtimeActionMessage() }}</p>
-    }
-
-    @if (runtimeActionError()) {
-      <p class="notice error inline-notice">{{ runtimeActionError() }}</p>
-    }
-
-    @if (runtimeActionOutput()) {
-      <pre class="operation-output live-output" [innerHTML]="decodedAnsiLog(runtimeActionOutput())"></pre>
-    }
-
-    @if (loadingRuntimeStatus()) {
-      <div class="status-skeleton" aria-label="Loading runtime service status">
-        <div class="deploy-meta">
-          <span class="skeleton-line"></span>
-          <span class="skeleton-line"></span>
-        </div>
-        @for (row of [1, 2, 3]; track row) {
-          <div class="service-row">
-            <div class="service-item">
-              <strong class="skeleton-line"></strong>
-              <small class="skeleton-line short"></small>
-            </div>
-            <span class="skeleton-line short"></span>
-            <span class="skeleton-line"></span>
-            <code class="skeleton-line"></code>
-            <small class="skeleton-line"></small>
-          </div>
-        }
-      </div>
-    } @else if (runtimeStatus(); as status) {
-      <div class="deploy-meta">
-        <span
-          class="status-chip"
-          [class.running]="status.status === 'partial'"
-          [class.failed]="status.status === 'error'"
-        >
-          {{ runtimeStatusLabel(status) }}
-        </span>
-        <span>{{ status.services.length }} services</span>
-        @if (status.error) {
-          <span class="error-text">{{ status.error }}</span>
-        }
-      </div>
-
-      @if (status.services.length > 0) {
-        <div class="service-list">
-          @for (service of status.services; track service.containerId || service.containerName || service.service) {
-            <div class="service-row selectable" [class.selected]="selectedRuntimeService() === service.service" (click)="selectedRuntimeService.set(service.service)">
-              <div class="service-item">
-                <strong>{{ service.service }}</strong>
-                <small>{{ service.containerName || service.containerId || 'container unavailable' }}</small>
-              </div>
-              <span class="service-state">{{ service.state }}</span>
-              <span>{{ service.health || 'no healthcheck' }}</span>
-              <code>{{ service.image || 'image unknown' }}</code>
-              <small>{{ servicePortLabel(service) }}</small>
-            </div>
-          }
-        </div>
-      } @else {
-        <div class="empty-log">No Compose containers were found for this project.</div>
-      }
-    } @else {
-      <div class="empty-log">Status has not been checked yet.</div>
-    }
-  </section>
-
-  <section class="deploy-panel webhook-panel">
-    <div class="deploy-head">
-      <div>
-        <h2>Webhook</h2>
-        <p>Last received webhook routing result for this project.</p>
-      </div>
-      <button type="button" class="secondary" (click)="loadLatestWebhook(project.id)" [disabled]="loadingWebhook()">
-        {{ loadingWebhook() ? 'Refreshing...' : 'Refresh' }}
-      </button>
-    </div>
-
-    @if (loadingWebhook()) {
-      <div class="empty-log">Loading webhook status...</div>
-    } @else if (latestWebhook(); as webhook) {
-      <div class="webhook-summary">
-        <span class="status-chip" [class.running]="webhook.status === 'ignored'" [class.failed]="webhook.status === 'error'">
-          {{ webhookStatusLabel(webhook) }}
-        </span>
-        <span>{{ webhook.eventType || 'event unknown' }}</span>
-        <span>{{ formatDate(webhook.receivedAt) }}</span>
-        <span>{{ webhook.source }}</span>
-        @if (webhook.deploymentId) {
-          <span>Deployment {{ webhook.deploymentId }}</span>
-        }
-      </div>
-      <div class="webhook-detail">
-        <strong>{{ webhook.reason }}</strong>
-        <small>Matched candidates: {{ webhookCandidateLabel(webhook) }}</small>
-      </div>
-    } @else {
-      <div class="empty-log">No webhook has been recorded for this project yet.</div>
-    }
-  </section>
-
-  <section class="deploy-panel logs-panel">
-    <div class="deploy-head">
-      <div>
-        <h2>Logs</h2>
-        <p>Runtime output, deployment output, and service action history in one place.</p>
-      </div>
-      <div class="deploy-head-actions">
-        <button
-          type="button"
-          class="secondary icon-button"
-          (click)="loadRuntimeLogs(project.id)"
-          [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed' || !runtimeStatus()?.services?.length"
-          [attr.aria-label]="loadingRuntimeLogs() ? 'Loading runtime logs' : 'Load runtime logs'"
-          [attr.title]="loadingRuntimeLogs() ? 'Loading runtime logs' : 'Load runtime logs'"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" class="icon">
-            <path d="M8 5v14l11-7z"></path>
-          </svg>
-        </button>
-        <button
-          type="button"
-          class="secondary icon-button"
-          [class.live-active]="runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting'"
-          (click)="toggleRuntimeLogStream(project.id)"
-          [disabled]="loadingRuntimeLogs() || !runtimeStatus()?.services?.length"
-          [attr.aria-label]="runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live runtime logs' : 'Start live runtime logs'"
-          [attr.title]="runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live runtime logs' : 'Start live runtime logs'"
-        >
-          @if (runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting') {
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon">
-              <path d="M8 7h3v10H8zM13 7h3v10h-3z"></path>
-            </svg>
+  @if (projectSection() === 'overview') {
+    <section class="deploy-panel runtime-panel">
+      <div class="deploy-head">
+        <div>
+          <h2>Runtime services</h2>
+          @if (loadingRuntimeStatus()) {
+            <p>Checking Compose containers on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
+          } @else if (runtimeStatus(); as status) {
+            <p>Checked {{ formatDate(status.checkedAt) }} on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
           } @else {
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon">
-              <path d="M12 18.5 9.8 16.3a3.1 3.1 0 0 1 4.4 0L12 18.5z"></path>
-              <path d="m7 13.5 1.5 1.5a5 5 0 0 1 7 0l1.5-1.5a7.1 7.1 0 0 0-10 0z"></path>
-              <path d="m4.2 10.7 1.5 1.5a9 9 0 0 1 12.6 0l1.5-1.5a11.1 11.1 0 0 0-15.6 0z"></path>
-            </svg>
+            <p>Inspect Compose containers on the target server.</p>
           }
-        </button>
-        <span
-          class="stream-chip"
-          [class.live]="runtimeLogStreamState() === 'live'"
-          [class.error]="runtimeLogStreamState() === 'error'"
-        >
-          {{ runtimeLogStreamLabel() }}
-        </span>
-        <select class="secondary" [value]="runtimeLogTail()" (change)="updateRuntimeTail($event)" [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed'">
-          <option value="100">100 lines</option>
-          <option value="200">200 lines</option>
-          <option value="500">500 lines</option>
-          <option value="1000">1000 lines</option>
-        </select>
-        <label class="auto-scroll">
-          <input type="checkbox" [checked]="runtimeLogAutoScroll()" (change)="toggleRuntimeLogAutoScroll($event)" />
-          <span>Auto-scroll</span>
-        </label>
+        </div>
       </div>
-    </div>
 
-    <div class="log-tabs">
-      <button type="button" [class.active]="selectedLogView() === 'runtime'" (click)="selectLogView('runtime')">Runtime</button>
-      <button type="button" [class.active]="selectedLogView() === 'deployment'" (click)="selectLogView('deployment')">Deployment</button>
-      <button type="button" [class.active]="selectedLogView() === 'actions'" (click)="selectLogView('actions')">Actions</button>
-    </div>
-
-    @if (selectedLogView() === 'runtime') {
-      @if (runtimeLogsError()) {
-        <p class="notice error">{{ runtimeLogsError() }}</p>
+      @if (runtimeStatusError()) {
+        <p class="notice error">{{ runtimeStatusError() }}</p>
       }
 
-      @if (loadingRuntimeLogs()) {
-        <div class="empty-log">Loading runtime logs...</div>
-      } @else if (runtimeLogs(); as logs) {
-        <pre #runtimeLog class="deploy-log" (scroll)="onRuntimeLogScroll()" [innerHTML]="decodedAnsiLog(logs.output, 'No runtime log output returned.')"></pre>
+      @if (runtimeActionMessage()) {
+        <p class="notice inline-notice">{{ runtimeActionMessage() }}</p>
+      }
+
+      @if (runtimeActionError()) {
+        <p class="notice error inline-notice">{{ runtimeActionError() }}</p>
+      }
+
+      @if (runtimeActionOutput()) {
+        <pre class="operation-output live-output" [innerHTML]="decodedAnsiLog(runtimeActionOutput())"></pre>
+      }
+
+      @if (loadingRuntimeStatus()) {
+        <div class="status-skeleton" aria-label="Loading runtime service status">
+          <div class="deploy-meta">
+            <span class="skeleton-line"></span>
+            <span class="skeleton-line"></span>
+          </div>
+          @for (row of [1, 2, 3]; track row) {
+            <div class="service-row">
+              <div class="service-item">
+                <strong class="skeleton-line"></strong>
+                <small class="skeleton-line short"></small>
+              </div>
+              <span class="skeleton-line short"></span>
+              <span class="skeleton-line"></span>
+              <code class="skeleton-line"></code>
+              <small class="skeleton-line"></small>
+            </div>
+          }
+        </div>
+      } @else if (runtimeStatus(); as status) {
+        <div class="deploy-meta">
+          <span class="status-chip" [class.running]="status.status === 'partial'" [class.failed]="status.status === 'error'">
+            {{ runtimeStatusLabel(status) }}
+          </span>
+          <span>{{ status.services.length }} services</span>
+          @if (status.error) {
+            <span class="error-text">{{ status.error }}</span>
+          }
+        </div>
+
+        @if (status.services.length > 0) {
+          <div class="service-list">
+            @for (service of status.services; track service.containerId || service.containerName || service.service) {
+              <div class="service-row selectable" [class.selected]="selectedRuntimeService() === service.service" (click)="selectedRuntimeService.set(service.service)">
+                <div class="service-item">
+                  <strong>{{ service.service }}</strong>
+                  <small>{{ service.containerName || service.containerId || 'container unavailable' }}</small>
+                </div>
+                <span class="service-state">{{ service.state }}</span>
+                <span>{{ service.health || 'no healthcheck' }}</span>
+                <code>{{ service.image || 'image unknown' }}</code>
+                <small>{{ servicePortLabel(service) }}</small>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="empty-log">No Compose containers were found for this project.</div>
+        }
       } @else {
-        <div class="empty-log">Select a service and load recent runtime logs.</div>
+        <div class="empty-log">Status has not been checked yet.</div>
       }
-    } @else if (selectedLogView() === 'deployment') {
+    </section>
+  }
+
+  @if (projectSection() === 'compose') {
+    <section class="deploy-panel compose-panel">
+      <div class="deploy-head">
+        <div>
+          <h2>Compose</h2>
+          <p>Deployment source, checkout path, proxy target, and generated settings.</p>
+        </div>
+        <a class="secondary" [routerLink]="['/projects', project.id, 'settings']">Edit compose</a>
+      </div>
+
+      <div class="compose-grid">
+        <span>
+          <strong>{{ project.hasComposeOverride ? 'Stored override' : 'Repository compose' }}</strong>
+          <small>source</small>
+        </span>
+        <span>
+          <strong>{{ project.path || '/root/docker-apps/' + project.name }}</strong>
+          <small>target path</small>
+        </span>
+        <span>
+          <strong>{{ selectedServer()?.name || project.serverId || 'local' }}</strong>
+          <small>server</small>
+        </span>
+        <span>
+          <strong>{{ project.repositoryUrl || 'not configured' }}</strong>
+          <small>repository</small>
+        </span>
+      </div>
+
+      <div class="compose-grid proxy-grid">
+        <span>
+          <strong>{{ project.traefik.enabled ? 'Enabled' : 'Disabled' }}</strong>
+          <small>Traefik</small>
+        </span>
+        <span>
+          <strong>{{ project.traefik.hostname || 'No hostname' }}</strong>
+          <small>hostname</small>
+        </span>
+        <span>
+          <strong>{{ project.traefik.service || project.name }}</strong>
+          <small>service</small>
+        </span>
+        <span>
+          <strong>{{ project.traefik.port || 'auto' }}</strong>
+          <small>internal port</small>
+        </span>
+        <span>
+          <strong>{{ project.traefik.network || 'default' }}</strong>
+          <small>network</small>
+        </span>
+        <span>
+          <strong>{{ project.traefik.entryPoints || 'default' }}</strong>
+          <small>entrypoints</small>
+        </span>
+        <span>
+          <strong>{{ project.traefik.certResolver || 'default' }}</strong>
+          <small>cert resolver</small>
+        </span>
+        <span>
+          <strong>{{ project.envSecrets?.length || 0 }}</strong>
+          <small>sensitive env values</small>
+        </span>
+      </div>
+    </section>
+  }
+
+  @if (projectSection() === 'deployments') {
+    <section class="deploy-panel">
+      <div class="deploy-head">
+        <div>
+          <h2>Latest deployment</h2>
+          <p>Worker output from the latest manual, CI, or webhook deployment.</p>
+        </div>
+        <span class="stream-chip" [class.live]="streamState() === 'live'" [class.error]="streamState() === 'error'">
+          {{ streamLabel() }}
+        </span>
+      </div>
+
       @if (latestDeployment(); as deployment) {
         <div class="deploy-meta">
           <span class="status-chip" [class.running]="deployment.status === 'running'" [class.failed]="deployment.status === 'failed'">
@@ -303,9 +273,119 @@
       } @else {
         <div class="empty-log">Trigger a deployment to capture worker output here.</div>
       }
-    } @else {
-      <div class="deploy-head compact-head">
-        <div></div>
+    </section>
+
+    <section class="deploy-panel webhook-panel">
+      <div class="deploy-head">
+        <div>
+          <h2>Webhook</h2>
+          <p>Last received webhook routing result for this project.</p>
+        </div>
+        <button type="button" class="secondary" (click)="loadLatestWebhook(project.id)" [disabled]="loadingWebhook()">
+          {{ loadingWebhook() ? 'Refreshing...' : 'Refresh' }}
+        </button>
+      </div>
+
+      @if (loadingWebhook()) {
+        <div class="empty-log">Loading webhook status...</div>
+      } @else if (latestWebhook(); as webhook) {
+        <div class="webhook-summary">
+          <span class="status-chip" [class.running]="webhook.status === 'ignored'" [class.failed]="webhook.status === 'error'">
+            {{ webhookStatusLabel(webhook) }}
+          </span>
+          <span>{{ webhook.eventType || 'event unknown' }}</span>
+          <span>{{ formatDate(webhook.receivedAt) }}</span>
+          <span>{{ webhook.source }}</span>
+          @if (webhook.deploymentId) {
+            <span>Deployment {{ webhook.deploymentId }}</span>
+          }
+        </div>
+        <div class="webhook-detail">
+          <strong>{{ webhook.reason }}</strong>
+          <small>Matched candidates: {{ webhookCandidateLabel(webhook) }}</small>
+        </div>
+      } @else {
+        <div class="empty-log">No webhook has been recorded for this project yet.</div>
+      }
+    </section>
+  }
+
+  @if (projectSection() === 'logs') {
+    <section class="deploy-panel logs-panel">
+      <div class="deploy-head">
+        <div>
+          <h2>Runtime logs</h2>
+          <p>Recent or live output from the selected running service.</p>
+        </div>
+        <div class="deploy-head-actions">
+          <button
+            type="button"
+            class="secondary icon-button"
+            (click)="loadRuntimeLogs(project.id)"
+            [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed' || !runtimeStatus()?.services?.length"
+            [attr.aria-label]="loadingRuntimeLogs() ? 'Loading runtime logs' : 'Load runtime logs'"
+            [attr.title]="loadingRuntimeLogs() ? 'Loading runtime logs' : 'Load runtime logs'"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon">
+              <path d="M8 5v14l11-7z"></path>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="secondary icon-button"
+            [class.live-active]="runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting'"
+            (click)="toggleRuntimeLogStream(project.id)"
+            [disabled]="loadingRuntimeLogs() || !runtimeStatus()?.services?.length"
+            [attr.aria-label]="runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live runtime logs' : 'Start live runtime logs'"
+            [attr.title]="runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting' ? 'Stop live runtime logs' : 'Start live runtime logs'"
+          >
+            @if (runtimeLogStreamState() === 'live' || runtimeLogStreamState() === 'connecting') {
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="icon">
+                <path d="M8 7h3v10H8zM13 7h3v10h-3z"></path>
+              </svg>
+            } @else {
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="icon">
+                <path d="M12 18.5 9.8 16.3a3.1 3.1 0 0 1 4.4 0L12 18.5z"></path>
+                <path d="m7 13.5 1.5 1.5a5 5 0 0 1 7 0l1.5-1.5a7.1 7.1 0 0 0-10 0z"></path>
+                <path d="m4.2 10.7 1.5 1.5a9 9 0 0 1 12.6 0l1.5-1.5a11.1 11.1 0 0 0-15.6 0z"></path>
+              </svg>
+            }
+          </button>
+          <span class="stream-chip" [class.live]="runtimeLogStreamState() === 'live'" [class.error]="runtimeLogStreamState() === 'error'">
+            {{ runtimeLogStreamLabel() }}
+          </span>
+          <select class="secondary" [value]="runtimeLogTail()" (change)="updateRuntimeTail($event)" [disabled]="loadingRuntimeLogs() || runtimeLogStreamState() !== 'closed'">
+            <option value="100">100 lines</option>
+            <option value="200">200 lines</option>
+            <option value="500">500 lines</option>
+            <option value="1000">1000 lines</option>
+          </select>
+          <label class="auto-scroll">
+            <input type="checkbox" [checked]="runtimeLogAutoScroll()" (change)="toggleRuntimeLogAutoScroll($event)" />
+            <span>Auto-scroll</span>
+          </label>
+        </div>
+      </div>
+
+      @if (runtimeLogsError()) {
+        <p class="notice error">{{ runtimeLogsError() }}</p>
+      }
+
+      @if (loadingRuntimeLogs()) {
+        <div class="empty-log">Loading runtime logs...</div>
+      } @else if (runtimeLogs(); as logs) {
+        <pre #runtimeLog class="deploy-log" (scroll)="onRuntimeLogScroll()" [innerHTML]="decodedAnsiLog(logs.output, 'No runtime log output returned.')"></pre>
+      } @else {
+        <div class="empty-log">Select a service and load recent runtime logs.</div>
+      }
+    </section>
+
+    <section class="deploy-panel">
+      <div class="deploy-head">
+        <div>
+          <h2>Service actions</h2>
+          <p>Restart, start, stop, recreate, and pull command history.</p>
+        </div>
         <button type="button" class="secondary" (click)="loadRuntimeOperations(project.id)" [disabled]="loadingRuntimeOperations()">
           {{ loadingRuntimeOperations() ? 'Refreshing...' : 'Refresh history' }}
         </button>
@@ -342,8 +422,8 @@
       } @else {
         <div class="empty-log">No runtime service actions have been recorded yet.</div>
       }
-    }
-  </section>
+    </section>
+  }
 } @else {
   <section class="panel">
     <h2>No project selected</h2>
@@ -370,43 +450,22 @@
 
       <div class="delete-options">
         <label class="check-row">
-          <input
-            type="checkbox"
-            [checked]="deleteStopContainers()"
-            (change)="updateDeleteOption('stop', $event)"
-            [disabled]="deleting()"
-          />
+          <input type="checkbox" [checked]="deleteStopContainers()" (change)="updateDeleteOption('stop', $event)" [disabled]="deleting()" />
           <span>Stop containers with Docker Compose</span>
         </label>
         <label class="check-row">
-          <input
-            type="checkbox"
-            [checked]="deleteCheckout()"
-            (change)="updateDeleteOption('checkout', $event)"
-            [disabled]="deleting()"
-          />
+          <input type="checkbox" [checked]="deleteCheckout()" (change)="updateDeleteOption('checkout', $event)" [disabled]="deleting()" />
           <span>Delete project root <code>{{ project.path }}</code></span>
         </label>
         <label class="check-row">
-          <input
-            type="checkbox"
-            [checked]="deleteDeploymentHistory()"
-            (change)="updateDeleteOption('history', $event)"
-            [disabled]="deleting()"
-          />
+          <input type="checkbox" [checked]="deleteDeploymentHistory()" (change)="updateDeleteOption('history', $event)" [disabled]="deleting()" />
           <span>Delete deployment history</span>
         </label>
       </div>
 
       <label class="confirm-field">
         <span>Type {{ project.name }} to confirm</span>
-        <input
-          type="text"
-          [value]="deleteConfirmation()"
-          (input)="updateDeleteConfirmation($event)"
-          [disabled]="deleting()"
-          autocomplete="off"
-        />
+        <input type="text" [value]="deleteConfirmation()" (input)="updateDeleteConfirmation($event)" [disabled]="deleting()" autocomplete="off" />
       </label>
 
       @if (deleteError()) {
