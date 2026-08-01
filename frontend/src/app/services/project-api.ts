@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigBackup, TraefikConfigValidation, TraefikDiagnostics, WebhookEventRecord } from '../models/project';
+import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigBackup, TraefikConfigValidation, TraefikDiagnostics, TraefikImpactPreview, WebhookEventRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -103,6 +103,10 @@ export class ProjectApi {
 
   validateTraefik(serverId: string): Observable<TraefikConfigValidation> {
     return this.http.get<TraefikConfigValidation>(`/api/servers/${encodeURIComponent(serverId)}/traefik/validate`);
+  }
+
+  previewTraefikImpact(serverId: string): Observable<TraefikImpactPreview> {
+    return this.http.get<TraefikImpactPreview>(`/api/servers/${encodeURIComponent(serverId)}/traefik/impact`);
   }
 
   createServer(payload: ServerPayload): Observable<ServerRecord> {

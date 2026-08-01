@@ -140,6 +140,7 @@ label span,
 .server-health span,
 .metric-row,
 .traefik-panel,
+.traefik-impact,
 .managed-panel,
 .agent-install {
   background: var(--panel-soft);
@@ -215,7 +216,8 @@ meter {
 
 .traefik-paths,
 .traefik-containers,
-.validation-checks {
+.validation-checks,
+.impact-list {
   display: grid;
   gap: 0.5rem;
 }
@@ -301,6 +303,49 @@ meter {
   overflow: auto;
   padding: 0.55rem;
   white-space: pre-wrap;
+}
+
+.traefik-impact {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.impact-defaults {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.impact-defaults span {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.impact-project {
+  align-items: start;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(170px, 0.38fr) minmax(0, 1fr);
+  min-width: 0;
+  padding: 0.55rem;
+}
+
+.impact-project > div:first-child {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.impact-project strong,
+.impact-project span {
+  overflow-wrap: anywhere;
 }
 
 .managed-panel {

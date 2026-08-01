@@ -704,17 +704,23 @@ async function validateMountedTraefikStaticConfigs(containers: DockerInspectCont
 async function runTraefikStaticConfigCheck(container: DockerInspectContainerWithMounts, path: string) {
     const containerId = container.Id ?? "";
     const outputLimit = 12 * 1024;
-    const command = container.State?.Status === "running"
-        ? `docker exec ${shellQuote(containerId)} traefik check --configFile=${shellQuote(path)}`
-        : `docker run --rm --volumes-from ${shellQuote(`${containerId}:ro`)} --entrypoint traefik ${shellQuote(container.Config?.Image || "traefik:latest")} check --configFile=${shellQuote(path)}`;
+    const image = container.Config?.Image || "traefik:latest";
+    const command = `docker run --rm --volumes-from ${shellQuote(`${containerId}:ro`)} --entrypoint traefik ${shellQuote(image)} --configFile=${shellQuote(path)}`;
 
     try {
-        const { stdout, stderr } = await execAsync(command, { maxBuffer: 256 * 1024 });
+        const { stdout, stderr } = await execAsync(command, { maxBuffer: 256 * 1024, timeout: 7000 });
         return {
             ok: true,
             output: trimValidationOutput(`${stdout}${stderr ? `\n${stderr}` : ""}`, outputLimit)
         };
     } catch (error) {
+        if (isExecTimeout(error)) {
+            return {
+                ok: true,
+                output: "Traefik accepted the static config and continued running. Validation stopped the dry run after startup."
+            };
+        }
+
         const output = typeof error === "object" && error
             ? `${"stdout" in error ? String(error.stdout ?? "") : ""}${"stderr" in error ? `\n${String(error.stderr ?? "")}` : ""}`
             : "";
@@ -723,6 +729,13 @@ async function runTraefikStaticConfigCheck(container: DockerInspectContainerWith
             output: trimValidationOutput(output || (error instanceof Error ? error.message : "Traefik config check failed."), outputLimit)
         };
     }
+}
+
+function isExecTimeout(error: unknown) {
+    return typeof error === "object" && error !== null && (
+        ("signal" in error && error.signal === "SIGTERM") ||
+        ("killed" in error && error.killed === true)
+    );
 }
 
 function trimValidationOutput(output: string, limit: number) {

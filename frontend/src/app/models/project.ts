@@ -209,6 +209,33 @@ export interface TraefikConfigValidationCheck {
   output?: string;
 }
 
+export interface TraefikImpactPreview {
+  serverId: string;
+  checkedAt: string;
+  defaults: {
+    network: string;
+    entryPoints: string;
+    certResolver: string;
+  };
+  projectCount: number;
+  projects: TraefikAffectedProject[];
+}
+
+export interface TraefikAffectedProject {
+  id?: string;
+  name: string;
+  hostname?: string;
+  service?: string;
+  port?: number;
+  network: string;
+  entryPoints: string;
+  certResolver: string;
+  wildcardDomain?: string;
+  usesDefaultNetwork: boolean;
+  usesDefaultEntryPoints: boolean;
+  usesDefaultCertResolver: boolean;
+}
+
 export interface ServerSystemMetrics {
   checkedAt: string;
   loadAverage: number[];

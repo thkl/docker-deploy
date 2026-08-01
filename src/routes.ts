@@ -18,7 +18,7 @@ import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
-import { DeleteProjectPayload, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload, TraefikAffectedProject } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject, webhookProjectCandidates } from "./webhookResolver.js";
 import { WebhookStore } from "./webhookStore.js";
@@ -71,7 +71,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/servers", adminAuth.requireAuth);
 
     registerSettingsRoutes(app, globalSettingsStore);
-    registerServerRoutes(app, { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
+    registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
     registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus });
     registerWebhookRoute(app, { configStore, deploymentService, webhookStore });
     registerCiDeployRoute(app, { configStore, deploymentService });
@@ -99,8 +99,8 @@ function registerSettingsRoutes(app: Express, globalSettingsStore: GlobalSetting
 /**
  * Registers target-server read endpoints.
  */
-function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "controllerKeys" | "agentManager" | "globalSettingsStore" | "agentHealth" | "eventBus">) {
-    const { serverStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus } = dependencies;
+function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "configStore" | "controllerKeys" | "agentManager" | "globalSettingsStore" | "agentHealth" | "eventBus">) {
+    const { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus } = dependencies;
 
     app.get("/api/servers", async (req: Request, res: Response) => {
         await agentHealth.refreshLocal();
@@ -162,6 +162,33 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             res.json(validation);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not validate Traefik config." });
+        }
+    });
+
+    app.get("/api/servers/:id/traefik/impact", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            const server = serverStore.get(serverId);
+            if (!server) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+
+            const settings = globalSettingsStore.readSettings();
+            const projects = buildTraefikImpactProjects(configStore.readConfig(), serverId, settings);
+            res.json({
+                serverId,
+                checkedAt: new Date().toISOString(),
+                defaults: {
+                    network: settings.defaultTraefikNetwork,
+                    entryPoints: settings.defaultTraefikEntryPoints,
+                    certResolver: settings.defaultTraefikCertResolver
+                },
+                projectCount: projects.length,
+                projects
+            });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not preview Traefik impact." });
         }
     });
 
@@ -276,6 +303,33 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not pair server." });
         }
     });
+}
+
+function buildTraefikImpactProjects(config: Record<string, ProjectSettings>, serverId: string, globalSettings: GlobalSettings): TraefikAffectedProject[] {
+    return Object.entries(config)
+        .filter(([, settings]) => (settings.serverId || "local") === serverId && settings.traefik?.enabled)
+        .map(([name, settings]) => {
+            const traefik = settings.traefik;
+            const network = traefik?.network || globalSettings.defaultTraefikNetwork;
+            const entryPoints = traefik?.entryPoints || globalSettings.defaultTraefikEntryPoints;
+            const certResolver = traefik?.certResolver || globalSettings.defaultTraefikCertResolver;
+
+            return {
+                ...(settings.id ? { id: settings.id } : {}),
+                name,
+                ...(traefik?.hostname ? { hostname: traefik.hostname } : {}),
+                ...(traefik?.service ? { service: traefik.service } : {}),
+                ...(traefik?.port ? { port: traefik.port } : {}),
+                network,
+                entryPoints,
+                certResolver,
+                ...(traefik?.wildcardCertificate && traefik.wildcardDomain ? { wildcardDomain: traefik.wildcardDomain } : {}),
+                usesDefaultNetwork: !traefik?.network,
+                usesDefaultEntryPoints: !traefik?.entryPoints,
+                usesDefaultCertResolver: !traefik?.certResolver
+            };
+        })
+        .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 /**

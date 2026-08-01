@@ -1,7 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import { ProjectSummary, ServerRecord, TraefikConfigValidation, TraefikDiagnosticStatus } from '../../models/project';
+import { ProjectSummary, ServerRecord, TraefikConfigValidation, TraefikDiagnosticStatus, TraefikImpactPreview } from '../../models/project';
 import { readMigratedSessionStorageKey, removeSessionStorageKeys } from '../../services/browser-storage';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
@@ -25,6 +25,7 @@ export class ServersPage implements OnInit {
   protected readonly refreshingServer = signal('');
   protected readonly backingUpTraefik = signal('');
   protected readonly validatingTraefik = signal('');
+  protected readonly previewingTraefikImpact = signal('');
   protected readonly deletingServer = signal('');
   protected readonly editingServer = signal('');
   protected readonly savingServerName = signal('');
@@ -33,6 +34,7 @@ export class ServersPage implements OnInit {
   protected readonly error = signal('');
   protected readonly pairingTokens = signal<Record<string, string>>({});
   protected readonly traefikValidation = signal<Record<string, TraefikConfigValidation>>({});
+  protected readonly traefikImpact = signal<Record<string, TraefikImpactPreview>>({});
   protected readonly servers = this.store.servers;
   protected readonly serverForm = this.fb.group({
     name: [''],
@@ -167,6 +169,24 @@ export class ServersPage implements OnInit {
       error: (error) => {
         this.error.set(error?.error?.error || 'Could not validate Traefik config.');
         this.validatingTraefik.set('');
+      },
+    });
+  }
+
+  protected previewTraefikImpact(server: ServerRecord) {
+    this.previewingTraefikImpact.set(server.id);
+    this.message.set('');
+    this.error.set('');
+
+    this.api.previewTraefikImpact(server.id).subscribe({
+      next: (preview) => {
+        this.traefikImpact.update((current) => ({ ...current, [server.id]: preview }));
+        this.message.set(`${preview.projectCount} Traefik project${preview.projectCount === 1 ? '' : 's'} found on ${server.name}.`);
+        this.previewingTraefikImpact.set('');
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not preview Traefik impact.');
+        this.previewingTraefikImpact.set('');
       },
     });
   }
@@ -335,6 +355,20 @@ export class ServersPage implements OnInit {
 
   protected validationTone(status: TraefikDiagnosticStatus) {
     return status;
+  }
+
+  protected impactFor(server: ServerRecord) {
+    return this.traefikImpact()[server.id];
+  }
+
+  protected projectDefaultUsage(project: TraefikImpactPreview['projects'][number]) {
+    const defaults = [
+      project.usesDefaultNetwork ? 'network' : '',
+      project.usesDefaultEntryPoints ? 'entrypoints' : '',
+      project.usesDefaultCertResolver ? 'cert resolver' : '',
+    ].filter(Boolean);
+
+    return defaults.length ? `Uses defaults: ${defaults.join(', ')}` : 'Explicit proxy settings';
   }
 
   protected memoryLabel(server: ServerRecord) {

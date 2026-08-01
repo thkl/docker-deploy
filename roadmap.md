@@ -349,7 +349,7 @@ Management workflow:
 - [ ] Manage common defaults: entrypoints, cert resolvers, Docker network, wildcard domains, and ACME email/storage.
 - [x] Validate generated Traefik config with the target agent before applying.
 - [ ] Apply changes through the target server agent and keep rollback instructions/output.
-- [ ] Surface affected projects before changing a shared Traefik network or entrypoint.
+- [x] Surface affected projects before changing a shared Traefik network or entrypoint.
 
 ## Phase 7: Storage Cleanup And Data Mapping
 

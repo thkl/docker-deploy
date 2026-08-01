@@ -55,6 +55,9 @@
           <button type="button" class="secondary" (click)="validateTraefik(server)" [disabled]="validatingTraefik() !== '' || !server.capabilities?.traefik?.available">
             {{ validatingTraefik() === server.id ? 'Validating...' : 'Validate Traefik' }}
           </button>
+          <button type="button" class="secondary" (click)="previewTraefikImpact(server)" [disabled]="previewingTraefikImpact() !== ''">
+            {{ previewingTraefikImpact() === server.id ? 'Checking...' : 'Impact' }}
+          </button>
           @if (editingServer() === server.id) {
             <button type="button" class="secondary" (click)="saveServerName(server)" [disabled]="savingServerName() === server.id">
               {{ savingServerName() === server.id ? 'Saving...' : 'Save name' }}
@@ -216,6 +219,43 @@
                   </article>
                 }
               </div>
+            </div>
+          }
+
+          @if (impactFor(server); as impact) {
+            <div class="traefik-impact">
+              <div class="validation-head">
+                <strong>Affected projects</strong>
+                <span>{{ impact.projectCount }} · {{ formatDate(impact.checkedAt) }}</span>
+              </div>
+              <div class="impact-defaults">
+                <span>Network: {{ impact.defaults.network || 'unset' }}</span>
+                <span>Entrypoints: {{ impact.defaults.entryPoints || 'unset' }}</span>
+                <span>Cert resolver: {{ impact.defaults.certResolver || 'unset' }}</span>
+              </div>
+              @if (impact.projects.length) {
+                <div class="impact-list">
+                  @for (project of impact.projects; track project.id || project.name) {
+                    <article class="impact-project">
+                      <div>
+                        <strong>{{ project.name }}</strong>
+                        <span>{{ project.hostname || 'No hostname' }} · {{ project.service || project.name }}:{{ project.port || 'auto' }}</span>
+                      </div>
+                      <div class="service-chip-list">
+                        <span>{{ project.network }}</span>
+                        <span>{{ project.entryPoints }}</span>
+                        <span>{{ project.certResolver }}</span>
+                        @if (project.wildcardDomain) {
+                          <span>{{ project.wildcardDomain }}</span>
+                        }
+                        <span>{{ projectDefaultUsage(project) }}</span>
+                      </div>
+                    </article>
+                  }
+                </div>
+              } @else {
+                <p class="muted-copy">No Traefik-enabled projects target this server.</p>
+              }
             </div>
           }
         } @else {

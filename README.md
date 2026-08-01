@@ -150,6 +150,8 @@ Use **Export Traefik** on a server row to download a JSON backup before changing
 
 Use **Validate Traefik** on a server row to run Traefik's own static config check through the selected agent. The result includes pass/warn/fail checks for discovered containers, entrypoints, certificate resolvers, Docker provider network, ACME storage, and mounted static config files.
 
+Use **Impact** on a server row to preview Traefik-enabled projects on that server before changing shared proxy defaults. The preview shows each affected project, hostname, target service/port, network, entrypoints, cert resolver, wildcard domain, and whether the project inherits controller defaults or uses explicit values.
+
 ## Deploy From CI
 
 Set a CI deploy token in project settings, then call:
