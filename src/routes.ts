@@ -272,17 +272,23 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
                 return;
             }
 
-            if (!server.baseUrl || !server.agentPublicEncryptionKey || !server.agentPublicSigningKey) {
-                res.status(400).json({ error: "Server URL and agent public keys are required before pairing." });
+            if (!server.baseUrl) {
+                res.status(400).json({ error: "Server URL is required before pairing." });
                 return;
             }
 
             const agentBaseUrl = server.baseUrl.replace(/\/+$/, "");
             const health = await agentHealth.fetchAgentHealth(agentBaseUrl);
-            if (!health.ok) {
+            if (!health.ok || !health.body) {
                 res.status(400).json({
                     error: `Agent URL is not reaching a Deploy agent. ${health.message}`
                 });
+                return;
+            }
+            const agentEncryptionPublicKey = health.body.encryptionPublicKey;
+            const agentSigningPublicKey = health.body.signingPublicKey;
+            if (!agentEncryptionPublicKey || !agentSigningPublicKey) {
+                res.status(400).json({ error: "Agent health response is missing public keys." });
                 return;
             }
 
@@ -295,11 +301,11 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
                     controllerPublicSigningKey: controllerKeys.signingPublicKey,
                     envelope: sealEnvelope({ pairingToken }, {
                         senderId: controllerKeys.controllerId,
-                        recipientId: server.agentServerId || server.id,
+                        recipientId: health.body?.serverId || server.agentServerId || server.id,
                         messageType: "pair.request"
                     }, {
                         senderSigningPrivateKey: controllerKeys.signingPrivateKey,
-                        recipientEncryptionPublicKey: server.agentPublicEncryptionKey
+                        recipientEncryptionPublicKey: agentEncryptionPublicKey
                     })
                 })
             });
@@ -309,7 +315,13 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
                 return;
             }
 
-            const paired = serverStore.markPaired(server.id, controllerKeys.encryptionPublicKey, controllerKeys.signingPublicKey);
+            const paired = serverStore.markPaired(
+                server.id,
+                controllerKeys.encryptionPublicKey,
+                controllerKeys.signingPublicKey,
+                agentEncryptionPublicKey,
+                agentSigningPublicKey
+            );
             const updated = serverStore.updateHealth(server.id, {
                 status: "online",
                 agentServerId: health.body?.serverId,

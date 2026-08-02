@@ -144,6 +144,17 @@ export class AgentHealthService {
             }));
         }
 
+        if (hasTrustedKeyMismatch(server, health.body)) {
+            return this.publishUpdatedServer(this.serverStore.updateHealth(server.id, {
+                status: "unpaired",
+                agentServerId: health.body.serverId,
+                agentVersion: health.body.version,
+                activeJobs: health.body.activeJobs ?? [],
+                capabilities: health.body.capabilities,
+                lastHealthError: "Remote agent keys changed. Pair this agent again before deploying."
+            }));
+        }
+
         return this.publishUpdatedServer(this.serverStore.updateHealth(server.id, {
             status: health.body.paired ? "online" : "unpaired",
             agentServerId: health.body.serverId,
@@ -171,6 +182,13 @@ export class AgentHealthService {
                 startedAt: deployment.startedAt
             }));
     }
+}
+
+function hasTrustedKeyMismatch(server: ServerRecord, health: AgentHealthBody) {
+    return Boolean(
+        (server.agentPublicEncryptionKey && health.encryptionPublicKey && server.agentPublicEncryptionKey.trim() !== health.encryptionPublicKey.trim()) ||
+        (server.agentPublicSigningKey && health.signingPublicKey && server.agentPublicSigningKey.trim() !== health.signingPublicKey.trim())
+    );
 }
 
 /**

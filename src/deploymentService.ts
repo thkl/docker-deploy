@@ -62,7 +62,7 @@ export class DeploymentService {
         const globalSettings = this.globalSettingsStore.readSettings();
         this.deploymentStore.setPhase(projectName, deployment.id, "dispatching");
         this.broadcastDeploymentUpdate(projectName);
-        void this.refreshServerHealth(serverId);
+        await this.refreshServerHealth(serverId);
 
         const agent = this.agentManager.getClient(serverId);
         const deploymentRun = agent.deployProject(projectName, targetSettings, globalSettings, {

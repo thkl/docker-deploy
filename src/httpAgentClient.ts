@@ -216,7 +216,7 @@ export class HttpAgentClient implements AgentClient {
         });
 
         if (!response.ok) {
-            throw new Error(`Agent rejected job: ${await response.text()}`);
+            throw new Error(this.normalizeAgentError(await response.text()));
         }
 
         const body = await response.json() as { envelope?: SecureEnvelope };
@@ -420,6 +420,10 @@ export class HttpAgentClient implements AgentClient {
      * Encrypts and signs a payload for this remote agent.
      */
     private sealAgentEnvelope(payload: unknown, messageType: string) {
+        if (this.server.status === "unpaired") {
+            throw new Error(`Remote agent ${this.server.name || this.server.id} is unpaired. Pair this agent before deploying.`);
+        }
+
         if (!this.server.agentPublicEncryptionKey) {
             throw new Error("Remote agent encryption key is missing.");
         }
@@ -462,5 +466,13 @@ export class HttpAgentClient implements AgentClient {
         }
 
         return this.server.baseUrl.replace(/\/+$/, "");
+    }
+
+    private normalizeAgentError(message: string) {
+        if (/oaep decoding error|decrypt|decryption|not paired|pair/i.test(message)) {
+            return `Remote agent ${this.server.name || this.server.id} pairing is invalid. Pair this agent again before deploying.`;
+        }
+
+        return `Agent rejected job: ${message}`;
     }
 }

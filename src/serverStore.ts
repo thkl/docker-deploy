@@ -137,20 +137,37 @@ export class ServerStore {
     /**
      * Marks a remote server as paired with controller public keys.
      */
-    markPaired(serverId: string, controllerPublicEncryptionKey: string, controllerPublicSigningKey: string) {
+    markPaired(
+        serverId: string,
+        controllerPublicEncryptionKey: string,
+        controllerPublicSigningKey: string,
+        agentPublicEncryptionKey?: string,
+        agentPublicSigningKey?: string
+    ) {
         const now = new Date().toISOString();
         this.database
             .prepare(
                 `UPDATE servers
                  SET controller_public_encryption_key = ?,
                      controller_public_signing_key = ?,
+                     agent_public_encryption_key = COALESCE(?, agent_public_encryption_key),
+                     agent_public_signing_key = COALESCE(?, agent_public_signing_key),
                      status = 'online',
                      paired_at = COALESCE(paired_at, ?),
                      last_seen_at = ?,
                      updated_at = ?
                  WHERE id = ?`
             )
-            .run(controllerPublicEncryptionKey, controllerPublicSigningKey, now, now, now, serverId);
+            .run(
+                controllerPublicEncryptionKey,
+                controllerPublicSigningKey,
+                agentPublicEncryptionKey?.trim() || null,
+                agentPublicSigningKey?.trim() || null,
+                now,
+                now,
+                now,
+                serverId
+            );
         return this.get(serverId);
     }
 
