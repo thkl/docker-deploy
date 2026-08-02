@@ -270,7 +270,21 @@ export class DeploymentService {
                 continue;
             }
 
-            if (this.reconnectDeploymentTarget(deployment.projectName, deployment, { ...appSettings, serverId: deployment.serverId || appSettings.serverId || "local" }, globalSettings)) {
+            const serverId = deployment.serverId || appSettings.serverId || "local";
+            const targetSettings = { ...appSettings, serverId };
+            if (this.reconnectDeploymentTarget(deployment.projectName, deployment, targetSettings, globalSettings)) {
+                continue;
+            }
+
+            if (serverId === "local") {
+                await this.reconcileDeployment(
+                    deployment.projectName,
+                    deployment.id,
+                    targetSettings,
+                    globalSettings,
+                    "Controller restarted before local deployment completion was recorded",
+                    "controller-restart"
+                );
                 continue;
             }
 
@@ -321,7 +335,20 @@ export class DeploymentService {
             if (target.status !== "running" || this.activeDeployments.has(target.id)) {
                 continue;
             }
-            if (this.reconnectDeploymentTarget(projectName, target, { ...appSettings, serverId: target.serverId || appSettings.serverId || "local" }, globalSettings)) {
+            const serverId = target.serverId || appSettings.serverId || "local";
+            const targetSettings = { ...appSettings, serverId };
+            if (this.reconnectDeploymentTarget(projectName, target, targetSettings, globalSettings)) {
+                continue;
+            }
+            if (serverId === "local") {
+                await this.reconcileDeployment(
+                    projectName,
+                    target.id,
+                    targetSettings,
+                    globalSettings,
+                    "Controller restarted before local deployment completion was recorded",
+                    "controller-restart"
+                );
                 continue;
             }
             this.deploymentStore.setPhase(projectName, target.id, "reconnecting");

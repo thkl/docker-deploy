@@ -107,7 +107,6 @@ class App {
         await this.warmLocalCapabilities();
         const config = this.configStore.readConfig();
         await this.deploymentService.reconcileRunningDeployments(config);
-        await this.deploymentService.cleanupStaleTempDeployments(config);
         this.configureBodyParsing();
         this.app.use(apiEnvelopeMiddleware);
         registerRoutes(this.app, {
