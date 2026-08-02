@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CheckoutBindMountInspection, DockerNetworkInventory, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
+import { CheckoutBindMountInspection, DockerNetworkInventory, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -537,6 +537,15 @@ export async function validateTraefikConfig(serverId: string, globalSettings: Gl
 
 async function inspectTraefikContainers(networkName: string) {
     const command = `TRAEFIK_IDS="$(docker ps -aq --filter label=org.opencontainers.image.title=Traefik)"
+if [ -z "$TRAEFIK_IDS" ]; then
+    TRAEFIK_IDS="$(docker ps -aq --filter label=com.docker.swarm.service.name=traefik)"
+fi
+if [ -z "$TRAEFIK_IDS" ]; then
+    TRAEFIK_IDS="$(docker ps -aq --filter label=com.docker.stack.namespace=traefik)"
+fi
+if [ -z "$TRAEFIK_IDS" ]; then
+    TRAEFIK_IDS="$(docker ps -a --format '{{.ID}} {{.Image}} {{.Names}} {{.Label "com.docker.swarm.service.name"}} {{.Label "com.docker.stack.namespace"}}' | grep -Ei '(^|[ /_])traefik(:| |$|_)' | awk '{print $1}')"
+fi
 if [ -z "$TRAEFIK_IDS" ]; then
     TRAEFIK_IDS="$(docker ps -a --format '{{.ID}} {{.Image}} {{.Names}}' | grep -Ei '(^|[ /])traefik(:| |$)' | awk '{print $1}')"
 fi
@@ -1151,10 +1160,30 @@ export async function diagnoseProjectTraefik(repoName: string, appSettings: Proj
                 apk add --no-cache docker-cli > /dev/null 2>&1
                 TRAEFIK_IDS="$(docker ps -q --filter label=org.opencontainers.image.title=Traefik)"
                 if [ -z "$TRAEFIK_IDS" ]; then
+                    TRAEFIK_IDS="$(docker ps -q --filter label=com.docker.swarm.service.name=traefik)"
+                fi
+                if [ -z "$TRAEFIK_IDS" ]; then
+                    TRAEFIK_IDS="$(docker ps -q --filter label=com.docker.stack.namespace=traefik)"
+                fi
+                if [ -z "$TRAEFIK_IDS" ]; then
+                    TRAEFIK_IDS="$(docker ps --format '{{.ID}} {{.Image}} {{.Names}} {{.Label "com.docker.swarm.service.name"}} {{.Label "com.docker.stack.namespace"}}' | grep -Ei '(^|[ /_])traefik(:| |$|_)' | awk '{print $1}')"
+                fi
+                if [ -z "$TRAEFIK_IDS" ]; then
                     TRAEFIK_IDS="$(docker ps --format '{{.ID}} {{.Image}} {{.Names}}' | grep -Ei '(^|[ /])traefik(:| |$)' | awk '{print $1}')"
                 fi
+                TRAEFIK_SERVICE_IDS="$(docker service ls --format '{{.ID}} {{.Image}} {{.Name}}' 2>/dev/null | grep -Ei '(^|[ /])traefik(:| |$)' | awk '{print $1}')"
                 TARGET_ID="$(docker ps -q --filter ${shellQuote(`label=com.docker.compose.project=${composeProjectName}`)} --filter ${shellQuote(`label=com.docker.compose.service=${serviceName}`)} | head -n 1)"
                 NETWORK_PRESENT="$(docker network inspect ${shellQuote(network)} > /dev/null 2>&1 && echo true || echo false)"
+                NETWORK_ID=""
+                NETWORK_DRIVER=""
+                NETWORK_SCOPE=""
+                NETWORK_ATTACHABLE=""
+                if [ "$NETWORK_PRESENT" = "true" ]; then
+                    NETWORK_ID="$(docker network inspect ${shellQuote(network)} --format '{{.Id}}' 2>/dev/null || true)"
+                    NETWORK_DRIVER="$(docker network inspect ${shellQuote(network)} --format '{{.Driver}}' 2>/dev/null || true)"
+                    NETWORK_SCOPE="$(docker network inspect ${shellQuote(network)} --format '{{.Scope}}' 2>/dev/null || true)"
+                    NETWORK_ATTACHABLE="$(docker network inspect ${shellQuote(network)} --format '{{.Attachable}}' 2>/dev/null || true)"
+                fi
                 TRAEFIK_ON_NETWORK=false
                 TARGET_ON_NETWORK=false
                 if [ -n "$TRAEFIK_IDS" ]; then
@@ -1164,15 +1193,33 @@ export async function diagnoseProjectTraefik(repoName: string, appSettings: Proj
                         fi
                     done
                 fi
+                if [ -n "$TRAEFIK_SERVICE_IDS" ]; then
+                    for id in $TRAEFIK_SERVICE_IDS; do
+                        SERVICE_NETWORKS="$(docker service inspect "$id" --format '{{json .Spec.TaskTemplate.Networks}} {{json .Endpoint.VirtualIPs}}' 2>/dev/null || true)"
+                        if echo "$SERVICE_NETWORKS" | grep -q "$NETWORK_ID"; then
+                            TRAEFIK_ON_NETWORK=true
+                        fi
+                    done
+                fi
                 if [ -n "$TARGET_ID" ]; then
                     if docker inspect "$TARGET_ID" --format '{{json .NetworkSettings.Networks}}' | grep -q ${shellQuote(`"${network}"`)}; then
                         TARGET_ON_NETWORK=true
                     fi
                 fi
+                ATTACHABLE=false
+                ATTACH_EXIT=125
+                ATTACH_OUTPUT=""
+                if [ "$NETWORK_PRESENT" = "true" ]; then
+                    ATTACH_OUTPUT="$(timeout 20 docker run --rm --network ${shellQuote(network)} alpine:latest sh -c true 2>&1)"
+                    ATTACH_EXIT=$?
+                    if [ "$ATTACH_EXIT" -eq 0 ]; then
+                        ATTACHABLE=true
+                    fi
+                fi
                 REACHABLE=false
                 REACH_EXIT=125
                 REACH_OUTPUT=""
-                if [ "$NETWORK_PRESENT" = "true" ]; then
+                if [ "$NETWORK_PRESENT" = "true" ] && [ "$ATTACHABLE" = "true" ]; then
                     REACH_OUTPUT="$(docker run --rm --network ${shellQuote(network)} alpine:latest wget -T 5 -qO- ${shellQuote(url)} >/dev/null 2>&1)"
                     REACH_EXIT=$?
                     if [ "$REACH_EXIT" -eq 0 ] || echo "$REACH_OUTPUT" | grep -Eiq 'server returned error|404|401|403|500'; then
@@ -1180,10 +1227,17 @@ export async function diagnoseProjectTraefik(repoName: string, appSettings: Proj
                     fi
                 fi
                 echo "traefikContainerCount=$(printf "%s\\n" "$TRAEFIK_IDS" | sed '/^$/d' | wc -l | tr -d ' ')"
+                echo "traefikServiceCount=$(printf "%s\\n" "$TRAEFIK_SERVICE_IDS" | sed '/^$/d' | wc -l | tr -d ' ')"
                 echo "targetPresent=$([ -n "$TARGET_ID" ] && echo true || echo false)"
                 echo "networkPresent=$NETWORK_PRESENT"
+                echo "networkDriver=$NETWORK_DRIVER"
+                echo "networkScope=$NETWORK_SCOPE"
+                echo "networkAttachable=$NETWORK_ATTACHABLE"
                 echo "traefikOnNetwork=$TRAEFIK_ON_NETWORK"
                 echo "targetOnNetwork=$TARGET_ON_NETWORK"
+                echo "attachable=$ATTACHABLE"
+                echo "attachExit=$ATTACH_EXIT"
+                printf "attachOutput=%s\\n" "$ATTACH_OUTPUT"
                 echo "reachable=$REACHABLE"
                 echo "reachExit=$REACH_EXIT"
                 printf "reachOutput=%s\\n" "$REACH_OUTPUT"
@@ -1193,29 +1247,48 @@ EOF`;
         const { stdout } = await execAsync(dockerRunCommand, { maxBuffer: 2 * 1024 * 1024 });
         const raw = parseKeyValueOutput(stdout);
         const traefikContainerCount = Number(raw.traefikContainerCount || 0);
+        const traefikServiceCount = Number(raw.traefikServiceCount || 0);
         const networkPresent = outputFlag(raw.networkPresent);
+        const networkAttachWorks = outputFlag(raw.attachable);
         const traefikOnNetwork = outputFlag(raw.traefikOnNetwork);
         const targetPresent = outputFlag(raw.targetPresent);
         const targetOnNetwork = outputFlag(raw.targetOnNetwork);
         const reachable = outputFlag(raw.reachable);
+        const traefikWorkloadCount = traefikContainerCount + traefikServiceCount;
+        const localTraefikStatus: TraefikDiagnosticStatus = traefikWorkloadCount > 0 ? "pass" : "warn";
+        const localTraefikNetworkStatus: TraefikDiagnosticStatus = traefikOnNetwork ? "pass" : "warn";
         const checks: TraefikDiagnosticCheck[] = [
             {
-                key: "traefik-container",
-                label: "Traefik container",
-                status: traefikContainerCount > 0 ? "pass" : "fail",
-                detail: traefikContainerCount > 0 ? `${traefikContainerCount} Traefik container(s) found.` : "No running Traefik container was found."
+                key: "traefik-workload",
+                label: "Traefik workload",
+                status: localTraefikStatus,
+                detail: traefikWorkloadCount > 0
+                    ? `${traefikContainerCount} container(s), ${traefikServiceCount} Swarm service(s) found.`
+                    : "No local Traefik workload was found on this Docker node. This is OK when Traefik runs on another Swarm node and uses the same overlay network."
             },
             {
                 key: "network-present",
                 label: "Docker network",
                 status: networkPresent ? "pass" : "fail",
-                detail: networkPresent ? `${network} exists.` : `${network} does not exist on the target Docker host.`
+                detail: networkPresent
+                    ? `${network} exists${raw.networkDriver || raw.networkScope ? ` (${[raw.networkDriver, raw.networkScope].filter(Boolean).join(", ")}, attachable=${raw.networkAttachable || "unknown"})` : ""}.`
+                    : `${network} does not exist on the target Docker host.`
+            },
+            {
+                key: "network-attach",
+                label: "Container network attach",
+                status: networkAttachWorks ? "pass" : "fail",
+                detail: networkAttachWorks
+                    ? `A normal Docker container can attach to ${network}.`
+                    : `A normal Docker container could not attach to ${network}${raw.attachOutput ? `: ${raw.attachOutput}` : "."}`
             },
             {
                 key: "traefik-network",
                 label: "Traefik network membership",
-                status: traefikOnNetwork ? "pass" : "fail",
-                detail: traefikOnNetwork ? `Traefik is attached to ${network}.` : `Traefik is not attached to ${network}.`
+                status: localTraefikNetworkStatus,
+                detail: traefikOnNetwork
+                    ? `A local Traefik workload is attached to ${network}.`
+                    : `No local Traefik workload attached to ${network} was found on this node. For Swarm, Traefik may run on another node; the critical check here is whether this app can attach to ${network}.`
             },
             {
                 key: "target-container",
