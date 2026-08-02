@@ -742,6 +742,24 @@ export class ProjectSettingsPage implements OnInit {
     this.builderNetworks.update((networks) => networks.filter((network) => network.id !== id));
   }
 
+  protected detachAndRemoveBuilderNetwork(network: ComposeBuilderNetwork) {
+    const name = network.name.trim();
+    if (!name) {
+      this.removeBuilderNetwork(network.id);
+      return;
+    }
+
+    this.builderServices.update((services) => services.map((service) => ({
+      ...service,
+      networks: removeListValue(service.networks, name),
+    })));
+    if (this.form.controls.traefikNetwork.value.trim() === name) {
+      this.form.controls.traefikNetwork.setValue('');
+      this.traefikFormRevision.update((revision) => revision + 1);
+    }
+    this.removeBuilderNetwork(network.id);
+  }
+
   protected canRemoveBuilderNetwork(network: ComposeBuilderNetwork) {
     return this.builderNetworkReferences().get(network.name.trim()) === undefined;
   }
@@ -947,7 +965,6 @@ export class ProjectSettingsPage implements OnInit {
 
   private toPayload(): ProjectPayload | null {
     if (this.composeMode() === 'builder') {
-      this.normalizeBuilderTraefikRefs();
       const diagnostics = this.builderDiagnostics();
       if (diagnostics.length) {
         this.error.set(diagnostics[0]);
@@ -957,6 +974,11 @@ export class ProjectSettingsPage implements OnInit {
     const value = this.form.getRawValue();
     const serverIds = ensureServerSelected(this.selectedServerIds(), value.serverId.trim() || 'local');
     const traefikSettings = this.currentTraefikComposeSettings();
+    const traefikReferenceError = this.validateTraefikReferences(traefikSettings);
+    if (traefikReferenceError) {
+      this.error.set(traefikReferenceError);
+      return null;
+    }
     const composeOverride = this.composeMode() === 'builder'
       ? renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes(), traefikSettings)
       : mergeTraefikIntoCompose(value.composeOverride.trim(), traefikSettings);
@@ -1047,7 +1069,6 @@ export class ProjectSettingsPage implements OnInit {
 
   private normalizeBuilderTraefikRefs() {
     const serviceNames = this.builderServiceNames();
-    const networkNames = this.builderNetworkNames();
     const value = this.form.getRawValue();
     let changed = false;
 
@@ -1056,14 +1077,32 @@ export class ProjectSettingsPage implements OnInit {
       changed = true;
     }
 
-    if (networkNames.length && !networkNames.includes(value.traefikNetwork.trim())) {
-      this.form.controls.traefikNetwork.setValue(networkNames[0], { emitEvent: false });
-      changed = true;
-    }
-
     if (changed) {
       this.traefikFormRevision.update((revision) => revision + 1);
     }
+  }
+
+  private validateTraefikReferences(traefik: ComposeTraefikSettings) {
+    if (!traefik.enabled) {
+      return '';
+    }
+
+    if (!this.builderServiceNames().includes(traefik.service)) {
+      return `Traefik target service ${traefik.service} no longer exists. Select a service or disable Traefik.`;
+    }
+
+    if (this.composeMode() === 'builder' && !this.builderNetworkNames().includes(traefik.network)) {
+      return `Traefik network ${traefik.network} no longer exists. Select another network or disable Traefik before saving.`;
+    }
+
+    if (this.composeMode() === 'yaml') {
+      const parsed = parseComposeBuilder(this.form.controls.composeOverride.value);
+      if (parsed && !parsed.networks.some((network) => network.name.trim() === traefik.network)) {
+        return `Traefik network ${traefik.network} is not defined in the YAML. Select another network or disable Traefik before saving.`;
+      }
+    }
+
+    return '';
   }
 
   private buildBuilderDiagnostics() {
@@ -1330,6 +1369,10 @@ function addListValue(value: string, item: string) {
 
 function replaceListValue(value: string, previousItem: string, nextItem: string) {
   return uniqueList(splitLines(value).map((item) => item === previousItem ? nextItem : item)).join('\n');
+}
+
+function removeListValue(value: string, item: string) {
+  return splitLines(value).filter((valueItem) => valueItem !== item).join('\n');
 }
 
 function appendList(lines: string[], key: string, value: string) {

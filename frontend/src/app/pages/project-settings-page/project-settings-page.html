@@ -446,8 +446,11 @@
               <span>External</span>
             </label>
             <div class="remove-action">
-              <button type="button" class="secondary" (click)="removeBuilderNetwork(network.id)"
-                [disabled]="!canRemoveBuilderNetwork(network)">Remove</button>
+              @if (canRemoveBuilderNetwork(network)) {
+              <button type="button" class="secondary" (click)="removeBuilderNetwork(network.id)">Remove</button>
+              } @else {
+              <button type="button" class="secondary" (click)="detachAndRemoveBuilderNetwork(network)">Detach & remove</button>
+              }
               @if (networkRemoveReason(network)) {
               <small>{{ networkRemoveReason(network) }}</small>
               }
