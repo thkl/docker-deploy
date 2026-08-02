@@ -114,12 +114,14 @@ ${persistedStorageGuardScript}
                 echo "--> Testing build for new changes..."
                 docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build
                 if [ $? -eq 0 ]; then
-                    echo "--> Build succeeded! Safely dropping old container via compose..."
-                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES down
-                    
-                    echo "--> Starting newly built container..."
-                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build
-                    echo "--> Deployment successful."
+                    echo "--> Build succeeded! Recreating changed services via compose..."
+                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
+                    if [ $? -eq 0 ]; then
+                        echo "--> Deployment successful."
+                    else
+                        echo "--> CRITICAL: Compose up failed after a successful build. Existing containers were not intentionally removed by Deploy."
+                        exit 1
+                    fi
                 else
                     echo "--> CRITICAL: Build failed! Keeping the old container running."
                     exit 1
