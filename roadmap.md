@@ -294,19 +294,21 @@ Agent protocol:
 ## Phase 6.8: Deployment Strategy Planner
 
 Choose the deployment engine automatically from target-server and proxy topology.
-
+- [ ] Switch from python runtime scripts to js and node as runtime !!!
 - [ ] Detect Docker mode per target: standalone engine, Swarm manager, or Swarm worker.
 - [ ] Detect Traefik provider mode: local Docker provider or Swarm provider.
-- [ ] Use normal `docker compose up` for standalone hosts and same-node Docker-provider Traefik.
-- [ ] Use Swarm stack rendering/deploy when Traefik discovers services through the Swarm provider and the project targets any Swarm node.
+- [x] Use normal `docker compose up` for standalone hosts and same-node Docker-provider Traefik.
+- [x] Add a manual project deployment mode switch between single-host Compose and Swarm stack deployment.
+- [x] Use Swarm stack rendering/deploy when Swarm stack mode is selected.
 - [ ] Run `docker stack deploy` through a Swarm manager agent, preferably the controller/local manager, even when the service placement targets another worker node.
-- [ ] Move Traefik labels to `deploy.labels` in Swarm stack mode.
-- [ ] Emit Traefik v3 Swarm labels such as `traefik.swarm.network=<overlay>` instead of Docker-provider labels such as `traefik.providers.docker.network`.
-- [ ] Add placement constraints for selected target nodes in Swarm stack mode.
-- [ ] Support stack deploy options: replicated mode, replica count, placement constraints such as `node.role == worker` or `node.hostname == docker-3`, external overlay networks, and named volumes.
-- [ ] Require pullable images for Swarm stack mode, or add a build-and-push registry workflow before enabling `build:` projects.
+- [x] Move Traefik labels to `deploy.labels` in Swarm stack mode.
+- [x] Emit Traefik v3 Swarm labels such as `traefik.swarm.network=<overlay>` instead of Docker-provider labels such as `traefik.providers.docker.network`.
+- [x] Add placement constraints for selected target nodes in Swarm stack mode.
+- [x] Support stack deploy options: replicated mode, replica count, placement constraints such as `node.role == worker` or `node.hostname == docker-3`, external overlay networks, and named volumes.
+- [x] Require pullable images for Swarm stack mode, or add a build-and-push registry workflow before enabling `build:` projects.
+- [ ] Convert project controls for Swarm projects to stack/service commands: start/stop/restart should use `docker service scale`/`docker service update --force`, delete should use `docker stack rm`, and UI labels should say stack/service instead of container where applicable.
 - [ ] Show the selected strategy and reason in the project UI while keeping provider-specific label placement hidden from users.
-- [ ] Allow image-only stored Compose projects without a repository URL; agents should skip clone/pull and deploy the stored Compose file from the project root workspace.
+- [x] Allow image-only stored Compose projects without a repository URL; agents should skip clone/pull and deploy the stored Compose file from the project root workspace.
 
 ## Phase 6.6: Runtime Status And Logs
 
@@ -426,3 +428,4 @@ Example target layout:
 - [ ] Add recovery-secret based automatic re-pairing for agents whose keypair changed but whose persistent recovery secret is still intact.
 - [ ] Add automatic deployment strategy planner with Swarm stack support for cross-node Traefik discovery.
 - [x] Rename the user-facing product to Deploy while keeping legacy `.updater`, `docker-compose.updater.yml`, and `UPDATER_*` compatibility.
+- [x] Better UI for the Compose Editors Volume Section. Selector for volume or bind mount; creating a volume makes it available in services and bind paths are shown explicitly.

@@ -362,17 +362,39 @@
                 <legend>Volumes</legend>
                 <div class="list-editor-head">
                   <button type="button" class="secondary compact"
-                    (click)="addBuilderServiceListItem(service.id, 'volumes', './data:/data')">Add</button>
+                    (click)="addBuilderNamedVolumeMount(service.id)" [disabled]="builderVolumes().length === 0">Add volume</button>
+                  <button type="button" class="secondary compact" (click)="addBuilderBindMount(service.id)">Add bind</button>
                 </div>
-                @for (volume of builderServiceListItems(service, 'volumes'); track $index) {
-                <div class="list-row">
-                  <input [value]="volume" (input)="updateBuilderServiceListItem(service.id, 'volumes', $index, $event)"
-                    placeholder="app-data:/app/data" />
+                @for (mount of builderVolumeMountEntries(service); track $index) {
+                <div class="list-row volume-mount-row">
+                  <select [value]="mount.kind"
+                    (change)="updateBuilderVolumeMountEntry(service.id, $index, 'kind', $event)">
+                    <option value="volume">Volume</option>
+                    <option value="bind">Bind</option>
+                  </select>
+                  @if (mount.kind === 'volume') {
+                  <select [value]="mount.source"
+                    (change)="updateBuilderVolumeMountEntry(service.id, $index, 'source', $event)">
+                    @for (volume of builderVolumes(); track volume.id) {
+                    <option [value]="volume.name">{{ volume.name || 'Unnamed volume' }}</option>
+                    }
+                  </select>
+                  } @else {
+                  <input [value]="mount.source"
+                    (input)="updateBuilderVolumeMountEntry(service.id, $index, 'source', $event)"
+                    placeholder="./data" />
+                  }
+                  <input [value]="mount.target"
+                    (input)="updateBuilderVolumeMountEntry(service.id, $index, 'target', $event)"
+                    placeholder="/data" />
+                  <input [value]="mount.mode"
+                    (input)="updateBuilderVolumeMountEntry(service.id, $index, 'mode', $event)"
+                    placeholder="ro" />
                   <button type="button" class="secondary compact"
-                    (click)="removeBuilderServiceListItem(service.id, 'volumes', $index)">Remove</button>
+                    (click)="removeBuilderVolumeMountEntry(service.id, $index)">Remove</button>
                 </div>
                 } @empty {
-                <small>No volume mounts configured.</small>
+                <small>Use a named volume for Docker-managed storage or a bind mount for a host path.</small>
                 }
               </fieldset>
 

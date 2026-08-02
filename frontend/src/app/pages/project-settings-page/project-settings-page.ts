@@ -62,6 +62,13 @@ interface ComposeEnvironmentEntry {
   value: string;
 }
 
+interface ComposeVolumeMountEntry {
+  kind: 'volume' | 'bind';
+  source: string;
+  target: string;
+  mode: string;
+}
+
 interface ComposeSecretEnvironmentEntry extends ComposeEnvironmentEntry {
   mode: ProjectEnvironmentSecretMode;
 }
@@ -630,6 +637,49 @@ export class ProjectSettingsPage implements OnInit {
     return splitLines(service[field]);
   }
 
+  protected builderVolumeMountEntries(service: ComposeBuilderService) {
+    return parseVolumeMountEntries(service.volumes, this.builderVolumes().map((volume) => volume.name.trim()).filter(Boolean));
+  }
+
+  protected addBuilderNamedVolumeMount(serviceId: number, source?: string) {
+    const firstVolume = source || this.builderVolumes().find((volume) => volume.name.trim())?.name.trim();
+    if (!firstVolume) {
+      this.addBuilderVolume('data');
+      this.addBuilderVolumeMount(serviceId, { kind: 'volume', source: 'data', target: '/data', mode: '' });
+      return;
+    }
+
+    this.addBuilderVolumeMount(serviceId, { kind: 'volume', source: firstVolume, target: '/data', mode: '' });
+  }
+
+  protected addBuilderBindMount(serviceId: number) {
+    this.addBuilderVolumeMount(serviceId, { kind: 'bind', source: './data', target: '/data', mode: '' });
+  }
+
+  protected updateBuilderVolumeMountEntry(id: number, index: number, field: keyof ComposeVolumeMountEntry, event: Event) {
+    const target = event.target as HTMLInputElement | HTMLSelectElement;
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      const entries = parseVolumeMountEntries(service.volumes, this.builderVolumes().map((volume) => volume.name.trim()).filter(Boolean));
+      const current = entries[index] ?? { kind: 'bind' as const, source: '', target: '', mode: '' };
+      const next = { ...current, [field]: target.value };
+      if (field === 'kind') {
+        next.source = target.value === 'volume'
+          ? this.builderVolumes().find((volume) => volume.name.trim())?.name.trim() || ''
+          : './data';
+      }
+      entries[index] = next;
+      return { ...service, volumes: renderVolumeMountEntries(entries) };
+    }));
+  }
+
+  protected removeBuilderVolumeMountEntry(id: number, index: number) {
+    this.removeBuilderServiceListItem(id, 'volumes', index);
+  }
+
   protected addBuilderServiceListItem(id: number, field: ComposeBuilderListField, value = '') {
     this.builderServices.update((services) => services.map((service) => {
       if (service.id !== id) {
@@ -662,6 +712,16 @@ export class ProjectSettingsPage implements OnInit {
       const items = splitLines(service[field]);
       items.splice(index, 1);
       return { ...service, [field]: items.join('\n') };
+    }));
+  }
+
+  private addBuilderVolumeMount(id: number, entry: ComposeVolumeMountEntry) {
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== id) {
+        return service;
+      }
+
+      return { ...service, volumes: renderVolumeMountEntries([...parseVolumeMountEntries(service.volumes, this.builderVolumes().map((volume) => volume.name.trim()).filter(Boolean)), entry]) };
     }));
   }
 
@@ -1632,24 +1692,83 @@ function appendDuplicateNameDiagnostics(diagnostics: string[], label: string, na
 }
 
 function volumeMountSource(mount: string) {
+  return parseVolumeMountSourceTarget(mount).source;
+}
+
+function parseVolumeMountEntries(value: string, namedVolumes: string[]): ComposeVolumeMountEntry[] {
+  const volumeNames = new Set(namedVolumes);
+  return splitMultiline(value).map((mount) => {
+    const parsed = parseVolumeMountSourceTarget(mount);
+    const kind = parsed.source && !isHostVolumeSource(parsed.source) && volumeNames.has(parsed.source) ? 'volume' as const : 'bind' as const;
+    return {
+      kind,
+      source: parsed.source,
+      target: parsed.target,
+      mode: parsed.mode
+    };
+  }).filter((entry) => entry.source || entry.target);
+}
+
+function renderVolumeMountEntries(entries: ComposeVolumeMountEntry[]) {
+  return entries
+    .map((entry) => {
+      const source = entry.source.trim();
+      const target = entry.target.trim();
+      const mode = entry.mode.trim();
+      if (!source && !target) {
+        return '';
+      }
+      if (!target) {
+        return source;
+      }
+      return [source, target, mode].filter(Boolean).join(':');
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function splitMultiline(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseVolumeMountSourceTarget(mount: string) {
   const trimmed = mount.trim();
   if (!trimmed) {
-    return '';
+    return { source: '', target: '', mode: '' };
   }
 
   const windowsDrive = trimmed.match(/^[a-zA-Z]:[\\/]/);
   if (windowsDrive) {
     const remainder = trimmed.slice(2);
     const separator = remainder.search(/:/);
-    return separator === -1 ? trimmed : trimmed.slice(0, separator + 2);
+    if (separator === -1) {
+      return { source: trimmed, target: '', mode: '' };
+    }
+    const sourceEnd = separator + 2;
+    const rest = trimmed.slice(sourceEnd + 1);
+    const nextSeparator = rest.indexOf(':');
+    return {
+      source: trimmed.slice(0, sourceEnd).trim().replace(/^["']|["']$/g, ''),
+      target: (nextSeparator === -1 ? rest : rest.slice(0, nextSeparator)).trim(),
+      mode: nextSeparator === -1 ? '' : rest.slice(nextSeparator + 1).trim()
+    };
   }
 
   const separator = trimmed.indexOf(':');
   if (separator === -1) {
-    return '';
+    return { source: '', target: trimmed, mode: '' };
   }
 
-  return trimmed.slice(0, separator).trim().replace(/^["']|["']$/g, '');
+  const rest = trimmed.slice(separator + 1);
+  const nextSeparator = rest.indexOf(':');
+  return {
+    source: trimmed.slice(0, separator).trim().replace(/^["']|["']$/g, ''),
+    target: (nextSeparator === -1 ? rest : rest.slice(0, nextSeparator)).trim(),
+    mode: nextSeparator === -1 ? '' : rest.slice(nextSeparator + 1).trim()
+  };
 }
 
 function isHostVolumeSource(source: string) {
