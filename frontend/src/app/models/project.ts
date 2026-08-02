@@ -14,19 +14,23 @@ export interface TraefikSettings {
 
 export type DeploymentStatus = 'running' | 'succeeded' | 'failed';
 export type DeploymentTrigger = 'webhook' | 'ci' | 'manual';
+export type DeploymentPhase = 'queued' | 'dispatching' | 'running' | 'reconnecting' | 'reconciling' | 'cleanup' | 'succeeded' | 'failed' | 'canceled';
 
 export interface DeploymentRecord {
   id: string;
+  runId?: string;
   projectId?: string;
   projectName: string;
   serverId?: string;
   trigger: DeploymentTrigger;
   status: DeploymentStatus;
+  phase?: DeploymentPhase;
   startedAt: string;
   finishedAt?: string;
   exitCode?: number | string;
   error?: string;
   log: string;
+  targets?: DeploymentRecord[];
 }
 
 export interface ProjectSummary {

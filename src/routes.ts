@@ -668,8 +668,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             return;
         }
 
-        const deployments = deploymentService.startDeployment(projectName, appSettings, "manual");
-        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployments[0]?.id, deploymentIds: deployments.map((deployment) => deployment.id) });
+        const deployment = deploymentService.startDeployment(projectName, appSettings, "manual");
+        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
     });
 
     app.post("/api/projects/:name/deployments/cancel", (req: Request, res: Response) => {
@@ -1072,7 +1072,7 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             return;
         }
 
-        const deployments = deploymentService.startDeployment(projectName, appSettings, "webhook");
+        const deployment = deploymentService.startDeployment(projectName, appSettings, "webhook");
         webhookStore.record({
             projectId: appSettings.id,
             projectName,
@@ -1081,9 +1081,9 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             status: "dispatched",
             reason: "Webhook matched project and dispatched deployment.",
             candidates,
-            deploymentId: deployments[0]?.id
+            deploymentId: deployment.targets?.[0]?.id ?? deployment.id
         });
-        console.log(`Webhook deployment dispatched for ${projectName} (${deployments.map((deployment) => deployment.id).join(", ")}).`);
+        console.log(`Webhook deployment dispatched for ${projectName} (${deployment.id}: ${(deployment.targets ?? []).map((target) => target.id).join(", ")}).`);
         res.status(200).send("Build worker dispatched");
     }
 }
@@ -1118,8 +1118,8 @@ function registerCiDeployRoute(app: Express, dependencies: Pick<RouteDependencie
             return;
         }
 
-        const deployments = deploymentService.startDeployment(projectName, appSettings, "ci");
-        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployments[0]?.id, deploymentIds: deployments.map((deployment) => deployment.id) });
+        const deployment = deploymentService.startDeployment(projectName, appSettings, "ci");
+        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
     });
 }
 

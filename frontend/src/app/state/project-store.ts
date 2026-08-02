@@ -172,7 +172,14 @@ export class ProjectStore {
 
           const previous = project.lastDeployment;
           const next = event.deployment && previous?.id === event.deployment.id && !event.deployment.log
-            ? { ...event.deployment, log: previous.log }
+            ? {
+                ...event.deployment,
+                log: previous.log,
+                targets: event.deployment.targets?.map((target) => ({
+                  ...target,
+                  log: previous.targets?.find((candidate) => candidate.id === target.id)?.log ?? target.log,
+                })),
+              }
             : event.deployment;
           return { ...project, lastDeployment: next };
         }),

@@ -9,7 +9,7 @@ import { AppDatabase } from "./database.js";
 import { ConfigStore } from "./configStore.js";
 import { DeploymentService } from "./deploymentService.js";
 import { DeploymentStreamHub } from "./deploymentStreams.js";
-import { DeploymentStore } from "./deploymentStore.js";
+import { DeploymentRecord, DeploymentStore } from "./deploymentStore.js";
 import { EventBus } from "./eventBus.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ensureControllerKeys } from "./keyStore.js";
@@ -85,7 +85,7 @@ class App {
             type: "deployment.updated",
             projectId: deployment?.projectId,
             projectName,
-            deployment: deployment ? { ...deployment, log: "" } : null
+            deployment: deployment ? stripDeploymentLogs(deployment) : null
         }),
         async (serverId) => {
             await this.agentHealth.refreshServer(serverId);
@@ -207,6 +207,14 @@ class App {
             res.status(500).json(apiError(error.message || "Internal server error.", 500));
         });
     }
+}
+
+function stripDeploymentLogs(deployment: DeploymentRecord): DeploymentRecord {
+    return {
+        ...deployment,
+        log: "",
+        ...(deployment.targets ? { targets: deployment.targets.map((target) => ({ ...target, log: "" })) } : {})
+    };
 }
 
 const role = process.env.DEPLOY_ROLE || process.env.UPDATER_ROLE || "standalone";

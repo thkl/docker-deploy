@@ -135,12 +135,24 @@ export class AppDatabase {
             CREATE TABLE IF NOT EXISTS deployments (
                 id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                run_id TEXT,
                 server_id TEXT NOT NULL REFERENCES servers(id),
+                trigger TEXT NOT NULL,
+                status TEXT NOT NULL,
+                phase TEXT NOT NULL DEFAULT 'running',
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                exit_code TEXT,
+                error TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS deployment_runs (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 trigger TEXT NOT NULL,
                 status TEXT NOT NULL,
                 started_at TEXT NOT NULL,
                 finished_at TEXT,
-                exit_code TEXT,
                 error TEXT
             );
 
@@ -194,7 +206,10 @@ export class AppDatabase {
         this.ensureColumn("servers", "capabilities_json", "TEXT");
         this.ensureColumn("projects", "env_secrets_json", "TEXT");
         this.ensureColumn("projects", "server_ids_json", "TEXT");
+        this.ensureColumn("deployments", "run_id", "TEXT");
+        this.ensureColumn("deployments", "phase", "TEXT NOT NULL DEFAULT 'running'");
         this.migrateProjectsToStableIds();
+        this.backfillDeploymentRuns();
         this.connection.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)").run(String(schemaVersion));
     }
 
@@ -265,9 +280,11 @@ export class AppDatabase {
                     CREATE TABLE deployments_next (
                         id TEXT PRIMARY KEY,
                         project_id TEXT NOT NULL REFERENCES projects_next(id) ON DELETE CASCADE,
+                        run_id TEXT,
                         server_id TEXT NOT NULL REFERENCES servers(id),
                         trigger TEXT NOT NULL,
                         status TEXT NOT NULL,
+                        phase TEXT NOT NULL DEFAULT 'running',
                         started_at TEXT NOT NULL,
                         finished_at TEXT,
                         exit_code TEXT,
@@ -327,10 +344,10 @@ export class AppDatabase {
                     this.connection
                         .prepare(
                             `INSERT INTO deployments_next
-                             (id, project_id, server_id, trigger, status, started_at, finished_at, exit_code, error)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             (id, project_id, run_id, server_id, trigger, status, phase, started_at, finished_at, exit_code, error)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                         )
-                        .run(row.id, projectId, row.server_id, row.trigger, row.status, row.started_at, row.finished_at, row.exit_code, row.error);
+                        .run(row.id, projectId, row.run_id ?? row.id, row.server_id, row.trigger, row.status, row.phase ?? row.status, row.started_at, row.finished_at, row.exit_code, row.error);
                 }
 
                 this.connection.exec(`
@@ -435,6 +452,43 @@ export class AppDatabase {
             for (const record of records) {
                 upsertDeployment(this.connection, normalizeLegacyDeploymentRecord(projectName, record), "local");
             }
+        }
+    }
+
+    /**
+     * Creates parent deployment runs for databases created before multi-target
+     * run tracking existed.
+     */
+    private backfillDeploymentRuns() {
+        const rows = this.connection
+            .prepare(
+                `SELECT id, project_id AS projectId, trigger, status, started_at AS startedAt, finished_at AS finishedAt, error
+                 FROM deployments
+                 WHERE run_id IS NULL
+                    OR run_id = ''
+                    OR run_id NOT IN (SELECT id FROM deployment_runs)`
+            )
+            .all() as unknown as Array<{
+                id: string;
+                projectId: string;
+                trigger: string;
+                status: string;
+                startedAt: string;
+                finishedAt: string | null;
+                error: string | null;
+            }>;
+
+        for (const row of rows) {
+            this.connection
+                .prepare(
+                    `INSERT OR IGNORE INTO deployment_runs
+                     (id, project_id, trigger, status, started_at, finished_at, error)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`
+                )
+                .run(row.id, row.projectId, row.trigger, row.status, row.startedAt, row.finishedAt, row.error);
+            this.connection
+                .prepare("UPDATE deployments SET run_id = ?, phase = COALESCE(NULLIF(phase, ''), status) WHERE id = ?")
+                .run(row.id, row.id);
         }
     }
 
@@ -730,11 +784,19 @@ function upsertDeployment(database: DatabaseSync, record: DeploymentRecord, serv
 
     database
         .prepare(
-            `INSERT OR REPLACE INTO deployments
-             (id, project_id, server_id, trigger, status, started_at, finished_at, exit_code, error)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT OR REPLACE INTO deployment_runs
+             (id, project_id, trigger, status, started_at, finished_at, error)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(record.id, projectId, serverId, record.trigger, record.status, record.startedAt, record.finishedAt ?? null, record.exitCode ? String(record.exitCode) : null, record.error ?? null);
+        .run(record.runId ?? record.id, projectId, record.trigger, record.status, record.startedAt, record.finishedAt ?? null, record.error ?? null);
+
+    database
+        .prepare(
+            `INSERT OR REPLACE INTO deployments
+             (id, project_id, run_id, server_id, trigger, status, phase, started_at, finished_at, exit_code, error)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(record.id, projectId, record.runId ?? record.id, serverId, record.trigger, record.status, record.phase ?? record.status, record.startedAt, record.finishedAt ?? null, record.exitCode ? String(record.exitCode) : null, record.error ?? null);
 
     if (record.log) {
         database
@@ -846,9 +908,11 @@ interface LegacyTraefikRow {
 interface LegacyDeploymentRow {
     id: string;
     project_name: string;
+    run_id?: string | null;
     server_id: string;
     trigger: string;
     status: string;
+    phase?: string | null;
     started_at: string;
     finished_at: string | null;
     exit_code: string | null;

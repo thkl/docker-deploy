@@ -26,7 +26,11 @@
             <strong>{{ server.name }}</strong>
             <small>{{ server.id }} · {{ server.kind }}</small>
           </span>
-          <span class="server-chip" [class.unpaired]="server.status === 'unpaired'" [class.offline]="server.status === 'offline'">{{ server.status || server.kind }}</span>
+          <span class="server-chip" [class.unpaired]="server.status === 'unpaired'" [class.offline]="server.status === 'offline'">{{ server.status || server.kind }}
+            @if (server && server.activeJobs && server.activeJobs.length > 0) { 
+              *
+            }
+          </span>
         </button>
       } @empty {
         <section class="settings-panel">

@@ -14,6 +14,7 @@ import { RuntimeLogStream } from "./deploy.js";
  */
 export class DeploymentService {
     private readonly activeDeployments = new Map<string, RuntimeLogStream>();
+    private readonly serverQueues = new Map<string, Promise<void>>();
 
     constructor(
         private readonly deploymentStore: DeploymentStore,
@@ -30,19 +31,43 @@ export class DeploymentService {
      * into persisted deployment history plus WebSocket broadcasts.
      */
     startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
-        return targetServerIds(appSettings).map((serverId) => this.startDeploymentOnServer(projectName, appSettings, trigger, serverId));
+        const serverIds = targetServerIds(appSettings);
+        const run = this.deploymentStore.startRun(projectName, trigger, serverIds);
+        this.broadcastDeploymentUpdate(projectName, run);
+        for (const target of run.targets ?? []) {
+            this.startDeploymentTarget(projectName, appSettings, target, target.serverId);
+        }
+        return run;
     }
 
-    private startDeploymentOnServer(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger, serverId: string) {
+    private startDeploymentTarget(projectName: string, appSettings: ProjectSettings, deployment: DeploymentRecord, serverId: string) {
+        const previous = this.serverQueues.get(serverId) ?? Promise.resolve();
+        const queued = previous
+            .catch(() => undefined)
+            .then(() => this.dispatchDeploymentTarget(projectName, appSettings, deployment, serverId));
+        this.serverQueues.set(serverId, queued.finally(() => {
+            if (this.serverQueues.get(serverId) === queued) {
+                this.serverQueues.delete(serverId);
+            }
+        }));
+    }
+
+    private async dispatchDeploymentTarget(projectName: string, appSettings: ProjectSettings, deployment: DeploymentRecord, serverId: string) {
+        const current = this.deploymentStore.get(deployment.id);
+        if (current?.status !== "running") {
+            return;
+        }
+
         const targetSettings = { ...appSettings, serverId };
-        const deployment = this.deploymentStore.start(projectName, trigger, serverId);
         const globalSettings = this.globalSettingsStore.readSettings();
-        this.broadcastDeploymentUpdate(projectName, deployment);
+        this.deploymentStore.setPhase(projectName, deployment.id, "dispatching");
+        this.broadcastDeploymentUpdate(projectName);
         void this.refreshServerHealth(serverId);
 
         const agent = this.agentManager.getClient(serverId);
         const deploymentRun = agent.deployProject(projectName, targetSettings, globalSettings, {
             onOutput: (stream, chunk) => {
+                this.deploymentStore.setPhase(projectName, deployment.id, "running");
                 this.deploymentStore.append(projectName, deployment.id, stream, chunk);
                 this.broadcastDeployment(projectName);
             },
@@ -56,6 +81,7 @@ export class DeploymentService {
                 }
                 this.activeDeployments.delete(deployment.id);
                 if (error.code === "remote-agent-job-lost") {
+                    this.deploymentStore.setPhase(projectName, deployment.id, "reconnecting");
                     this.deploymentStore.append(
                         projectName,
                         deployment.id,
@@ -75,7 +101,8 @@ export class DeploymentService {
                 }
                 this.deploymentStore.finish(projectName, deployment.id, "failed", {
                     error: error.message,
-                    exitCode: error.code
+                    exitCode: error.code,
+                    phase: "failed"
                 });
                 this.broadcastDeploymentUpdate(projectName);
                 void this.refreshServerHealth(serverId);
@@ -95,13 +122,14 @@ export class DeploymentService {
             this.activeDeployments.delete(deployment.id);
             this.deploymentStore.finish(projectName, deployment.id, "failed", {
                 error: error instanceof Error ? error.message : "Could not dispatch deployment.",
-                exitCode: "dispatch"
+                exitCode: "dispatch",
+                phase: "failed"
             });
             this.broadcastDeploymentUpdate(projectName);
             void this.refreshServerHealth(serverId);
         });
 
-        return deployment;
+        return;
     }
 
     private async finishSuccessfulDeployment(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
@@ -111,8 +139,9 @@ export class DeploymentService {
         }
 
         this.activeDeployments.delete(deploymentId);
+        this.deploymentStore.setPhase(projectName, deploymentId, "cleanup");
         await this.cleanupCheckoutAfterDeploy(projectName, deploymentId, appSettings, globalSettings);
-        this.deploymentStore.finish(projectName, deploymentId, "succeeded");
+        this.deploymentStore.finish(projectName, deploymentId, "succeeded", { phase: "succeeded" });
         this.broadcastDeploymentUpdate(projectName);
         void this.refreshServerHealth(appSettings.serverId ?? "local");
         void this.refreshRuntimeStatus(projectName);
@@ -185,18 +214,24 @@ export class DeploymentService {
             throw new Error("No running deployment exists for this project.");
         }
 
-        const stream = this.activeDeployments.get(latest.id);
-        if (!stream) {
+        const targets = latest.targets?.length ? latest.targets : [latest];
+        if (!targets.some((target) => this.activeDeployments.has(target.id))) {
             throw new Error("This deployment is not active in the current controller process.");
         }
 
-        this.activeDeployments.delete(latest.id);
-        this.deploymentStore.append(projectName, latest.id, "stdout", "--> Deployment canceled by user.\n");
-        stream.stop();
-        this.deploymentStore.finish(projectName, latest.id, "failed", {
-            error: "Deployment canceled by user.",
-            exitCode: "canceled"
-        });
+        for (const target of targets) {
+            const targetStream = this.activeDeployments.get(target.id);
+            if (targetStream) {
+                this.activeDeployments.delete(target.id);
+                targetStream.stop();
+            }
+            this.deploymentStore.append(projectName, target.id, "stdout", "--> Deployment canceled by user.\n");
+            this.deploymentStore.finish(projectName, target.id, "failed", {
+                error: "Deployment canceled by user.",
+                exitCode: "canceled",
+                phase: "canceled"
+            });
+        }
         this.broadcastDeploymentUpdate(projectName);
         void this.refreshServerHealth(appSettings.serverId ?? "local");
         void this.refreshRuntimeStatus(projectName);
@@ -260,11 +295,18 @@ export class DeploymentService {
      */
     async reconcileLatestDeployment(projectName: string, appSettings: ProjectSettings) {
         const latest = this.deploymentStore.latest(appSettings.id ?? projectName);
-        if (latest?.status !== "running" || this.activeDeployments.has(latest.id)) {
+        if (latest?.status !== "running") {
             return latest;
         }
 
-        await this.reconcileDeployment(projectName, latest.id, appSettings, this.globalSettingsStore.readSettings());
+        const targets = latest.targets?.length ? latest.targets : [latest];
+        const globalSettings = this.globalSettingsStore.readSettings();
+        for (const target of targets) {
+            if (target.status !== "running" || this.activeDeployments.has(target.id)) {
+                continue;
+            }
+            await this.reconcileDeployment(projectName, target.id, { ...appSettings, serverId: target.serverId || appSettings.serverId || "local" }, globalSettings);
+        }
         return this.deploymentStore.latest(appSettings.id ?? projectName);
     }
 
@@ -278,6 +320,8 @@ export class DeploymentService {
     ) {
         try {
             await delay(5000);
+            this.deploymentStore.setPhase(projectName, deploymentId, "reconciling");
+            this.broadcastDeployment(projectName);
             const status = await this.agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettings);
             if (status.status === "running" || status.status === "partial") {
                 this.deploymentStore.append(

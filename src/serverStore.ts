@@ -124,6 +124,7 @@ export class ServerStore {
                 .run(server.id);
             this.database.prepare("DELETE FROM runtime_operations WHERE server_id = ?").run(server.id);
             this.database.prepare("DELETE FROM deployments WHERE server_id = ?").run(server.id);
+            this.database.prepare("DELETE FROM deployment_runs WHERE id NOT IN (SELECT DISTINCT run_id FROM deployments WHERE run_id IS NOT NULL)").run();
             this.database.prepare("DELETE FROM agents WHERE server_id = ?").run(server.id);
             this.database.prepare("DELETE FROM servers WHERE id = ?").run(server.id);
             this.database.exec("COMMIT");

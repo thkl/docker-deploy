@@ -270,6 +270,15 @@
             <span class="error-text">{{ deployment.error }}</span>
           }
         </div>
+        @if ((deployment.targets?.length ?? 0) > 1) {
+          <div class="target-list">
+            @for (target of deployment.targets; track target.id) {
+              <span class="target-chip" [class.running]="target.status === 'running'" [class.failed]="target.status === 'failed'">
+                {{ target.serverId || 'local' }} · {{ statusLabel(target) }}{{ target.phase ? ' · ' + target.phase : '' }}
+              </span>
+            }
+          </div>
+        }
         <pre #deployLog class="deploy-log" (scroll)="onLogScroll()" [innerHTML]="decodedAnsiLog(deployment.log, 'Waiting for worker output...')"></pre>
       } @else {
         <div class="empty-log">Trigger a deployment to capture worker output here.</div>
