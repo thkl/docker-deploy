@@ -66,7 +66,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
     const workerScript = `
-                apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git jq openssh-client > /dev/null 2>&1
+                apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git jq openssh-client py3-yaml python3 > /dev/null 2>&1
 
                 PROJECT_ROOT=${quotedHostAppsPath}
                 PROJECT_ROOT="\${PROJECT_ROOT%/}"
@@ -125,6 +125,53 @@ ${persistedStorageGuardScript}
                         echo "--> CRITICAL: Swarm stack deployment must run on a Docker Swarm manager agent."
                         exit 1
                     fi
+
+                    echo "--> Sanitizing Compose file for Swarm stack deployment..."
+                    python3 - "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" << 'DEPLOY_SWARM_SANITIZE_PY'
+import sys
+import yaml
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as handle:
+    data = yaml.safe_load(handle) or {}
+
+if isinstance(data, dict):
+    data.pop("name", None)
+
+for section in ("networks", "volumes"):
+    resources = data.get(section) if isinstance(data, dict) else None
+    if not isinstance(resources, dict):
+        continue
+    for resource in resources.values():
+        if not isinstance(resource, dict):
+            continue
+        resource.pop("name", None)
+        for key in ("ipam", "driver_opts", "labels"):
+            if resource.get(key) == {}:
+                resource.pop(key, None)
+
+services = data.get("services") if isinstance(data, dict) else None
+if isinstance(services, dict):
+    for service in services.values():
+        if not isinstance(service, dict):
+            continue
+        for key in ("command", "entrypoint"):
+            if service.get(key) is None:
+                service.pop(key, None)
+        deploy = service.get("deploy")
+        if not isinstance(deploy, dict):
+            continue
+        if deploy.get("resources") == {}:
+            deploy.pop("resources", None)
+        placement = deploy.get("placement")
+        constraints = placement.get("constraints") if isinstance(placement, dict) else None
+        if isinstance(constraints, list):
+            seen = set()
+            placement["constraints"] = [item for item in constraints if not (item in seen or seen.add(item))]
+
+with open(path, "w", encoding="utf-8") as handle:
+    yaml.safe_dump(data, handle, default_flow_style=False, sort_keys=False)
+DEPLOY_SWARM_SANITIZE_PY
 
                     echo "--> Validating Swarm stack source..."
                     docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --format json > /tmp/deploy-compose-stack.json

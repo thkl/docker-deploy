@@ -1471,7 +1471,7 @@ function appendEnvironment(lines: string[], value: string) {
 function appendDeploy(lines: string[], service: ComposeBuilderRenderableService, useSwarmDefaults: boolean) {
   const mode = service.deployMode.trim() || (useSwarmDefaults ? 'replicated' : '');
   const replicas = service.deployReplicas.trim() || (useSwarmDefaults && mode !== 'global' ? '1' : '');
-  const constraints = splitLines(service.deployPlacementConstraints || (useSwarmDefaults ? 'node.role == worker' : ''));
+  const constraints = uniqueList(splitLines(service.deployPlacementConstraints || (useSwarmDefaults ? 'node.role == worker' : '')));
   const labels = splitLines(service.deployLabels);
   const advanced = service.deployAdvanced.trim();
 
