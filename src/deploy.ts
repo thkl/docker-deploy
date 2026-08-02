@@ -49,6 +49,7 @@ function shellQuote(value: string | number | boolean) {
 export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}): RuntimeLogStream {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const deploymentStrategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
@@ -70,6 +71,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 PROJECT_ROOT=${quotedHostAppsPath}
                 PROJECT_ROOT="\${PROJECT_ROOT%/}"
                 PROJECT_NAME=${shellQuote(composeProjectName)}
+                DEPLOYMENT_STRATEGY=${shellQuote(deploymentStrategy)}
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/tmpdeploy"
                 RELEASE_DEPLOY="$PROJECT_ROOT/.updater/release"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
@@ -83,13 +85,19 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 elif [ -d "$PROJECT_ROOT/.git" ]; then
                     echo "--> Using legacy project-root Git checkout..."
                     cd "$PROJECT_ROOT"
+                elif [ -n ${shellQuote(composeOverride ? "true" : "")} ]; then
+                    echo "--> No repository URL configured. Using stored Docker Compose file only."
+                    mkdir -p "$PROJECT_ROOT"
+                    cd "$PROJECT_ROOT"
                 else
                     echo "--> CRITICAL: No repository URL is configured and no legacy Git checkout exists at $PROJECT_ROOT."
                     exit 1
                 fi
 
-                echo "--> Fetching latest changes..."
-                git pull --ff-only
+                if [ -d .git ]; then
+                    echo "--> Fetching latest changes..."
+                    git pull --ff-only
+                fi
                 if [ "$PWD" = "$TMP_DEPLOY" ]; then
                     echo "--> Updating stable release checkout..."
                     rm -rf "$RELEASE_DEPLOY"
@@ -110,21 +118,45 @@ ${persistedEnvFileRewriteScript}
 ${persistedStorageRewriteScript}
 ${persistedStorageGuardScript}
                 COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
-                
-                echo "--> Testing build for new changes..."
-                docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build
-                if [ $? -eq 0 ]; then
-                    echo "--> Build succeeded! Recreating changed services via compose..."
-                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
+
+                if [ "$DEPLOYMENT_STRATEGY" = "swarm" ]; then
+                    echo "--> Checking Swarm manager availability..."
+                    if [ "$(docker info --format '{{.Swarm.ControlAvailable}}' 2>/dev/null || echo false)" != "true" ]; then
+                        echo "--> CRITICAL: Swarm stack deployment must run on a Docker Swarm manager agent."
+                        exit 1
+                    fi
+
+                    echo "--> Validating Swarm stack source..."
+                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --format json > /tmp/deploy-compose-stack.json
+                    if jq -e '.services // {} | to_entries[] | select(.value.build != null)' /tmp/deploy-compose-stack.json > /dev/null; then
+                        echo "--> CRITICAL: Swarm stack deployment requires image-based services. Remove build directives or publish images before deploying as a stack."
+                        exit 1
+                    fi
+
+                    echo "--> Deploying Swarm stack..."
+                    docker stack deploy -c "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" "$PROJECT_NAME"
                     if [ $? -eq 0 ]; then
-                        echo "--> Deployment successful."
+                        echo "--> Swarm stack deployment successful."
                     else
-                        echo "--> CRITICAL: Compose up failed after a successful build. Existing containers were not intentionally removed by Deploy."
+                        echo "--> CRITICAL: Swarm stack deploy failed."
                         exit 1
                     fi
                 else
-                    echo "--> CRITICAL: Build failed! Keeping the old container running."
-                    exit 1
+                    echo "--> Testing build for new changes..."
+                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build
+                    if [ $? -eq 0 ]; then
+                        echo "--> Build succeeded! Recreating changed services via compose..."
+                        docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
+                        if [ $? -eq 0 ]; then
+                            echo "--> Deployment successful."
+                        else
+                            echo "--> CRITICAL: Compose up failed after a successful build. Existing containers were not intentionally removed by Deploy."
+                            exit 1
+                        fi
+                    else
+                        echo "--> CRITICAL: Build failed! Keeping the old container running."
+                        exit 1
+                    fi
                 fi`;
     
     const worker = spawn("docker", [
@@ -289,6 +321,7 @@ function redactValues(value: string, secrets: string[]) {
 export async function stopProjectContainers(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const deploymentStrategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
@@ -304,7 +337,14 @@ export async function stopProjectContainers(repoName: string, appSettings: Proje
                 mkdir -p ${quotedHostAppsPath}
                 PROJECT_ROOT=${quotedHostAppsPath}
                 PROJECT_NAME=${shellQuote(composeProjectName)}
+                DEPLOYMENT_STRATEGY=${shellQuote(deploymentStrategy)}
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
+
+                if [ "$DEPLOYMENT_STRATEGY" = "swarm" ]; then
+                    echo "--> Removing Swarm stack..."
+                    docker stack rm "$PROJECT_NAME"
+                    exit $?
+                fi
 
                 if [ -f "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" ]; then
                     echo "--> Using persisted Deploy Compose file."
@@ -1094,10 +1134,15 @@ function unique(values: string[]) {
 export async function inspectProjectStatus(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<RuntimeStatus> {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    if (appSettings.deploymentStrategy === "swarm") {
+        return inspectSwarmProjectStatus(composeProjectName);
+    }
+
+    const projectLabel = `label=com.docker.compose.project=${composeProjectName}`;
 
     try {
         const { stdout: idsOutput, stderr: idsError } = await execAsync(
-            `docker ps -aq --filter ${shellQuote(`label=com.docker.compose.project=${composeProjectName}`)}`,
+            `docker ps -aq --filter ${shellQuote(projectLabel)}`,
             { maxBuffer: 512 * 1024 }
         );
         if (idsError.trim()) {
@@ -1121,7 +1166,7 @@ export async function inspectProjectStatus(repoName: string, appSettings: Projec
             return runtimeError(stderr.trim());
         }
 
-        const services = (JSON.parse(stdout.trim()) as DockerInspectContainer[]).map(parseRuntimeService);
+        const services = (JSON.parse(stdout.trim()) as DockerInspectContainer[]).map((container) => parseRuntimeService(container, composeProjectName));
 
         return {
             status: summarizeRuntimeStatus(services),
@@ -1130,6 +1175,45 @@ export async function inspectProjectStatus(repoName: string, appSettings: Projec
         };
     } catch (error) {
         return runtimeError(error instanceof Error ? error.message : "Could not inspect runtime status.");
+    }
+}
+
+async function inspectSwarmProjectStatus(composeProjectName: string): Promise<RuntimeStatus> {
+    try {
+        const { stdout: idsOutput, stderr: idsError } = await execAsync(
+            `docker service ls -q --filter ${shellQuote(`label=com.docker.stack.namespace=${composeProjectName}`)}`,
+            { maxBuffer: 512 * 1024 }
+        );
+        if (idsError.trim()) {
+            return runtimeError(idsError.trim());
+        }
+
+        const ids = idsOutput.split(/\s+/).map((id) => id.trim()).filter(Boolean);
+        if (!ids.length) {
+            return {
+                status: "stopped",
+                checkedAt: new Date().toISOString(),
+                services: []
+            };
+        }
+
+        const { stdout, stderr } = await execAsync(
+            `docker service inspect ${ids.map(shellQuote).join(" ")}`,
+            { maxBuffer: 2 * 1024 * 1024 }
+        );
+        if (stderr.trim()) {
+            return runtimeError(stderr.trim());
+        }
+
+        const services = (JSON.parse(stdout.trim()) as DockerInspectService[]).map((service) => parseRuntimeSwarmService(service, composeProjectName));
+
+        return {
+            status: summarizeRuntimeStatus(services),
+            checkedAt: new Date().toISOString(),
+            services
+        };
+    } catch (error) {
+        return runtimeError(error instanceof Error ? error.message : "Could not inspect Swarm runtime status.");
     }
 }
 
@@ -1338,6 +1422,27 @@ EOF`;
  */
 export async function readRuntimeLogs(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number): Promise<RuntimeLogs> {
     const safeTail = Math.min(Math.max(Math.trunc(tail) || 200, 10), 2000);
+    const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    if (appSettings.deploymentStrategy === "swarm") {
+        const serviceName = normalizeRuntimeActionInput(service, "restart");
+        const serviceRef = `${composeProjectName}_${serviceName}`;
+        const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli > /dev/null 2>&1
+                docker service logs --tail ${safeTail} ${shellQuote(serviceRef)}
+EOF`;
+        const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 4 * 1024 * 1024 });
+        return {
+            service: serviceName,
+            containerId: serviceRef,
+            tail: safeTail,
+            checkedAt: new Date().toISOString(),
+            output: `${stdout}${stderr ? `\n${stderr}` : ""}`
+        };
+    }
+
     const status = await inspectProjectStatus(repoName, appSettings, globalSettings);
     const match = status.services.find((candidate) => candidate.service === service || candidate.containerId === service || candidate.containerName === service);
     if (!match?.containerId) {
@@ -1366,6 +1471,25 @@ EOF`;
  */
 export async function followRuntimeLogs(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number, hooks: RuntimeLogHooks = {}): Promise<RuntimeLogStream> {
     const safeTail = Math.min(Math.max(Math.trunc(tail) || 200, 10), 2000);
+    const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    if (appSettings.deploymentStrategy === "swarm") {
+        const serviceName = normalizeRuntimeActionInput(service, "restart");
+        const serviceRef = `${composeProjectName}_${serviceName}`;
+        const worker = spawn("docker", [
+            "run",
+            "-i",
+            "--rm",
+            "-v",
+            "/var/run/docker.sock:/var/run/docker.sock",
+            "alpine:latest",
+            "sh",
+            "-c",
+            `apk add --no-cache docker-cli > /dev/null 2>&1 && docker service logs --follow --tail ${safeTail} ${shellQuote(serviceRef)}`
+        ], { stdio: ["ignore", "pipe", "pipe"] });
+        return wireRuntimeLogWorker(worker, hooks);
+    }
+
     const status = await inspectProjectStatus(repoName, appSettings, globalSettings);
     const match = status.services.find((candidate) => candidate.service === service || candidate.containerId === service || candidate.containerName === service);
     if (!match?.containerId) {
@@ -1432,7 +1556,9 @@ function renderRuntimeServiceActionCommand(repoName: string, appSettings: Projec
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
-    const actionScript = renderRuntimeServiceActionScript(serviceName, action);
+    const actionScript = appSettings.deploymentStrategy === "swarm"
+        ? renderSwarmServiceActionScript(composeProjectName, serviceName, action)
+        : renderRuntimeServiceActionScript(serviceName, action);
 
     return `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -1442,6 +1568,11 @@ function renderRuntimeServiceActionCommand(repoName: string, appSettings: Projec
                 PROJECT_ROOT=${shellQuote(projectPath)}
                 PROJECT_NAME=${shellQuote(composeProjectName)}
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
+
+                if [ ${shellQuote(appSettings.deploymentStrategy === "swarm" ? "true" : "")} = "true" ]; then
+${actionScript}
+                    exit $?
+                fi
 
                 if [ -f "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" ]; then
                     COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
@@ -1537,6 +1668,25 @@ function renderRuntimeServiceActionScript(service: string, action: RuntimeServic
     return `
                 echo "--> Pulling image for ${service}..."
                 docker compose -p "$PROJECT_NAME" $COMPOSE_FILES pull ${quotedService}`;
+}
+
+function renderSwarmServiceActionScript(projectName: string, service: string, action: RuntimeServiceAction) {
+    const serviceRef = shellQuote(`${projectName}_${service}`);
+    if (action === "restart" || action === "recreate" || action === "pull") {
+        return `
+                echo "--> Updating Swarm service ${service}..."
+                docker service update --force ${serviceRef}`;
+    }
+
+    if (action === "start") {
+        return `
+                echo "--> Scaling Swarm service ${service} to 1..."
+                docker service scale ${serviceRef}=1`;
+    }
+
+    return `
+                echo "--> Scaling Swarm service ${service} to 0..."
+                docker service scale ${serviceRef}=0`;
 }
 
 function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {
@@ -1686,15 +1836,18 @@ interface DockerInspectNetwork {
     Ingress?: boolean;
 }
 
-function parseRuntimeService(container: DockerInspectContainer): RuntimeServiceStatus {
+function parseRuntimeService(container: DockerInspectContainer, projectName = ""): RuntimeServiceStatus {
     const ports = formatPublishedPorts(container.NetworkSettings?.Ports);
     const exposedPorts = Object.keys(container.Config?.ExposedPorts ?? {});
     const networks = Object.keys(container.NetworkSettings?.Networks ?? {});
     const networkMode = container.HostConfig?.NetworkMode || "unknown";
     const containerName = container.Name?.replace(/^\/+/, "");
+    const labels = container.Config?.Labels ?? {};
+    const swarmService = labels["com.docker.swarm.service.name"];
+    const swarmServiceName = projectName && swarmService?.startsWith(`${projectName}_`) ? swarmService.slice(projectName.length + 1) : swarmService;
 
     return {
-        service: container.Config?.Labels?.["com.docker.compose.service"] || containerName || container.Id || "unknown",
+        service: labels["com.docker.compose.service"] || swarmServiceName || containerName || container.Id || "unknown",
         ...(containerName ? { containerName } : {}),
         ...(container.Id ? { containerId: container.Id.slice(0, 12) } : {}),
         state: container.State?.Status || "unknown",
@@ -1704,6 +1857,29 @@ function parseRuntimeService(container: DockerInspectContainer): RuntimeServiceS
         networkMode,
         ...(networks.length ? { networks } : {}),
         ...(exposedPorts.length ? { exposedPorts } : {})
+    };
+}
+
+function parseRuntimeSwarmService(service: DockerInspectService, projectName: string): RuntimeServiceStatus {
+    const serviceName = service.Spec?.Name ?? service.ID ?? "unknown";
+    const shortName = serviceName.startsWith(`${projectName}_`) ? serviceName.slice(projectName.length + 1) : serviceName;
+    const desired = service.ServiceStatus?.DesiredTasks ?? service.Spec?.Mode?.Replicated?.Replicas ?? 0;
+    const running = service.ServiceStatus?.RunningTasks ?? 0;
+    const state = desired > 0 && running === desired ? "running" : running > 0 ? "partial" : "stopped";
+    const networks = unique([
+        ...(service.Spec?.TaskTemplate?.Networks ?? []).map((network) => network.Target).filter(Boolean),
+        ...(service.Endpoint?.VirtualIPs ?? []).map((network) => network.NetworkID).filter(Boolean)
+    ]);
+    const ports = formatServicePorts(service.Endpoint?.Ports);
+
+    return {
+        service: shortName,
+        ...(service.ID ? { containerId: service.ID.slice(0, 12) } : {}),
+        state,
+        ...(service.Spec?.TaskTemplate?.ContainerSpec?.Image ? { image: service.Spec.TaskTemplate.ContainerSpec.Image } : {}),
+        ...(ports ? { ports } : {}),
+        networkMode: "swarm",
+        ...(networks.length ? { networks } : {})
     };
 }
 
@@ -1744,6 +1920,10 @@ function summarizeRuntimeStatus(services: RuntimeServiceStatus[]) {
     const running = services.filter((service) => service.state.toLowerCase() === "running").length;
     if (running === services.length) {
         return "running";
+    }
+
+    if (services.some((service) => service.state.toLowerCase() === "partial")) {
+        return "partial";
     }
 
     if (running === 0) {

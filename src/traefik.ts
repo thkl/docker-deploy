@@ -27,37 +27,52 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
     const serviceName = traefik.service || repoName;
     const routerName = traefikRouterName(repoName);
     const network = traefik.network || globalSettings.defaultTraefikNetwork;
+    const deploymentStrategy = settings.deploymentStrategy === "swarm" ? "swarm" : "compose";
+    const networkLabel = deploymentStrategy === "swarm" ? "traefik.swarm.network" : "traefik.providers.docker.network";
     const rule = `Host(\`${traefik.hostname}\`)`;
+    const labels: Array<[string, string | number | boolean]> = [
+        ["traefik.enable", "true"],
+        [networkLabel, network],
+        [`traefik.http.routers.${routerName}.rule`, rule],
+        [`traefik.http.routers.${routerName}.entrypoints`, traefik.entryPoints || globalSettings.defaultTraefikEntryPoints],
+        [`traefik.http.routers.${routerName}.tls`, "true"],
+        [`traefik.http.routers.${routerName}.tls.certresolver`, traefik.certResolver || globalSettings.defaultTraefikCertResolver],
+        [`traefik.http.services.${routerName}.loadbalancer.server.port`, traefik.port || 80]
+    ];
+
     // Wildcard certificate labels follow Traefik's domains[0] syntax.
-    const wildcardLabels = traefik.wildcardCertificate && traefik.wildcardDomain
-        ? `
-      "traefik.http.routers.${routerName}.tls.domains[0].main": ${yamlQuote(traefik.wildcardDomain)}
-      "traefik.http.routers.${routerName}.tls.domains[0].sans": ${yamlQuote(`*.${traefik.wildcardDomain}`)}`
-        : "";
- 
-    const websocketLabels = traefik.websocket
-        ? `
-      "traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection": "Upgrade"
-      "traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Upgrade": "websocket"
-      "traefik.http.routers.${routerName}.middlewares": "${routerName}-websocket@docker"`
-        : "";
+    if (traefik.wildcardCertificate && traefik.wildcardDomain) {
+        labels.push(
+            [`traefik.http.routers.${routerName}.tls.domains[0].main`, traefik.wildcardDomain],
+            [`traefik.http.routers.${routerName}.tls.domains[0].sans`, `*.${traefik.wildcardDomain}`]
+        );
+    }
+
+    if (traefik.websocket) {
+        labels.push(
+            [`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection`, "Upgrade"],
+            [`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Upgrade`, "websocket"],
+            [`traefik.http.routers.${routerName}.middlewares`, `${routerName}-websocket@docker`]
+        );
+    }
   
     // When Traefik fronts the service, published host ports usually create
     // conflicts and are not needed.
     const resetPorts = traefik.removePublishedPorts !== false ? "\n    ports: !reset []" : "";
 
+    const labelIndent = deploymentStrategy === "swarm" ? "        " : "      ";
+    const labelContent = labels.map(([key, value]) => `${labelIndent}${yamlQuote(key)}: ${yamlQuote(value)}`).join("\n");
+
+    const serviceLabelContent = deploymentStrategy === "swarm"
+        ? `    deploy:
+      labels:
+${labelContent}`
+        : `    labels:
+${labelContent}`;
+
     const overrideContent = `services:
   ${yamlQuote(serviceName)}:
-    labels:
-      "traefik.enable": "true"
-      "traefik.providers.docker.network": ${yamlQuote(network)}
-      "traefik.http.routers.${routerName}.rule": ${yamlQuote(rule)}
-      "traefik.http.routers.${routerName}.entrypoints": ${yamlQuote(traefik.entryPoints || globalSettings.defaultTraefikEntryPoints)}
-      "traefik.http.routers.${routerName}.tls": "true"
-      "traefik.http.routers.${routerName}.tls.certresolver": ${yamlQuote(traefik.certResolver || globalSettings.defaultTraefikCertResolver)}
-${wildcardLabels}
-      "traefik.http.services.${routerName}.loadbalancer.server.port": ${yamlQuote(traefik.port || 80)}
-${websocketLabels}
+${serviceLabelContent}
     networks:
       - ${yamlQuote(network)}
 ${resetPorts}

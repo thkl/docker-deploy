@@ -400,6 +400,17 @@ function payloadDeployToken(payload: ProjectPayload) {
     return payload.deployment?.deployToken?.trim() || payload.deployToken?.trim();
 }
 
+function payloadDeploymentStrategy(payload: ProjectPayload, fallback: "compose" | "swarm" = "compose") {
+    const value = payload.deployment?.strategy ?? payload.deployment?.deploymentStrategy ?? payload.deploymentStrategy;
+    if (value === "swarm") {
+        return "swarm" as const;
+    }
+    if (value === "compose") {
+        return "compose" as const;
+    }
+    return fallback;
+}
+
 function payloadComposeOverride(payload: ProjectPayload) {
     return payload.compose?.override?.trim() || payload.composeOverride?.trim();
 }
@@ -535,6 +546,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(repoPath ? { path: repoPath } : {}),
                 ...(composeOverride ? { composeOverride } : {}),
                 ...(envSecrets.length ? { envSecrets } : {}),
+                deploymentStrategy: payloadDeploymentStrategy(payload),
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
@@ -590,6 +602,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(nextPath ? { path: nextPath } : {}),
                 composeOverride: composeOverride || undefined,
                 ...(envSecrets.length ? { envSecrets } : {}),
+                deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
@@ -790,6 +803,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(repositoryUrl ? { repositoryUrl } : existing.repositoryUrl ? { repositoryUrl: existing.repositoryUrl } : {}),
                 ...(payloadProjectPath(payload) ? { path: payloadProjectPath(payload) } : existing.path ? { path: existing.path } : {}),
                 ...(composeOverride ? { composeOverride } : {}),
+                deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
                 ...(traefik ? { traefik } : {})
             };
 
@@ -1152,6 +1166,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
     const deployToken = settings.deployToken ? maskToken(settings.deployToken) : "";
     const composeOverride = settings.composeOverride ?? "";
     const envSecrets = maskEnvSecrets(settings.envSecrets);
+    const deploymentStrategy = settings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const traefik = settings.traefik ?? { enabled: false };
     const lastDeployment = stripInternalDeploymentFields(deploymentStore.latest(settings.id ?? name));
 
@@ -1166,6 +1181,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         deployToken,
         composeOverride,
         envSecrets,
+        deploymentStrategy,
         hasComposeOverride: Boolean(composeOverride),
         traefik,
         lastDeployment,
@@ -1182,6 +1198,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         },
         deployment: {
             deployToken,
+            strategy: deploymentStrategy,
             lastDeployment
         },
         compose: {

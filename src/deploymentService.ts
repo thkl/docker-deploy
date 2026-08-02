@@ -31,7 +31,7 @@ export class DeploymentService {
      * into persisted deployment history plus WebSocket broadcasts.
      */
     startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
-        const serverIds = targetServerIds(appSettings);
+        const serverIds = targetDeploymentServerIds(appSettings);
         const run = this.deploymentStore.startRun(projectName, trigger, serverIds);
         this.broadcastDeploymentUpdate(projectName, run);
         for (const target of run.targets ?? []) {
@@ -459,6 +459,11 @@ function targetServerIds(appSettings: ProjectSettings) {
         .map((serverId) => serverId.trim())
         .filter(Boolean);
     return [...new Set(ids.length ? ids : ["local"])];
+}
+
+function targetDeploymentServerIds(appSettings: ProjectSettings) {
+    const ids = targetServerIds(appSettings);
+    return appSettings.deploymentStrategy === "swarm" ? [ids[0] ?? "local"] : ids;
 }
 
 function delay(ms: number) {

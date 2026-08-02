@@ -113,6 +113,7 @@ export class AppDatabase {
                 path TEXT,
                 compose_override TEXT,
                 env_secrets_json TEXT,
+                deployment_strategy TEXT NOT NULL DEFAULT 'compose',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -208,6 +209,7 @@ export class AppDatabase {
         this.ensureColumn("servers", "capabilities_json", "TEXT");
         this.ensureColumn("projects", "env_secrets_json", "TEXT");
         this.ensureColumn("projects", "server_ids_json", "TEXT");
+        this.ensureColumn("projects", "deployment_strategy", "TEXT NOT NULL DEFAULT 'compose'");
         this.ensureColumn("deployments", "run_id", "TEXT");
         this.ensureColumn("deployments", "phase", "TEXT NOT NULL DEFAULT 'running'");
         this.ensureColumn("deployments", "agent_job_id", "TEXT");
@@ -263,6 +265,7 @@ export class AppDatabase {
                         path TEXT,
                         compose_override TEXT,
                         env_secrets_json TEXT,
+                        deployment_strategy TEXT NOT NULL DEFAULT 'compose',
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
@@ -308,8 +311,8 @@ export class AppDatabase {
                     this.connection
                         .prepare(
                             `INSERT INTO projects_next
-                             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, created_at, updated_at)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, deployment_strategy, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                         )
                         .run(
                             projectId,
@@ -322,6 +325,7 @@ export class AppDatabase {
                             project.path,
                             project.composeOverride,
                             null,
+                            "compose",
                             project.createdAt,
                             project.updatedAt
                         );
@@ -747,8 +751,8 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
     database
         .prepare(
             `INSERT INTO projects
-             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, deployment_strategy, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 server_id = excluded.server_id,
@@ -759,9 +763,10 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
                 path = excluded.path,
                 compose_override = excluded.compose_override,
                 env_secrets_json = excluded.env_secrets_json,
+                deployment_strategy = excluded.deployment_strategy,
                 updated_at = excluded.updated_at`
         )
-        .run(projectId, name, serverId, JSON.stringify(serverIds), encryptSecret(settings.token), settings.repositoryUrl ?? null, encryptSecret(settings.deployToken), settings.path ?? null, settings.composeOverride ?? null, encryptedProjectEnvSecretsJson(settings.envSecrets), existing?.createdAt ?? now, now);
+        .run(projectId, name, serverId, JSON.stringify(serverIds), encryptSecret(settings.token), settings.repositoryUrl ?? null, encryptSecret(settings.deployToken), settings.path ?? null, settings.composeOverride ?? null, encryptedProjectEnvSecretsJson(settings.envSecrets), normalizeDeploymentStrategy(settings.deploymentStrategy), existing?.createdAt ?? now, now);
 
     database.prepare("DELETE FROM project_traefik_settings WHERE project_id = ?").run(projectId);
     if (!settings.traefik) {
@@ -879,6 +884,10 @@ interface LegacyProjectRow {
     composeOverride: string | null;
     createdAt: string;
     updatedAt: string;
+}
+
+function normalizeDeploymentStrategy(value: ProjectSettings["deploymentStrategy"]) {
+    return value === "swarm" ? "swarm" : "compose";
 }
 
 function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] = []) {

@@ -28,6 +28,7 @@ export class ConfigStore {
                     p.path,
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
+                    p.deployment_strategy AS deploymentStrategy,
                     t.enabled AS traefikEnabled,
                     t.hostname AS traefikHostname,
                     t.service AS traefikService,
@@ -102,6 +103,7 @@ export class ConfigStore {
                     p.path,
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
+                    p.deployment_strategy AS deploymentStrategy,
                     t.enabled AS traefikEnabled,
                     t.hostname AS traefikHostname,
                     t.service AS traefikService,
@@ -135,6 +137,7 @@ interface ProjectRow {
     path: string | null;
     composeOverride: string | null;
     envSecretsJson: string | null;
+    deploymentStrategy: string | null;
     traefikEnabled: number | null;
     traefikHostname: string | null;
     traefikService: string | null;
@@ -163,6 +166,7 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
         ...(row.path ? { path: row.path } : {}),
         ...(row.composeOverride ? { composeOverride: row.composeOverride } : {}),
         ...(row.envSecretsJson ? { envSecrets: parseProjectEnvSecrets(row.envSecretsJson) } : {}),
+        deploymentStrategy: row.deploymentStrategy === "swarm" ? "swarm" : "compose",
         ...(row.traefikEnabled === null
             ? {}
             : {

@@ -18,6 +18,8 @@ export interface TraefikSettings {
     removePublishedPorts?: boolean;
 }
 
+export type DeploymentStrategy = "compose" | "swarm";
+
 export interface ProjectSettings {
     id?: string;
     serverId?: string;
@@ -28,6 +30,7 @@ export interface ProjectSettings {
     path?: string;
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
+    deploymentStrategy?: DeploymentStrategy;
     traefik?: TraefikSettings;
 }
 
@@ -70,6 +73,7 @@ export interface ProjectPayload {
     path?: string;
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
+    deploymentStrategy?: DeploymentStrategy;
     traefikEnabled?: boolean;
     traefikHostname?: string;
     traefikService?: string;
@@ -93,6 +97,8 @@ export interface ProjectPayload {
     };
     deployment?: {
         deployToken?: string;
+        strategy?: DeploymentStrategy;
+        deploymentStrategy?: DeploymentStrategy;
     };
     compose?: {
         override?: string;

@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, ComposeValidation, GlobalSettings, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectPayload, ProjectSummary, TraefikDiagnostics } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectPayload, ProjectSummary, TraefikDiagnostics } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -74,6 +74,7 @@ interface ComposeTraefikSettings {
   wildcardDomain: string;
   websocket: boolean;
   removePublishedPorts: boolean;
+  deploymentStrategy: DeploymentStrategy;
 }
 
 @Component({
@@ -227,6 +228,7 @@ export class ProjectSettingsPage implements OnInit {
     repositoryUrl: [''],
     token: [''],
     deployToken: [''],
+    deploymentStrategy: ['compose' as DeploymentStrategy],
     path: [''],
     composeOverride: [''],
     traefikEnabled: [false],
@@ -899,6 +901,7 @@ export class ProjectSettingsPage implements OnInit {
       repositoryUrl: '',
       token: '',
       deployToken: '',
+      deploymentStrategy: 'compose',
       path: '',
       composeOverride: '',
       traefikEnabled: false,
@@ -934,6 +937,7 @@ export class ProjectSettingsPage implements OnInit {
       repositoryUrl: gitSection?.repositoryUrl ?? project.repositoryUrl ?? '',
       token: '',
       deployToken: '',
+      deploymentStrategy: deploymentSection?.strategy ?? project.deploymentStrategy ?? 'compose',
       path: projectSection?.path ?? project.path ?? '',
       composeOverride: composeSection?.override ?? project.composeOverride ?? '',
       traefikEnabled: Boolean(traefik.enabled),
@@ -983,6 +987,7 @@ export class ProjectSettingsPage implements OnInit {
     }
     const value = this.form.getRawValue();
     const serverIds = ensureServerSelected(this.selectedServerIds(), value.serverId.trim() || 'local');
+    const deploymentStrategy = value.deploymentStrategy === 'swarm' ? 'swarm' : 'compose';
     const traefikSettings = this.currentTraefikComposeSettings();
     const traefikReferenceError = this.validateTraefikReferences(traefikSettings);
     if (traefikReferenceError) {
@@ -1023,6 +1028,7 @@ export class ProjectSettingsPage implements OnInit {
       repositoryUrl: value.repositoryUrl.trim(),
       token: value.token.trim(),
       deployToken: value.deployToken.trim(),
+      deploymentStrategy,
       path: value.path.trim(),
       composeOverride: composeOverride.trim(),
       envSecrets,
@@ -1049,6 +1055,7 @@ export class ProjectSettingsPage implements OnInit {
       },
       deployment: {
         deployToken: value.deployToken.trim(),
+        strategy: deploymentStrategy,
       },
       compose: {
         override: composeOverride.trim(),
@@ -1074,6 +1081,7 @@ export class ProjectSettingsPage implements OnInit {
       wildcardDomain: value.traefikWildcardDomain.trim(),
       websocket: value.traefikWebsocket,
       removePublishedPorts: value.traefikRemovePublishedPorts,
+      deploymentStrategy: value.deploymentStrategy === 'swarm' ? 'swarm' : 'compose',
     };
   }
 
@@ -1116,6 +1124,10 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   private canComposeAttachToDockerNetwork(networkName: string) {
+    if (this.form.controls.deploymentStrategy.value === 'swarm') {
+      return true;
+    }
+
     const detail = this.selectedServerTraefikNetworkDetail(networkName);
     return !(detail?.driver === 'overlay' && detail.attachable === false);
   }
@@ -1146,6 +1158,10 @@ export class ProjectSettingsPage implements OnInit {
 
     for (const service of this.builderServices()) {
       const serviceName = service.name.trim() || 'Unnamed service';
+      if (this.form.controls.deploymentStrategy.value === 'swarm' && service.build.trim()) {
+        diagnostics.push(`${serviceName} uses build, but Swarm stack deployment requires an image.`);
+      }
+
       if (service.networkMode.trim() && splitLines(service.networks).length) {
         diagnostics.push(`${serviceName} cannot use network_mode and selected networks together.`);
       }
@@ -1172,7 +1188,7 @@ export class ProjectSettingsPage implements OnInit {
 
     const traefik = this.currentTraefikComposeSettings();
     if (traefik.enabled) {
-      const networkIssue = this.traefikNetworkAttachWarning(traefik.network);
+      const networkIssue = this.form.controls.deploymentStrategy.value === 'swarm' ? '' : this.traefikNetworkAttachWarning(traefik.network);
       if (networkIssue) {
         diagnostics.push(networkIssue);
       }
@@ -1321,9 +1337,10 @@ function prepareComposeBuilderForTraefik(
 
 function renderTraefikLabels(traefik: ComposeTraefikSettings) {
   const routerName = traefikRouterName(traefik.projectName || traefik.service);
+  const networkLabel = traefik.deploymentStrategy === 'swarm' ? 'traefik.swarm.network' : 'traefik.providers.docker.network';
   const labels = [
     `traefik.enable=true`,
-    `traefik.providers.docker.network=${traefik.network}`,
+    `${networkLabel}=${traefik.network}`,
     `traefik.http.routers.${routerName}.rule=Host(\`${traefik.hostname}\`)`,
     `traefik.http.routers.${routerName}.entrypoints=${traefik.entryPoints}`,
     `traefik.http.routers.${routerName}.tls=true`,
@@ -1340,6 +1357,14 @@ function renderTraefikLabels(traefik: ComposeTraefikSettings) {
     labels.push(`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection=Upgrade`);
     labels.push(`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Upgrade=websocket`);
     labels.push(`traefik.http.routers.${routerName}.middlewares=${routerName}-websocket@docker`);
+  }
+
+  if (traefik.deploymentStrategy === 'swarm') {
+    return [
+      'deploy:',
+      '  labels:',
+      ...labels.map((label) => `    - ${yamlScalar(label)}`)
+    ].join('\n');
   }
 
   return [

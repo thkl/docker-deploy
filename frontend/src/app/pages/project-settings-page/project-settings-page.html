@@ -81,6 +81,14 @@
         <input formControlName="deployToken" autocomplete="new-password" placeholder="leave blank to keep or skip"
           type="password" />
       </label>
+
+      <label>
+        <span>Deployment mode</span>
+        <select formControlName="deploymentStrategy">
+          <option value="compose">Single host Compose</option>
+          <option value="swarm">Swarm stack</option>
+        </select>
+      </label>
     </div>
   </section>
 

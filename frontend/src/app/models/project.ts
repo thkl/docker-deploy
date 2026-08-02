@@ -15,6 +15,7 @@ export interface TraefikSettings {
 export type DeploymentStatus = 'running' | 'succeeded' | 'failed';
 export type DeploymentTrigger = 'webhook' | 'ci' | 'manual';
 export type DeploymentPhase = 'queued' | 'dispatching' | 'running' | 'reconnecting' | 'reconciling' | 'cleanup' | 'succeeded' | 'failed' | 'canceled';
+export type DeploymentStrategy = 'compose' | 'swarm';
 
 export interface DeploymentRecord {
   id: string;
@@ -44,6 +45,7 @@ export interface ProjectSummary {
   deployToken: string;
   composeOverride: string;
   envSecrets?: ProjectEnvironmentSecret[];
+  deploymentStrategy?: DeploymentStrategy;
   hasComposeOverride: boolean;
   traefik: TraefikSettings;
   lastDeployment?: DeploymentRecord | null;
@@ -60,6 +62,7 @@ export interface ProjectSummary {
   };
   deployment?: {
     deployToken: string;
+    strategy?: DeploymentStrategy;
     lastDeployment?: DeploymentRecord | null;
   };
   compose?: {
@@ -88,6 +91,7 @@ export interface ProjectPayload {
   path: string;
   composeOverride: string;
   envSecrets?: ProjectEnvironmentSecret[];
+  deploymentStrategy: DeploymentStrategy;
   traefikEnabled: boolean;
   traefikHostname: string;
   traefikService: string;
@@ -111,6 +115,7 @@ export interface ProjectPayload {
   };
   deployment?: {
     deployToken: string;
+    strategy?: DeploymentStrategy;
   };
   compose?: {
     override: string;
