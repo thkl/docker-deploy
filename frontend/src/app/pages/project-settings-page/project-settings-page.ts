@@ -113,8 +113,12 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly selectedServerIds = signal<string[]>(['local']);
   protected readonly servers = this.store.servers;
   protected readonly traefikAvailable = computed(() => {
+    this.traefikFormRevision();
     const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
-    return server ? (server.capabilities?.traefik.available ?? true) : false;
+    const selectedNetwork = this.form.controls.traefikNetwork.value.trim();
+    return server
+      ? Boolean(server.capabilities?.traefik.available || this.builderNetworkNames().length > 0 || selectedNetwork)
+      : true;
   });
   protected readonly title = computed(() => (this.isNew() ? 'New project' : `Settings for ${this.currentName()}`));
   protected readonly submitLabel = computed(() => (this.isNew() ? 'Create project' : 'Save'));
@@ -275,11 +279,6 @@ export class ProjectSettingsPage implements OnInit {
       }
     });
 
-    effect(() => {
-      if (!this.traefikAvailable()) {
-        this.form.controls.traefikEnabled.setValue(false);
-      }
-    });
   }
 
   ngOnInit() {
@@ -1004,7 +1003,7 @@ export class ProjectSettingsPage implements OnInit {
     const envSecrets = this.composeMode() === 'builder' ? collectBuilderEnvSecrets(this.builderServices()) : this.currentProject()?.compose?.envSecrets ?? this.currentProject()?.envSecrets ?? [];
     const traefikPortNumber = Number(value.traefikPort.trim());
     const groupedTraefik = {
-      enabled: this.traefikAvailable() && value.traefikEnabled,
+      enabled: value.traefikEnabled,
       hostname: value.traefikHostname.trim(),
       service: value.traefikService.trim(),
       port: Number.isFinite(traefikPortNumber) ? traefikPortNumber : undefined,
@@ -1063,7 +1062,7 @@ export class ProjectSettingsPage implements OnInit {
     this.traefikFormRevision();
     const value = this.form.getRawValue();
     return {
-      enabled: this.traefikAvailable() && value.traefikEnabled,
+      enabled: value.traefikEnabled,
       projectName: value.name.trim(),
       hostname: value.traefikHostname.trim(),
       service: value.traefikService.trim() || this.builderServiceNames()[0] || value.name.trim(),
