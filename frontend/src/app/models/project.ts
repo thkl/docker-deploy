@@ -206,10 +206,12 @@ export interface ServerCapabilities {
 }
 
 export interface TraefikContainerInventory {
+  kind?: 'container' | 'service';
   id?: string;
   name?: string;
   image?: string;
   state?: string;
+  replicas?: string;
   ports?: string;
   networks: string[];
   mounts: Array<{

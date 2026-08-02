@@ -375,8 +375,8 @@
                 @for (container of traefik.containers; track container.id || container.name) {
                   <article class="traefik-container">
                     <div>
-                      <strong>{{ container.name || container.id }}</strong>
-                      <span>{{ container.image || 'unknown image' }} · {{ container.state || 'unknown state' }}</span>
+                      <strong>{{ container.name || container.id }} · {{ container.kind || 'container' }}</strong>
+                      <span>{{ container.image || 'unknown image' }} · {{ container.state || 'unknown state' }}@if (container.replicas) { · {{ container.replicas }} replicas }</span>
                       @if (container.ports) {
                         <small>{{ container.ports }}</small>
                       }
@@ -394,7 +394,7 @@
                 }
               </div>
             } @else {
-              <p class="muted-copy">No Traefik containers were detected on this server.</p>
+              <p class="muted-copy">No Traefik containers or Swarm services were detected on this server.</p>
             }
 
             @if (validationFor(server); as validation) {

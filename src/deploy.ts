@@ -417,7 +417,7 @@ export async function detectTraefik(globalSettings: GlobalSettings): Promise<Ser
         };
     }
 
-    const inventory = await buildTraefikInventory(result.inspect, result.containerCount, result.networkPresent, networkName, checkedAt);
+    const inventory = await buildTraefikInventory(result.inspect, result.services, result.containerCount + result.serviceCount, result.networkPresent, networkName, checkedAt);
     return inventory;
 }
 
@@ -427,7 +427,7 @@ export async function backupTraefikConfig(serverId: string, globalSettings: Glob
     const result = await inspectTraefikContainers(networkName);
     const inspect = result.ok ? result.inspect : [];
     const inventory = result.ok
-        ? await buildTraefikInventory(inspect, result.containerCount, result.networkPresent, networkName, checkedAt)
+        ? await buildTraefikInventory(inspect, result.services, result.containerCount + result.serviceCount, result.networkPresent, networkName, checkedAt)
         : {
               available: false,
               containerCount: 0,
@@ -449,7 +449,7 @@ export async function validateTraefikConfig(serverId: string, globalSettings: Gl
     const result = await inspectTraefikContainers(networkName);
     const inspect = result.ok ? result.inspect : [];
     const inventory = result.ok
-        ? await buildTraefikInventory(inspect, result.containerCount, result.networkPresent, networkName, checkedAt)
+        ? await buildTraefikInventory(inspect, result.services, result.containerCount + result.serviceCount, result.networkPresent, networkName, checkedAt)
         : {
               available: false,
               containerCount: 0,
@@ -468,10 +468,10 @@ export async function validateTraefikConfig(serverId: string, globalSettings: Gl
     }
 
     checks.push({
-        key: "traefik-container",
-        label: "Traefik container",
+        key: "traefik-workload",
+        label: "Traefik workload",
         status: inventory.containerCount > 0 ? "pass" : "fail",
-        detail: inventory.containerCount > 0 ? `${inventory.containerCount} Traefik container(s) found.` : "No Traefik container was found."
+        detail: inventory.containerCount > 0 ? `${inventory.containerCount} Traefik container/service workload(s) found.` : "No Traefik container or Swarm service was found."
     });
 
     checks.push({
@@ -530,11 +530,19 @@ async function inspectTraefikContainers(networkName: string) {
 if [ -z "$TRAEFIK_IDS" ]; then
     TRAEFIK_IDS="$(docker ps -a --format '{{.ID}} {{.Image}} {{.Names}}' | grep -Ei '(^|[ /])traefik(:| |$)' | awk '{print $1}')"
 fi
+TRAEFIK_SERVICE_IDS="$(docker service ls --format '{{.ID}} {{.Image}} {{.Name}}' 2>/dev/null | grep -Ei '(^|[ /])traefik(:| |$)' | awk '{print $1}')"
 CONTAINERS="$(printf '%s\\n' "$TRAEFIK_IDS" | sed '/^$/d' | wc -l | tr -d ' ')"
+SERVICES="$(printf '%s\\n' "$TRAEFIK_SERVICE_IDS" | sed '/^$/d' | wc -l | tr -d ' ')"
 NETWORK_PRESENT="$(docker network inspect ${shellQuote(networkName)} > /dev/null 2>&1 && echo true || echo false)"
-printf '{"containerCount":%s,"networkPresent":%s,"inspect":' "$CONTAINERS" "$NETWORK_PRESENT"
+printf '{"containerCount":%s,"serviceCount":%s,"networkPresent":%s,"inspect":' "$CONTAINERS" "$SERVICES" "$NETWORK_PRESENT"
 if [ -n "$TRAEFIK_IDS" ]; then
     docker inspect $TRAEFIK_IDS
+else
+    printf '[]'
+fi
+printf ',"services":'
+if [ -n "$TRAEFIK_SERVICE_IDS" ]; then
+    docker service inspect $TRAEFIK_SERVICE_IDS
 else
     printf '[]'
 fi
@@ -542,20 +550,30 @@ printf '}\\n'`;
 
     try {
         const { stdout } = await execAsync(command, { maxBuffer: 1024 * 1024 });
-        const result = JSON.parse(stdout.trim() || "{}") as { containerCount?: number; networkPresent?: boolean; inspect?: DockerInspectContainerWithMounts[] };
+        const result = JSON.parse(stdout.trim() || "{}") as { containerCount?: number; serviceCount?: number; networkPresent?: boolean; inspect?: DockerInspectContainerWithMounts[]; services?: DockerInspectService[] };
         return {
             ok: true as const,
             containerCount: Number(result.containerCount || 0),
+            serviceCount: Number(result.serviceCount || 0),
             networkPresent: Boolean(result.networkPresent),
-            inspect: result.inspect ?? []
+            inspect: result.inspect ?? [],
+            services: result.services ?? []
         };
     } catch (error) {
-        return { ok: false as const, containerCount: 0, networkPresent: false, inspect: [] as DockerInspectContainerWithMounts[] };
+        return { ok: false as const, containerCount: 0, serviceCount: 0, networkPresent: false, inspect: [] as DockerInspectContainerWithMounts[], services: [] as DockerInspectService[] };
     }
 }
 
-async function buildTraefikInventory(inspectedContainers: DockerInspectContainerWithMounts[], containerCount: number, networkPresent: boolean, networkName: string, checkedAt: string): Promise<ServerCapabilities["traefik"]> {
-    const containers = inspectedContainers.map(parseTraefikContainerInventory);
+async function buildTraefikInventory(inspectedContainers: DockerInspectContainerWithMounts[], inspectedServices: DockerInspectService[], containerCount: number, networkPresent: boolean, networkName: string, checkedAt: string): Promise<ServerCapabilities["traefik"]> {
+    const rawContainers = [
+        ...inspectedContainers.map(parseTraefikContainerInventory),
+        ...inspectedServices.map(parseTraefikServiceInventory)
+    ];
+    const networkNameMap = await resolveDockerNetworkNames(unique(rawContainers.flatMap((container) => container.networks)));
+    const containers = rawContainers.map((container) => ({
+        ...container,
+        networks: unique(container.networks.map((network) => networkNameMap[network] || network))
+    }));
     const configArgs = containers.flatMap((container) => container.configArgs);
     const mountedTargets = containers.flatMap((container) => container.mounts.map((mount) => mount.target));
     const staticConfig = await readTraefikStaticConfigInventory(inspectedContainers);
@@ -580,10 +598,38 @@ async function buildTraefikInventory(inspectedContainers: DockerInspectContainer
     };
 }
 
+async function resolveDockerNetworkNames(networks: string[]) {
+    const candidates = unique(networks.filter(Boolean));
+    if (!candidates.length) {
+        return {} as Record<string, string>;
+    }
+
+    const command = candidates.map((network) => `docker network inspect ${shellQuote(network)} --format '{{.Id}} {{.Name}}' 2>/dev/null || true`).join("\n");
+    try {
+        const { stdout } = await execAsync(command, { maxBuffer: 128 * 1024 });
+        return stdout
+            .trim()
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .reduce<Record<string, string>>((result, line) => {
+                const [id, name] = line.trim().split(/\s+/, 2);
+                if (id && name) {
+                    result[id] = name;
+                    result[id.slice(0, 12)] = name;
+                    result[name] = name;
+                }
+                return result;
+            }, {});
+    } catch {
+        return {};
+    }
+}
+
 function parseTraefikContainerInventory(container: DockerInspectContainerWithMounts): TraefikContainerInventory {
     const args = [...(container.Args ?? []), ...(container.Config?.Cmd ?? [])].filter((arg) => arg.startsWith("--"));
     const networks = Object.keys(container.NetworkSettings?.Networks ?? {});
     return {
+        kind: "container",
         ...(container.Id ? { id: container.Id.slice(0, 12) } : {}),
         ...(container.Name ? { name: container.Name.replace(/^\/+/, "") } : {}),
         ...(container.Config?.Image ? { image: container.Config.Image } : {}),
@@ -591,6 +637,32 @@ function parseTraefikContainerInventory(container: DockerInspectContainerWithMou
         ...(formatPublishedPorts(container.NetworkSettings?.Ports) ? { ports: formatPublishedPorts(container.NetworkSettings?.Ports) } : {}),
         networks,
         mounts: (container.Mounts ?? []).map((mount) => ({ source: mount.Source, target: mount.Destination })),
+        configArgs: args
+    };
+}
+
+function parseTraefikServiceInventory(service: DockerInspectService): TraefikContainerInventory {
+    const containerSpec = service.Spec?.TaskTemplate?.ContainerSpec;
+    const args = [...(containerSpec?.Args ?? []), ...(containerSpec?.Command ?? [])].filter((arg) => arg.startsWith("--"));
+    const networks = unique([
+        ...(service.Spec?.TaskTemplate?.Networks ?? []).map((network) => network.Target).filter(Boolean),
+        ...(service.Endpoint?.VirtualIPs ?? []).map((network) => network.NetworkID).filter(Boolean)
+    ]);
+    const ports = formatServicePorts(service.Endpoint?.Ports);
+    return {
+        kind: "service",
+        ...(service.ID ? { id: service.ID.slice(0, 12) } : {}),
+        ...(service.Spec?.Name ? { name: service.Spec.Name } : {}),
+        ...(containerSpec?.Image ? { image: containerSpec.Image } : {}),
+        ...(service.ServiceStatus?.RunningTasks !== undefined || service.ServiceStatus?.DesiredTasks !== undefined
+            ? { state: `${service.ServiceStatus?.RunningTasks ?? 0}/${service.ServiceStatus?.DesiredTasks ?? 0} running` }
+            : {}),
+        ...(service.Spec?.Mode?.Replicated?.Replicas !== undefined
+            ? { replicas: String(service.Spec.Mode.Replicated.Replicas) }
+            : service.Spec?.Mode?.Global ? { replicas: "global" } : {}),
+        ...(ports ? { ports } : {}),
+        networks,
+        mounts: (containerSpec?.Mounts ?? []).map((mount) => ({ source: mount.Source, target: mount.Target })),
         configArgs: args
     };
 }
@@ -1422,6 +1494,7 @@ function windowedKill(worker: ChildProcess) {
 }
 
 type DockerPortBindings = Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+type DockerServicePorts = Array<{ Protocol?: string; TargetPort?: number; PublishedPort?: number; PublishMode?: string }>;
 
 interface DockerInspectContainer {
     Id?: string;
@@ -1456,6 +1529,47 @@ interface DockerInspectContainerWithMounts extends DockerInspectContainer {
     }>;
 }
 
+interface DockerInspectService {
+    ID?: string;
+    Spec?: {
+        Name?: string;
+        Labels?: Record<string, string>;
+        Mode?: {
+            Replicated?: {
+                Replicas?: number;
+            };
+            Global?: Record<string, unknown>;
+        };
+        TaskTemplate?: {
+            ContainerSpec?: {
+                Image?: string;
+                Args?: string[];
+                Command?: string[];
+                Mounts?: Array<{
+                    Type?: string;
+                    Source: string;
+                    Target: string;
+                }>;
+            };
+            Networks?: Array<{
+                Target: string;
+                Aliases?: string[];
+            }>;
+        };
+    };
+    Endpoint?: {
+        Ports?: DockerServicePorts;
+        VirtualIPs?: Array<{
+            NetworkID: string;
+            Addr?: string;
+        }>;
+    };
+    ServiceStatus?: {
+        RunningTasks?: number;
+        DesiredTasks?: number;
+    };
+}
+
 function parseRuntimeService(container: DockerInspectContainer): RuntimeServiceStatus {
     const ports = formatPublishedPorts(container.NetworkSettings?.Ports);
     const exposedPorts = Object.keys(container.Config?.ExposedPorts ?? {});
@@ -1486,6 +1600,23 @@ function formatPublishedPorts(ports: DockerPortBindings | undefined) {
 
             return bindings.map((binding) => `${containerPort} -> ${binding.HostIp || "0.0.0.0"}:${binding.HostPort || ""}`);
         })
+        .join(", ");
+}
+
+function formatServicePorts(ports: DockerServicePorts | undefined) {
+    return (ports ?? [])
+        .map((port) => {
+            const protocol = port.Protocol ? `/${port.Protocol}` : "";
+            const mode = port.PublishMode ? ` (${port.PublishMode})` : "";
+            if (port.PublishedPort && port.TargetPort) {
+                return `${port.PublishedPort}->${port.TargetPort}${protocol}${mode}`;
+            }
+            if (port.TargetPort) {
+                return `${port.TargetPort}${protocol}${mode}`;
+            }
+            return "";
+        })
+        .filter(Boolean)
         .join(", ");
 }
 
