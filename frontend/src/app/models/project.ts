@@ -195,6 +195,7 @@ export interface ServerCapabilities {
     checkedAt: string;
     containers?: TraefikContainerInventory[];
     networks?: string[];
+    networkDetails?: DockerNetworkInventory[];
     entryPoints?: string[];
     certResolvers?: string[];
     dockerProviderNetwork?: string;
@@ -203,6 +204,15 @@ export interface ServerCapabilities {
     dynamicConfigPaths?: string[];
   };
   system?: ServerSystemMetrics;
+}
+
+export interface DockerNetworkInventory {
+  id?: string;
+  name: string;
+  driver?: string;
+  scope?: string;
+  attachable?: boolean;
+  ingress?: boolean;
 }
 
 export interface TraefikContainerInventory {

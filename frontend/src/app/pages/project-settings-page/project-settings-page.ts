@@ -129,7 +129,18 @@ export class ProjectSettingsPage implements OnInit {
       ...(traefik?.networks ?? []),
     ].filter(Boolean) as string[]);
 
-    return detected.filter((network) => !known.has(network));
+    return detected.filter((network) => !known.has(network) && this.canComposeAttachToDockerNetwork(network));
+  });
+  protected readonly unusableTraefikNetworkSuggestions = computed(() => {
+    const known = new Set(this.builderNetworkNames());
+    const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
+    const traefik = server?.capabilities?.traefik;
+    const detected = uniqueList([
+      traefik?.dockerProviderNetwork,
+      ...(traefik?.networks ?? []),
+    ].filter(Boolean) as string[]);
+
+    return detected.filter((network) => !known.has(network) && !this.canComposeAttachToDockerNetwork(network));
   });
   protected readonly builderServiceReferences = computed(() => {
     const refs = new Map<string, string[]>();
@@ -1105,6 +1116,25 @@ export class ProjectSettingsPage implements OnInit {
     return '';
   }
 
+  private canComposeAttachToDockerNetwork(networkName: string) {
+    const detail = this.selectedServerTraefikNetworkDetail(networkName);
+    return !(detail?.driver === 'overlay' && detail.attachable === false);
+  }
+
+  private traefikNetworkAttachWarning(networkName: string) {
+    const detail = this.selectedServerTraefikNetworkDetail(networkName);
+    if (detail?.driver === 'overlay' && detail.attachable === false) {
+      return `${networkName} is a Swarm overlay network but is not attachable. Recreate/update the network as attachable before deploying normal Compose containers to it.`;
+    }
+
+    return '';
+  }
+
+  private selectedServerTraefikNetworkDetail(networkName: string) {
+    const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
+    return server?.capabilities?.traefik.networkDetails?.find((network) => network.name === networkName);
+  }
+
   private buildBuilderDiagnostics() {
     const diagnostics: string[] = [];
     const serviceNames = this.builderServiceNames();
@@ -1143,6 +1173,11 @@ export class ProjectSettingsPage implements OnInit {
 
     const traefik = this.currentTraefikComposeSettings();
     if (traefik.enabled) {
+      const networkIssue = this.traefikNetworkAttachWarning(traefik.network);
+      if (networkIssue) {
+        diagnostics.push(networkIssue);
+      }
+
       const target = this.builderServices().find((service) => service.name.trim() === traefik.service);
       if (!traefik.hostname) {
         diagnostics.push('Traefik needs a hostname.');

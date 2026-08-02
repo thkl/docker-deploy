@@ -255,6 +255,9 @@
                   }
                 </div>
                 }
+                @if (unusableTraefikNetworkSuggestions().length) {
+                <small>Swarm overlay network {{ unusableTraefikNetworkSuggestions().join(', ') }} is not attachable for normal Compose containers.</small>
+                }
               </fieldset>
 
               <fieldset>
@@ -429,6 +432,9 @@
               @for (networkName of detectedTraefikNetworkSuggestions(); track networkName) {
               <button type="button" class="secondary compact"
                 (click)="addDetectedTraefikNetwork(networkName)">Add {{ networkName }}</button>
+              }
+              @if (unusableTraefikNetworkSuggestions().length) {
+              <span>Non-attachable Swarm network: {{ unusableTraefikNetworkSuggestions().join(', ') }}</span>
               }
               <button type="button" class="secondary" (click)="addBuilderNetwork()">Add network</button>
             </div>

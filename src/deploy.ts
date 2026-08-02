@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CheckoutBindMountInspection, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
+import { CheckoutBindMountInspection, DockerNetworkInventory, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -495,6 +495,16 @@ export async function validateTraefikConfig(serverId: string, globalSettings: Gl
         detail: inventory.dockerProviderNetwork ? `Using ${inventory.dockerProviderNetwork}.` : "No Docker provider network was configured or safely inferred."
     });
 
+    const providerNetworkDetail = inventory.networkDetails?.find((network) => network.name === inventory.dockerProviderNetwork);
+    if (providerNetworkDetail?.driver === "overlay" && providerNetworkDetail.attachable === false) {
+        checks.push({
+            key: "docker-provider-network-attachable",
+            label: "Compose attachable network",
+            status: "warn",
+            detail: `${providerNetworkDetail.name} is a Swarm overlay network but is not attachable. Normal Docker Compose containers cannot reliably join it; recreate/update it as attachable or deploy the app as a Swarm service.`
+        });
+    }
+
     if (inventory.certResolvers?.length) {
         checks.push({
             key: "acme-storage",
@@ -574,6 +584,7 @@ async function buildTraefikInventory(inspectedContainers: DockerInspectContainer
         ...container,
         networks: unique(container.networks.map((network) => networkNameMap[network] || network))
     }));
+    const networkDetails = await inspectDockerNetworks(unique(containers.flatMap((container) => container.networks)));
     const configArgs = containers.flatMap((container) => container.configArgs);
     const mountedTargets = containers.flatMap((container) => container.mounts.map((mount) => mount.target));
     const staticConfig = await readTraefikStaticConfigInventory(inspectedContainers);
@@ -589,6 +600,7 @@ async function buildTraefikInventory(inspectedContainers: DockerInspectContainer
         checkedAt,
         ...(containers.length ? { containers } : {}),
         ...(unique(containers.flatMap((container) => container.networks)).length ? { networks: unique(containers.flatMap((container) => container.networks)) } : {}),
+        ...(networkDetails.length ? { networkDetails } : {}),
         ...(entryPoints.length ? { entryPoints } : {}),
         ...(certResolvers.length ? { certResolvers } : {}),
         ...(dockerProviderNetwork ? { dockerProviderNetwork } : {}),
@@ -622,6 +634,28 @@ async function resolveDockerNetworkNames(networks: string[]) {
             }, {});
     } catch {
         return {};
+    }
+}
+
+async function inspectDockerNetworks(networks: string[]): Promise<DockerNetworkInventory[]> {
+    const candidates = unique(networks.filter(Boolean));
+    if (!candidates.length) {
+        return [];
+    }
+
+    try {
+        const { stdout } = await execAsync(`docker network inspect ${candidates.map(shellQuote).join(" ")}`, { maxBuffer: 256 * 1024 });
+        const inspected = JSON.parse(stdout.trim() || "[]") as DockerInspectNetwork[];
+        return inspected.map((network) => ({
+            ...(network.Id ? { id: network.Id.slice(0, 12) } : {}),
+            name: network.Name,
+            ...(network.Driver ? { driver: network.Driver } : {}),
+            ...(network.Scope ? { scope: network.Scope } : {}),
+            ...(typeof network.Attachable === "boolean" ? { attachable: network.Attachable } : {}),
+            ...(typeof network.Ingress === "boolean" ? { ingress: network.Ingress } : {})
+        })).filter((network) => network.name);
+    } catch {
+        return [];
     }
 }
 
@@ -1568,6 +1602,15 @@ interface DockerInspectService {
         RunningTasks?: number;
         DesiredTasks?: number;
     };
+}
+
+interface DockerInspectNetwork {
+    Id?: string;
+    Name: string;
+    Driver?: string;
+    Scope?: string;
+    Attachable?: boolean;
+    Ingress?: boolean;
 }
 
 function parseRuntimeService(container: DockerInspectContainer): RuntimeServiceStatus {
