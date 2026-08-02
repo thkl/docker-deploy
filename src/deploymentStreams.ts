@@ -73,7 +73,7 @@ export class DeploymentStreamHub {
 
         const payload = JSON.stringify({
             type: "deployment",
-            deployment: this.deploymentStore.latest(projectName)
+            deployment: stripInternalDeploymentFields(this.deploymentStore.latest(projectName))
         });
 
         for (const client of clients) {
@@ -122,8 +122,21 @@ export class DeploymentStreamHub {
         webSocket.send(
             JSON.stringify({
                 type: "snapshot",
-                deployment: this.deploymentStore.latest(projectName)
+                deployment: stripInternalDeploymentFields(this.deploymentStore.latest(projectName))
             })
         );
     }
+}
+
+function stripInternalDeploymentFields<T extends { agentJobId?: string; agentStreamToken?: string; targets?: T[] } | null>(deployment: T): T {
+    if (!deployment) {
+        return deployment;
+    }
+
+    return {
+        ...deployment,
+        agentJobId: undefined,
+        agentStreamToken: undefined,
+        ...(deployment.targets ? { targets: deployment.targets.map((target) => stripInternalDeploymentFields(target)) } : {})
+    };
 }

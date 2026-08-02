@@ -66,6 +66,11 @@ export class DeploymentService {
 
         const agent = this.agentManager.getClient(serverId);
         const deploymentRun = agent.deployProject(projectName, targetSettings, globalSettings, {
+            onAccepted: (job) => {
+                this.deploymentStore.setAgentJob(projectName, deployment.id, job);
+                this.deploymentStore.setPhase(projectName, deployment.id, "running");
+                this.broadcastDeploymentUpdate(projectName);
+            },
             onOutput: (stream, chunk) => {
                 this.deploymentStore.setPhase(projectName, deployment.id, "running");
                 this.deploymentStore.append(projectName, deployment.id, stream, chunk);
@@ -265,7 +270,18 @@ export class DeploymentService {
                 continue;
             }
 
-            await this.reconcileDeployment(deployment.projectName, deployment.id, { ...appSettings, serverId: deployment.serverId || appSettings.serverId || "local" }, globalSettings);
+            if (this.reconnectDeploymentTarget(deployment.projectName, deployment, { ...appSettings, serverId: deployment.serverId || appSettings.serverId || "local" }, globalSettings)) {
+                continue;
+            }
+
+            this.deploymentStore.setPhase(deployment.projectName, deployment.id, "reconnecting");
+            this.deploymentStore.append(
+                deployment.projectName,
+                deployment.id,
+                "stdout",
+                "--> Controller restarted while deployment was running. Waiting for remote job recovery before reconciliation.\n"
+            );
+            this.broadcastDeploymentUpdate(deployment.projectName);
         }
     }
 
@@ -305,9 +321,61 @@ export class DeploymentService {
             if (target.status !== "running" || this.activeDeployments.has(target.id)) {
                 continue;
             }
-            await this.reconcileDeployment(projectName, target.id, { ...appSettings, serverId: target.serverId || appSettings.serverId || "local" }, globalSettings);
+            if (this.reconnectDeploymentTarget(projectName, target, { ...appSettings, serverId: target.serverId || appSettings.serverId || "local" }, globalSettings)) {
+                continue;
+            }
+            this.deploymentStore.setPhase(projectName, target.id, "reconnecting");
         }
         return this.deploymentStore.latest(appSettings.id ?? projectName);
+    }
+
+    private reconnectDeploymentTarget(projectName: string, deployment: DeploymentRecord, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        if (!deployment.agentJobId || !deployment.agentStreamToken) {
+            return false;
+        }
+
+        const agent = this.agentManager.getClient(appSettings.serverId ?? deployment.serverId ?? "local");
+        if (!("reconnectDeploymentLog" in agent) || typeof agent.reconnectDeploymentLog !== "function") {
+            return false;
+        }
+
+        this.deploymentStore.setPhase(projectName, deployment.id, "reconnecting");
+        this.broadcastDeployment(projectName);
+        const stream = agent.reconnectDeploymentLog(deployment.agentJobId, deployment.agentStreamToken, this.deploymentHooks(projectName, deployment.id, appSettings, globalSettings));
+        this.activeDeployments.set(deployment.id, stream);
+        return true;
+    }
+
+    private deploymentHooks(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        return {
+            onOutput: (stream: "stdout" | "stderr", chunk: string) => {
+                this.deploymentStore.setPhase(projectName, deploymentId, "running");
+                this.deploymentStore.append(projectName, deploymentId, stream, chunk);
+                this.broadcastDeployment(projectName);
+            },
+            onSuccess: () => {
+                void this.finishSuccessfulDeployment(projectName, deploymentId, appSettings, globalSettings);
+            },
+            onFailure: (error: Error & { code?: number | string }) => {
+                const current = this.deploymentStore.get(deploymentId);
+                if (current?.status !== "running") {
+                    return;
+                }
+                this.activeDeployments.delete(deploymentId);
+                if (error.code === "remote-agent-job-lost") {
+                    this.deploymentStore.setPhase(projectName, deploymentId, "reconnecting");
+                    this.deploymentStore.append(projectName, deploymentId, "stdout", "--> Remote job stream is unavailable. Keeping target in reconnecting state.\n");
+                    this.broadcastDeploymentUpdate(projectName);
+                    return;
+                }
+                this.deploymentStore.finish(projectName, deploymentId, "failed", {
+                    error: error.message,
+                    exitCode: error.code,
+                    phase: "failed"
+                });
+                this.broadcastDeploymentUpdate(projectName);
+            }
+        };
     }
 
     private async reconcileDeployment(

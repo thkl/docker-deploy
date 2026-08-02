@@ -26,7 +26,16 @@ export class HttpAgentClient implements AgentClient {
             jobType: "deploy",
             payload: { projectName, appSettings, globalSettings }
         });
+        hooks.onAccepted?.({ jobId: accepted.jobId, streamToken: accepted.streamToken });
         return this.connectLogStream(accepted, hooks);
+    }
+
+    /**
+     * Reattaches to a previously accepted remote deployment job after the
+     * controller restarted.
+     */
+    reconnectDeploymentLog(jobId: string, streamToken: string, hooks: DeploymentHooks = {}) {
+        return this.connectLogStream({ jobId, streamToken, status: "accepted" }, hooks);
     }
 
     /**
@@ -229,7 +238,16 @@ export class HttpAgentClient implements AgentClient {
         let pollOffset = 0;
         let reconnects = 0;
         let missingPolls = 0;
+        let unavailablePolls = 0;
+        let reportedUnavailable = false;
         let pollTimer: NodeJS.Timeout | undefined;
+        const reportLostJob = (message: string) => {
+            const failure = new Error(message) as Error & { code?: string };
+            failure.code = "remote-agent-job-lost";
+            hooks.onFailure?.(failure);
+            stopped = true;
+            socket?.close();
+        };
         const handleFrame = (frame: AgentLogFrame) => {
             if (frame.stream === "stdout" || frame.stream === "stderr") {
                 hooks.onOutput?.(frame.stream, frame.chunk);
@@ -264,11 +282,7 @@ export class HttpAgentClient implements AgentClient {
                     if (response.status === 404 && pollOffset > 0) {
                         missingPolls += 1;
                         if (missingPolls >= 3) {
-                            const failure = new Error("Remote agent restarted and forgot the deployment log stream.") as Error & { code?: string };
-                            failure.code = "remote-agent-job-lost";
-                            hooks.onFailure?.(failure);
-                            stopped = true;
-                            socket?.close();
+                            reportLostJob("Remote agent restarted and forgot the deployment log stream.");
                             return;
                         }
                         return;
@@ -276,13 +290,27 @@ export class HttpAgentClient implements AgentClient {
                     throw new Error(await response.text());
                 }
                 missingPolls = 0;
+                unavailablePolls = 0;
+                reportedUnavailable = false;
                 const body = await response.json() as { next?: number; frames?: SecureEnvelope[] };
                 for (const envelope of body.frames ?? []) {
                     handleFrame(this.openAgentEnvelope<AgentLogFrame>(envelope));
                 }
                 pollOffset = typeof body.next === "number" ? body.next : pollOffset + (body.frames?.length ?? 0);
             } catch (error) {
-                hooks.onOutput?.("stderr", `--> Remote agent log polling failed: ${error instanceof Error ? error.message : "unknown error"}\n`);
+                if (pollOffset > 0) {
+                    unavailablePolls += 1;
+                    if (!reportedUnavailable) {
+                        hooks.onOutput?.("stdout", "--> Remote agent is temporarily unavailable; waiting for it to come back.\n");
+                        reportedUnavailable = true;
+                    }
+                    if (unavailablePolls >= 30) {
+                        reportLostJob("Remote agent stayed unavailable while deployment log stream was reconnecting.");
+                        return;
+                    }
+                } else {
+                    hooks.onOutput?.("stderr", `--> Remote agent log polling failed: ${error instanceof Error ? error.message : "unknown error"}\n`);
+                }
             } finally {
                 if (!finished && !stopped) {
                     pollTimer = setTimeout(pollLogs, 2000);
@@ -310,7 +338,10 @@ export class HttpAgentClient implements AgentClient {
                 }
             });
             nextSocket.on("error", (error) => {
-                hooks.onOutput?.("stderr", `--> Remote agent log stream interrupted: ${error.message}\n`);
+                if (!reportedUnavailable) {
+                    hooks.onOutput?.("stdout", `--> Remote agent log stream interrupted; reconnecting.\n`);
+                    reportedUnavailable = true;
+                }
             });
             nextSocket.on("close", () => {
                 socketOpen = false;

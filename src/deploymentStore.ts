@@ -15,6 +15,8 @@ export interface DeploymentRecord {
     trigger: DeploymentTrigger;
     status: DeploymentStatus;
     phase?: DeploymentPhase;
+    agentJobId?: string;
+    agentStreamToken?: string;
     startedAt: string;
     finishedAt?: string;
     exitCode?: number | string;
@@ -157,6 +159,16 @@ export class DeploymentStore {
         this.database.prepare("UPDATE deployments SET phase = ? WHERE id = ?").run(phase, deploymentId);
     }
 
+    setAgentJob(projectName: string, deploymentId: string, job: { jobId: string; streamToken: string }) {
+        if (!this.deploymentBelongsToProject(projectName, deploymentId)) {
+            return;
+        }
+
+        this.database
+            .prepare("UPDATE deployments SET agent_job_id = ?, agent_stream_token = ? WHERE id = ?")
+            .run(job.jobId, job.streamToken, deploymentId);
+    }
+
     append(projectName: string, deploymentId: string, stream: DeploymentStream, chunk: string) {
         if (!this.deploymentBelongsToProject(projectName, deploymentId)) {
             return;
@@ -241,6 +253,8 @@ export class DeploymentStore {
             trigger: row.trigger,
             status: row.status,
             phase: row.phase,
+            ...(row.agentJobId ? { agentJobId: row.agentJobId } : {}),
+            ...(row.agentStreamToken ? { agentStreamToken: row.agentStreamToken } : {}),
             startedAt: row.startedAt,
             ...(row.finishedAt ? { finishedAt: row.finishedAt } : {}),
             ...(row.exitCode ? { exitCode: row.exitCode } : {}),
@@ -331,6 +345,8 @@ interface DeploymentRow {
     trigger: DeploymentTrigger;
     status: DeploymentStatus;
     phase: DeploymentPhase;
+    agentJobId: string | null;
+    agentStreamToken: string | null;
     startedAt: string;
     finishedAt: string | null;
     exitCode: string | null;
@@ -363,6 +379,8 @@ function targetSelectSql(where: string, suffix: string) {
                 d.trigger,
                 d.status,
                 d.phase,
+                d.agent_job_id AS agentJobId,
+                d.agent_stream_token AS agentStreamToken,
                 d.started_at AS startedAt,
                 d.finished_at AS finishedAt,
                 d.exit_code AS exitCode,

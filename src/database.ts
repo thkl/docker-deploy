@@ -140,6 +140,8 @@ export class AppDatabase {
                 trigger TEXT NOT NULL,
                 status TEXT NOT NULL,
                 phase TEXT NOT NULL DEFAULT 'running',
+                agent_job_id TEXT,
+                agent_stream_token TEXT,
                 started_at TEXT NOT NULL,
                 finished_at TEXT,
                 exit_code TEXT,
@@ -208,8 +210,11 @@ export class AppDatabase {
         this.ensureColumn("projects", "server_ids_json", "TEXT");
         this.ensureColumn("deployments", "run_id", "TEXT");
         this.ensureColumn("deployments", "phase", "TEXT NOT NULL DEFAULT 'running'");
+        this.ensureColumn("deployments", "agent_job_id", "TEXT");
+        this.ensureColumn("deployments", "agent_stream_token", "TEXT");
         this.migrateProjectsToStableIds();
         this.backfillDeploymentRuns();
+        this.normalizeDeploymentPhases();
         this.connection.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)").run(String(schemaVersion));
     }
 
@@ -285,6 +290,8 @@ export class AppDatabase {
                         trigger TEXT NOT NULL,
                         status TEXT NOT NULL,
                         phase TEXT NOT NULL DEFAULT 'running',
+                        agent_job_id TEXT,
+                        agent_stream_token TEXT,
                         started_at TEXT NOT NULL,
                         finished_at TEXT,
                         exit_code TEXT,
@@ -344,10 +351,10 @@ export class AppDatabase {
                     this.connection
                         .prepare(
                             `INSERT INTO deployments_next
-                             (id, project_id, run_id, server_id, trigger, status, phase, started_at, finished_at, exit_code, error)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             (id, project_id, run_id, server_id, trigger, status, phase, agent_job_id, agent_stream_token, started_at, finished_at, exit_code, error)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                         )
-                        .run(row.id, projectId, row.run_id ?? row.id, row.server_id, row.trigger, row.status, row.phase ?? row.status, row.started_at, row.finished_at, row.exit_code, row.error);
+                        .run(row.id, projectId, row.run_id ?? row.id, row.server_id, row.trigger, row.status, row.phase ?? row.status, row.agent_job_id ?? null, row.agent_stream_token ?? null, row.started_at, row.finished_at, row.exit_code, row.error);
                 }
 
                 this.connection.exec(`
@@ -490,6 +497,16 @@ export class AppDatabase {
                 .prepare("UPDATE deployments SET run_id = ?, phase = COALESCE(NULLIF(phase, ''), status) WHERE id = ?")
                 .run(row.id, row.id);
         }
+    }
+
+    /**
+     * Repairs early run/target rows where a target finished but kept an active
+     * phase such as `running`.
+     */
+    private normalizeDeploymentPhases() {
+        this.connection
+            .prepare("UPDATE deployments SET phase = status WHERE status != 'running' AND phase IN ('queued', 'dispatching', 'running', 'reconnecting', 'reconciling', 'cleanup')")
+            .run();
     }
 
     private legacyDataFile(fileName: string) {
@@ -792,11 +809,11 @@ function upsertDeployment(database: DatabaseSync, record: DeploymentRecord, serv
 
     database
         .prepare(
-            `INSERT OR REPLACE INTO deployments
-             (id, project_id, run_id, server_id, trigger, status, phase, started_at, finished_at, exit_code, error)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             `INSERT OR REPLACE INTO deployments
+             (id, project_id, run_id, server_id, trigger, status, phase, agent_job_id, agent_stream_token, started_at, finished_at, exit_code, error)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(record.id, projectId, record.runId ?? record.id, serverId, record.trigger, record.status, record.phase ?? record.status, record.startedAt, record.finishedAt ?? null, record.exitCode ? String(record.exitCode) : null, record.error ?? null);
+        .run(record.id, projectId, record.runId ?? record.id, serverId, record.trigger, record.status, record.phase ?? record.status, record.agentJobId ?? null, record.agentStreamToken ?? null, record.startedAt, record.finishedAt ?? null, record.exitCode ? String(record.exitCode) : null, record.error ?? null);
 
     if (record.log) {
         database
@@ -913,6 +930,8 @@ interface LegacyDeploymentRow {
     trigger: string;
     status: string;
     phase?: string | null;
+    agent_job_id?: string | null;
+    agent_stream_token?: string | null;
     started_at: string;
     finished_at: string | null;
     exit_code: string | null;

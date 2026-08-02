@@ -954,7 +954,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             return;
         }
 
-        res.json(deploymentStore.list(project.settings.id ?? project.name));
+        res.json(deploymentStore.list(project.settings.id ?? project.name).map(stripInternalDeploymentFields));
     });
 
     app.get("/api/projects/:name/deployments/latest", async (req: Request, res: Response) => {
@@ -968,7 +968,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 return;
             }
 
-            res.json(await deploymentService.reconcileLatestDeployment(project.name, project.settings));
+            res.json(stripInternalDeploymentFields(await deploymentService.reconcileLatestDeployment(project.name, project.settings)));
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not load latest deployment." });
         }
@@ -1141,7 +1141,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
     const composeOverride = settings.composeOverride ?? "";
     const envSecrets = maskEnvSecrets(settings.envSecrets);
     const traefik = settings.traefik ?? { enabled: false };
-    const lastDeployment = deploymentStore.latest(settings.id ?? name);
+    const lastDeployment = stripInternalDeploymentFields(deploymentStore.latest(settings.id ?? name));
 
     return {
         id: settings.id,
@@ -1177,6 +1177,19 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
             envSecrets,
             hasOverride: Boolean(composeOverride)
         }
+    };
+}
+
+function stripInternalDeploymentFields<T extends { agentJobId?: string; agentStreamToken?: string; targets?: T[] } | null>(deployment: T): T {
+    if (!deployment) {
+        return deployment;
+    }
+
+    return {
+        ...deployment,
+        agentJobId: undefined,
+        agentStreamToken: undefined,
+        ...(deployment.targets ? { targets: deployment.targets.map((target) => stripInternalDeploymentFields(target)) } : {})
     };
 }
 

@@ -15,6 +15,7 @@ const execAsync = promisify(exec);
  * worker is still running inside Docker.
  */
 export interface DeploymentHooks {
+    onAccepted?: (job: { jobId: string; streamToken: string }) => void;
     onOutput?: (stream: "stdout" | "stderr", chunk: string) => void;
     onSuccess?: () => void;
     onFailure?: (error: Error & { code?: number | string }) => void;

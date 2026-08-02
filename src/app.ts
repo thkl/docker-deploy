@@ -212,8 +212,10 @@ class App {
 function stripDeploymentLogs(deployment: DeploymentRecord): DeploymentRecord {
     return {
         ...deployment,
+        agentJobId: undefined,
+        agentStreamToken: undefined,
         log: "",
-        ...(deployment.targets ? { targets: deployment.targets.map((target) => ({ ...target, log: "" })) } : {})
+        ...(deployment.targets ? { targets: deployment.targets.map((target) => ({ ...target, agentJobId: undefined, agentStreamToken: undefined, log: "" })) } : {})
     };
 }
 
