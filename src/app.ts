@@ -85,7 +85,7 @@ class App {
             type: "deployment.updated",
             projectId: deployment?.projectId,
             projectName,
-            deployment: deployment ? stripDeploymentLogs(deployment) : null
+            deployment: stripInternalDeploymentFields(deployment)
         }),
         async (serverId) => {
             await this.agentHealth.refreshServer(serverId);
@@ -208,13 +208,16 @@ class App {
     }
 }
 
-function stripDeploymentLogs(deployment: DeploymentRecord): DeploymentRecord {
+function stripInternalDeploymentFields<T extends DeploymentRecord | null>(deployment: T): T {
+    if (!deployment) {
+        return deployment;
+    }
+
     return {
         ...deployment,
         agentJobId: undefined,
         agentStreamToken: undefined,
-        log: "",
-        ...(deployment.targets ? { targets: deployment.targets.map((target) => ({ ...target, agentJobId: undefined, agentStreamToken: undefined, log: "" })) } : {})
+        ...(deployment.targets ? { targets: deployment.targets.map((target) => stripInternalDeploymentFields(target)) } : {})
     };
 }
 

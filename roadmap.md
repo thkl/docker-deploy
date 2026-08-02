@@ -287,6 +287,7 @@ Agent protocol:
 - [x] Agent exposes short-lived WebSocket streams for deployment logs and runtime container logs.
 - [x] Controller persists deployment job events in SQLite.
 - [x] Controller pushes latest runtime status to clients over the global event stream.
+- [ ] Store a shared recovery secret during pairing so future agent key drift can be repaired automatically after a controller challenge, without blindly trusting any new key at the same URL.
 
 - [x] Local execution should use the same protocol shape as remote execution, even if implemented in-process first.
 
@@ -405,4 +406,5 @@ Example target layout:
 - [x] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
 - [x] Add cleanup-after-deploy enforcement based on externalized storage mappings.
 - [ ] Build guarded server-level Traefik management for entrypoints, cert resolvers, networks, and static/dynamic config.
+- [ ] Add recovery-secret based automatic re-pairing for agents whose keypair changed but whose persistent recovery secret is still intact.
 - [x] Rename the user-facing product to Deploy while keeping legacy `.updater`, `docker-compose.updater.yml`, and `UPDATER_*` compatibility.

@@ -75,6 +75,7 @@ export class DeploymentService {
                 this.deploymentStore.setPhase(projectName, deployment.id, "running");
                 this.deploymentStore.append(projectName, deployment.id, stream, chunk);
                 this.broadcastDeployment(projectName);
+                this.publishDeployment(projectName, this.deploymentStore.latest(projectName));
             },
             onSuccess: () => {
                 void this.finishSuccessfulDeployment(projectName, deployment.id, targetSettings, globalSettings);
@@ -193,6 +194,7 @@ export class DeploymentService {
     private appendDeploymentLine(projectName: string, deploymentId: string, stream: "stdout" | "stderr", message: string) {
         this.deploymentStore.append(projectName, deploymentId, stream, `${message}\n`);
         this.broadcastDeployment(projectName);
+        this.publishDeployment(projectName, this.deploymentStore.latest(projectName));
     }
 
     private logCleanupLine(projectName: string, deploymentId: string | undefined, stream: "stdout" | "stderr", message: string) {
@@ -379,6 +381,7 @@ export class DeploymentService {
                 this.deploymentStore.setPhase(projectName, deploymentId, "running");
                 this.deploymentStore.append(projectName, deploymentId, stream, chunk);
                 this.broadcastDeployment(projectName);
+                this.publishDeployment(projectName, this.deploymentStore.latest(projectName));
             },
             onSuccess: () => {
                 void this.finishSuccessfulDeployment(projectName, deploymentId, appSettings, globalSettings);
