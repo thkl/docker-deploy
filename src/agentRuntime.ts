@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
-import { rememberNonce, ensureAgentState, removeAgentPairingFile, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
+import { rememberNonce, ensureAgentState, removeAgentPairingFile, resetAgentPairing, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
 import { RuntimeLogStream } from "./deploy.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
@@ -54,6 +54,11 @@ export class AgentRuntime {
      * Starts the agent HTTP API and log WebSocket endpoint.
      */
     start() {
+        if (isPairingResetRequested()) {
+            this.state = resetAgentPairing(this.state);
+            writeAgentState(this.state);
+            console.log("Agent pairing reset requested. New pairing data will be written to /app/data/agent-pairing.json.");
+        }
         writeAgentPairingFile(this.state);
         this.loadPersistedJobs();
         this.app.use(express.json({ limit: "12mb" }));
@@ -80,16 +85,21 @@ export class AgentRuntime {
             const defaultTraefikNetwork = typeof req.query.traefikNetwork === "string" && req.query.traefikNetwork.trim()
                 ? req.query.traefikNetwork.trim()
                 : "proxy";
+            const paired = Boolean(this.state.controllerPublicEncryptionKey && this.state.controllerPublicSigningKey);
+            if (!paired) {
+                writeAgentPairingFile(this.state);
+            }
 
             res.json({
                 serverId: this.state.serverId,
-                paired: Boolean(this.state.controllerPublicEncryptionKey && this.state.controllerPublicSigningKey),
+                paired,
                 version: appVersion(),
                 activeJobs: [...this.jobs.values()]
                     .filter((job) => job.active)
                     .map((job) => ({ id: job.id, type: job.type, startedAt: job.startedAt })),
                 encryptionPublicKey: this.state.encryptionPublicKey,
                 signingPublicKey: this.state.signingPublicKey,
+                pairedControllerId: this.state.controllerId,
                 pairedAt: this.state.pairedAt,
                 capabilities: {
                     traefik: await this.localAgent.detectTraefik({
@@ -548,6 +558,10 @@ export class AgentRuntime {
 
 function isStreamingJob(jobType: AgentJobRequest["jobType"]) {
     return jobType === "deploy" || jobType === "runtimeLogsFollow" || jobType === "runtimeActionFollow";
+}
+
+function isPairingResetRequested() {
+    return ["1", "true", "yes"].includes(String(process.env.DEPLOY_AGENT_RESET_PAIRING || process.env.UPDATER_AGENT_RESET_PAIRING || "").trim().toLowerCase());
 }
 
 function trimFrames(frames: AgentLogFrame[]) {

@@ -60,6 +60,21 @@ export function writeAgentState(state: AgentState, path = join("./data", "agent-
 }
 
 /**
+ * Clears the paired controller while keeping the agent identity stable.
+ */
+export function resetAgentPairing(state: AgentState): AgentState {
+    return {
+        ...state,
+        controllerId: undefined,
+        controllerPublicEncryptionKey: undefined,
+        controllerPublicSigningKey: undefined,
+        pairingToken: randomUUID(),
+        pairedAt: undefined,
+        seenNonces: {}
+    };
+}
+
+/**
  * Writes copyable pairing data for a fresh agent and removes stale files after pairing.
  */
 export function writeAgentPairingFile(state: AgentState, path = join("./data", "agent-pairing.json")) {

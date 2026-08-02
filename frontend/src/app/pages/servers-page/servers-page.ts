@@ -270,6 +270,16 @@ export class ServersPage implements OnInit, OnDestroy {
     });
   }
 
+  protected updatePairingToken(serverId: string, event: Event) {
+    const pairingToken = (event.target as HTMLInputElement).value.trim();
+    if (!pairingToken) {
+      this.removeStoredPairingToken(serverId);
+      return;
+    }
+
+    this.storePairingToken(serverId, pairingToken);
+  }
+
   protected startRename(server: ServerRecord) {
     this.editingServer.set(server.id);
     this.serverNameDraft.set(server.name);

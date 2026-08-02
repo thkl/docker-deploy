@@ -101,6 +101,14 @@ The agent listens on `DEPLOY_AGENT_PORT`, defaulting to `3998`, and writes pairi
 
 In the controller UI, open global settings, add the agent URL, paste the pairing token, and save/pair. Remote jobs are encrypted and signed between controller and agent.
 
+If the controller reports an existing agent as unpaired but `agent-pairing.json` is missing, the agent is probably still paired to old controller keys. Reset only the pairing state on that agent:
+
+```bash
+DEPLOY_AGENT_RESET_PAIRING=true docker compose -f docker-compose-agent.yaml up -d
+```
+
+After startup, open `./data/agent/agent-pairing.json`, paste the new token into the server's Pair field, then remove `DEPLOY_AGENT_RESET_PAIRING` or set it back to `false` so the agent does not reset pairing on every restart.
+
 ## Add A Project
 
 1. Open the UI.

@@ -142,6 +142,16 @@
               }
               @if (server.kind === 'remote') {
                 @if (server.status === 'unpaired') {
+                  <input
+                    class="pairing-token-input"
+                    type="password"
+                    autocomplete="off"
+                    placeholder="pairing token"
+                    [value]="pairingTokens()[server.id] || ''"
+                    (input)="updatePairingToken(server.id, $event)"
+                    [disabled]="pairingServer() !== ''"
+                    aria-label="Pairing token"
+                  />
                   <button type="button" class="secondary" (click)="pairServer(server.id)" [disabled]="pairingServer() !== ''">
                     {{ pairingServer() === server.id ? 'Pairing...' : 'Pair' }}
                   </button>

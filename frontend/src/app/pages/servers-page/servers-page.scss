@@ -291,6 +291,14 @@ label span,
   justify-content: flex-end;
 }
 
+.pairing-token-input {
+  font-size: 0.88rem;
+  min-height: 34px;
+  min-width: min(220px, 100%);
+  padding: 0.35rem 0.55rem;
+  width: 220px;
+}
+
 .server-tabs {
   align-items: center;
   border-bottom: 1px solid var(--line);
