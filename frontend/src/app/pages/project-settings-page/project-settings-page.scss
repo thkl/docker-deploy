@@ -297,6 +297,12 @@ textarea {
   gap: 0.6rem;
 }
 
+.suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .builder-service {
   background: var(--panel-soft);
   border: 1px solid var(--line);

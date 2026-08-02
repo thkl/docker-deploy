@@ -247,6 +247,14 @@
                 } @empty {
                 <small>Add networks before assigning them to services.</small>
                 }
+                @if (detectedTraefikNetworkSuggestions().length) {
+                <div class="suggestion-row">
+                  @for (networkName of detectedTraefikNetworkSuggestions(); track networkName) {
+                  <button type="button" class="secondary compact"
+                    (click)="addDetectedTraefikNetwork(networkName, service.id)">Add {{ networkName }}</button>
+                  }
+                </div>
+                }
               </fieldset>
 
               <fieldset>
@@ -417,7 +425,13 @@
               <strong>Networks</strong>
               <span>Named Docker networks services can join</span>
             </div>
-            <button type="button" class="secondary" (click)="addBuilderNetwork()">Add network</button>
+            <div class="builder-actions">
+              @for (networkName of detectedTraefikNetworkSuggestions(); track networkName) {
+              <button type="button" class="secondary compact"
+                (click)="addDetectedTraefikNetwork(networkName)">Add {{ networkName }}</button>
+              }
+              <button type="button" class="secondary" (click)="addBuilderNetwork()">Add network</button>
+            </div>
           </div>
 
           @for (network of builderNetworks(); track network.id) {

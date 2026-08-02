@@ -120,6 +120,17 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly submitLabel = computed(() => (this.isNew() ? 'Create project' : 'Save'));
   protected readonly builderServiceNames = computed(() => this.builderServices().map((service) => service.name.trim()).filter(Boolean));
   protected readonly builderNetworkNames = computed(() => this.builderNetworks().map((network) => network.name.trim()).filter(Boolean));
+  protected readonly detectedTraefikNetworkSuggestions = computed(() => {
+    const known = new Set(this.builderNetworkNames());
+    const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
+    const traefik = server?.capabilities?.traefik;
+    const detected = uniqueList([
+      traefik?.dockerProviderNetwork,
+      ...(traefik?.networks ?? []),
+    ].filter(Boolean) as string[]);
+
+    return detected.filter((network) => !known.has(network));
+  });
   protected readonly builderServiceReferences = computed(() => {
     const refs = new Map<string, string[]>();
     for (const service of this.builderServices()) {
@@ -709,11 +720,22 @@ export class ProjectSettingsPage implements OnInit {
     }));
   }
 
-  protected addBuilderNetwork(name = 'app') {
+  protected addBuilderNetwork(name = 'app', external = false) {
     this.builderNetworks.update((networks) => [
       ...networks,
-      { id: this.nextBuilderId++, name: uniqueBuilderName(name, networks.map((network) => network.name)), external: false, driver: '', extra: '' }
+      { id: this.nextBuilderId++, name: uniqueBuilderName(name, networks.map((network) => network.name)), external, driver: '', extra: '' }
     ]);
+  }
+
+  protected addDetectedTraefikNetwork(name: string, serviceId?: number) {
+    this.addBuilderNetwork(name, true);
+    if (serviceId !== undefined) {
+      this.builderServices.update((services) => services.map((service) => service.id === serviceId ? { ...service, networks: addListValue(service.networks, name) } : service));
+    }
+    if (!this.form.controls.traefikNetwork.value.trim() || !this.builderNetworkNames().includes(this.form.controls.traefikNetwork.value.trim())) {
+      this.form.controls.traefikNetwork.setValue(name);
+      this.traefikFormRevision.update((revision) => revision + 1);
+    }
   }
 
   protected removeBuilderNetwork(id: number) {
@@ -732,7 +754,27 @@ export class ProjectSettingsPage implements OnInit {
   protected updateBuilderNetwork(id: number, field: keyof ComposeBuilderNetwork, event: Event) {
     const target = event.target as HTMLInputElement;
     const value = field === 'external' ? target.checked : target.value;
+    const previousName = this.builderNetworks().find((network) => network.id === id)?.name.trim() ?? '';
     this.builderNetworks.update((networks) => networks.map((network) => network.id === id ? { ...network, [field]: value } : network));
+    if (field === 'name' && typeof value === 'string') {
+      this.renameBuilderNetworkReferences(previousName, value.trim());
+    }
+  }
+
+  private renameBuilderNetworkReferences(previousName: string, nextName: string) {
+    if (!previousName || !nextName || previousName === nextName) {
+      return;
+    }
+
+    this.builderServices.update((services) => services.map((service) => ({
+      ...service,
+      networks: replaceListValue(service.networks, previousName, nextName),
+    })));
+
+    if (this.form.controls.traefikNetwork.value.trim() === previousName) {
+      this.form.controls.traefikNetwork.setValue(nextName, { emitEvent: false });
+      this.traefikFormRevision.update((revision) => revision + 1);
+    }
   }
 
   protected addBuilderVolume(name = 'data') {
@@ -1286,6 +1328,10 @@ function addListValue(value: string, item: string) {
   return items.includes(item) ? value : [...items, item].join('\n');
 }
 
+function replaceListValue(value: string, previousItem: string, nextItem: string) {
+  return uniqueList(splitLines(value).map((item) => item === previousItem ? nextItem : item)).join('\n');
+}
+
 function appendList(lines: string[], key: string, value: string) {
   const items = splitLines(value);
   if (!items.length) {
@@ -1407,6 +1453,10 @@ function splitLines(value: string) {
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function uniqueList(values: string[]) {
+  return [...new Set(values)];
 }
 
 function parseEnvironmentEntries(value: string): ComposeEnvironmentEntry[] {
