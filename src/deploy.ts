@@ -158,9 +158,20 @@ if isinstance(services, dict):
         for key in ("command", "entrypoint"):
             if service.get(key) is None:
                 service.pop(key, None)
+        networks = service.get("networks")
+        if isinstance(networks, dict) and all(value is None for value in networks.values()):
+            service["networks"] = list(networks.keys())
+        volumes = service.get("volumes")
+        if isinstance(volumes, list):
+            for volume in volumes:
+                if isinstance(volume, dict) and volume.get("volume") == {}:
+                    volume.pop("volume", None)
         deploy = service.get("deploy")
         if not isinstance(deploy, dict):
             continue
+        labels = deploy.get("labels")
+        if isinstance(labels, dict):
+            deploy["labels"] = [f"{key}={value}" for key, value in labels.items()]
         if deploy.get("resources") == {}:
             deploy.pop("resources", None)
         placement = deploy.get("placement")
