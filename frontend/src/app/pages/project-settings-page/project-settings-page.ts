@@ -27,6 +27,11 @@ interface ComposeBuilderService {
   networks: string;
   dependsOn: string;
   dependsOnAdvanced: string;
+  deployMode: string;
+  deployReplicas: string;
+  deployPlacementConstraints: string;
+  deployAdvanced: string;
+  deployLabels: string;
   profiles: string;
   extra: string;
 }
@@ -568,6 +573,11 @@ export class ProjectSettingsPage implements OnInit {
         networks: serviceNetwork,
         dependsOn: '',
         dependsOnAdvanced: '',
+        deployMode: '',
+        deployReplicas: '',
+        deployPlacementConstraints: '',
+        deployAdvanced: '',
+        deployLabels: '',
         profiles: '',
         extra: ''
       }
@@ -1271,6 +1281,7 @@ function renderComposeBuilder(
     } else {
       appendList(lines, 'depends_on', service.dependsOn);
     }
+    appendDeploy(lines, service, traefik?.deploymentStrategy === 'swarm');
     appendList(lines, 'profiles', service.profiles);
     appendExtraYaml(lines, service.extra);
   }
@@ -1323,7 +1334,8 @@ function prepareComposeBuilderForTraefik(
       ...service,
       ports: traefik.removePublishedPorts ? '' : service.ports,
       networks: serviceNetworks,
-      extra: replaceGeneratedTraefikBlock(service.extra, labels),
+      deployLabels: traefik.deploymentStrategy === 'swarm' ? labels : service.deployLabels,
+      extra: traefik.deploymentStrategy === 'swarm' ? removeTraefikLabelBlocks(service.extra) : replaceGeneratedTraefikBlock(service.extra, labels),
     };
   });
 
@@ -1359,18 +1371,12 @@ function renderTraefikLabels(traefik: ComposeTraefikSettings) {
     labels.push(`traefik.http.routers.${routerName}.middlewares=${routerName}-websocket@docker`);
   }
 
-  if (traefik.deploymentStrategy === 'swarm') {
-    return [
-      'deploy:',
-      '  labels:',
-      ...labels.map((label) => `    - ${yamlScalar(label)}`)
-    ].join('\n');
-  }
-
-  return [
-    'labels:',
-    ...labels.map((label) => `  - ${yamlScalar(label)}`)
-  ].join('\n');
+  return traefik.deploymentStrategy === 'swarm'
+    ? labels.join('\n')
+    : [
+        'labels:',
+        ...labels.map((label) => `  - ${yamlScalar(label)}`)
+      ].join('\n');
 }
 
 function replaceGeneratedTraefikBlock(extra: string, labels: string) {
@@ -1462,6 +1468,40 @@ function appendEnvironment(lines: string[], value: string) {
   }
 }
 
+function appendDeploy(lines: string[], service: ComposeBuilderRenderableService, useSwarmDefaults: boolean) {
+  const mode = service.deployMode.trim() || (useSwarmDefaults ? 'replicated' : '');
+  const replicas = service.deployReplicas.trim() || (useSwarmDefaults && mode !== 'global' ? '1' : '');
+  const constraints = splitLines(service.deployPlacementConstraints || (useSwarmDefaults ? 'node.role == worker' : ''));
+  const labels = splitLines(service.deployLabels);
+  const advanced = service.deployAdvanced.trim();
+
+  if (!mode && !replicas && !constraints.length && !labels.length && !advanced) {
+    return;
+  }
+
+  lines.push('    deploy:');
+  if (mode) {
+    lines.push(`      mode: ${yamlScalar(mode)}`);
+  }
+  if (replicas && mode !== 'global') {
+    lines.push(`      replicas: ${Number.isFinite(Number(replicas)) ? Math.max(0, Math.trunc(Number(replicas))) : yamlScalar(replicas)}`);
+  }
+  if (constraints.length) {
+    lines.push('      placement:');
+    lines.push('        constraints:');
+    for (const constraint of constraints) {
+      lines.push(`          - ${yamlScalar(constraint)}`);
+    }
+  }
+  if (labels.length) {
+    lines.push('      labels:');
+    for (const label of labels) {
+      lines.push(`        - ${yamlScalar(label)}`);
+    }
+  }
+  appendExtraYaml(lines, advanced, 6);
+}
+
 function mergeEnvironmentWithSecretPlaceholders(serviceName: string, environment: string, entries: ComposeSecretEnvironmentEntry[]) {
   const dockerSecretEntries = entries
     .map((entry) => ({ key: entry.key.trim(), mode: entry.mode }))
@@ -1544,9 +1584,10 @@ function appendTopLevelResources(
   }
 }
 
-function appendExtraYaml(lines: string[], value: string) {
+function appendExtraYaml(lines: string[], value: string, indent = 4) {
+  const prefix = ' '.repeat(indent);
   for (const line of value.split(/\r?\n/).filter((entry) => entry.trim())) {
-    lines.push(`    ${line}`);
+    lines.push(`${prefix}${line}`);
   }
 }
 
@@ -1681,7 +1722,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
   let section: 'services' | 'networks' | 'volumes' | '' = '';
   let service: Omit<ComposeBuilderService, 'id'> | undefined;
   let listKey: ComposeBuilderListField | 'environment' | '' = '';
-  let objectKey: 'build' | 'dependsOn' | '' = '';
+  let objectKey: 'build' | 'dependsOn' | 'deploy' | 'placement' | '' = '';
   let extraKey = '';
   let resource: Omit<ComposeBuilderNetwork, 'id'> | Omit<ComposeBuilderVolume, 'id'> | undefined;
 
@@ -1742,6 +1783,79 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
           service.dependsOnAdvanced = appendRawLine(service.dependsOnAdvanced, raw.slice(4));
           continue;
         }
+        if (service && extraKey === 'deployLabels' && indent === 8 && text.startsWith('- ')) {
+          service.deployLabels = appendRawLine(service.deployLabels, unquoteYaml(text.slice(2)));
+          continue;
+        }
+        if (service && objectKey === 'deploy') {
+          if (indent === 6) {
+            const [deployKey, ...deployRest] = text.split(':');
+            const deployValue = unquoteYaml(deployRest.join(':').trim());
+            if (deployKey === 'mode') {
+              service.deployMode = deployValue;
+              continue;
+            }
+            if (deployKey === 'replicas') {
+              service.deployReplicas = deployValue;
+              continue;
+            }
+            if (deployKey === 'placement') {
+              objectKey = 'placement';
+              continue;
+            }
+            if (deployKey === 'labels') {
+              extraKey = 'deployLabels';
+              continue;
+            }
+            service.deployAdvanced = appendRawLine(service.deployAdvanced, raw.slice(6));
+            if (!deployValue) {
+              extraKey = 'deployAdvanced';
+            }
+            continue;
+          }
+          if (indent > 6) {
+            service.deployAdvanced = appendRawLine(service.deployAdvanced, raw.slice(6));
+            continue;
+          }
+        }
+        if (service && objectKey === 'placement') {
+          if (indent === 6) {
+            objectKey = 'deploy';
+            extraKey = '';
+            const [deployKey, ...deployRest] = text.split(':');
+            const deployValue = unquoteYaml(deployRest.join(':').trim());
+            if (deployKey === 'mode') {
+              service.deployMode = deployValue;
+              continue;
+            }
+            if (deployKey === 'replicas') {
+              service.deployReplicas = deployValue;
+              continue;
+            }
+            if (deployKey === 'labels') {
+              extraKey = 'deployLabels';
+              continue;
+            }
+            service.deployAdvanced = appendRawLine(service.deployAdvanced, raw.slice(6));
+            continue;
+          }
+          if (indent === 8 && text === 'constraints:') {
+            extraKey = 'deployPlacementConstraints';
+            continue;
+          }
+          if (indent === 10 && text.startsWith('- ')) {
+            service.deployPlacementConstraints = appendRawLine(service.deployPlacementConstraints, unquoteYaml(text.slice(2)));
+            continue;
+          }
+          if (indent > 6) {
+            service.deployAdvanced = appendRawLine(service.deployAdvanced, raw.slice(6));
+            continue;
+          }
+        }
+        if (service && extraKey === 'deployLabels' && indent === 8 && text.startsWith('- ')) {
+          service.deployLabels = appendRawLine(service.deployLabels, unquoteYaml(text.slice(2)));
+          continue;
+        }
         if (service && extraKey && indent > 4) {
           service.extra = appendRawLine(service.extra, raw.slice(4));
           continue;
@@ -1785,6 +1899,11 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
 
       if (key === 'build' && !value) {
         objectKey = 'build';
+        continue;
+      }
+
+      if (key === 'deploy' && !value) {
+        objectKey = 'deploy';
         continue;
       }
 
@@ -1849,6 +1968,11 @@ function blankBuilderService(name: string, build: string, networks: string): Omi
     networks,
     dependsOn: '',
     dependsOnAdvanced: '',
+    deployMode: '',
+    deployReplicas: '',
+    deployPlacementConstraints: '',
+    deployAdvanced: '',
+    deployLabels: '',
     profiles: '',
     extra: ''
   };

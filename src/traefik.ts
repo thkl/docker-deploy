@@ -65,6 +65,11 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
 
     const serviceLabelContent = deploymentStrategy === "swarm"
         ? `    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - ${yamlQuote("node.role == worker")}
       labels:
 ${labelContent}`
         : `    labels:

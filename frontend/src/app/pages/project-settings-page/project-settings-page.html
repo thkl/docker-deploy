@@ -421,6 +421,32 @@
               </fieldset>
             </div>
 
+            <fieldset>
+              <legend>Swarm deploy</legend>
+              <div class="field-grid">
+                <label>
+                  <span>Mode</span>
+                  <select [value]="service.deployMode" (change)="updateBuilderService(service.id, 'deployMode', $event)">
+                    <option value="">default</option>
+                    <option value="replicated">replicated</option>
+                    <option value="global">global</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Replicas</span>
+                  <input [value]="service.deployReplicas"
+                    (input)="updateBuilderService(service.id, 'deployReplicas', $event)" inputmode="numeric"
+                    placeholder="1" />
+                </label>
+              </div>
+              <label class="compose-field">
+                <span>Placement constraints</span>
+                <textarea [value]="service.deployPlacementConstraints"
+                  (input)="updateBuilderService(service.id, 'deployPlacementConstraints', $event)"
+                  placeholder="node.role == worker"></textarea>
+              </label>
+            </fieldset>
+
             <label class="compose-field">
               <span>Advanced service YAML</span>
               <textarea [value]="service.extra" (input)="updateBuilderService(service.id, 'extra', $event)"
