@@ -49,6 +49,7 @@ interface ComposeBuilderVolume {
   name: string;
   external: boolean;
   driver: string;
+  driverOpts: ComposeKeyValueEntry[];
   extra: string;
 }
 
@@ -58,6 +59,11 @@ type ComposeBuilderRenderableNetwork = Omit<ComposeBuilderNetwork, 'id'> & { id?
 type ComposeBuilderRenderableVolume = Omit<ComposeBuilderVolume, 'id'> & { id?: number };
 
 interface ComposeEnvironmentEntry {
+  key: string;
+  value: string;
+}
+
+interface ComposeKeyValueEntry {
   key: string;
   value: string;
 }
@@ -880,7 +886,7 @@ export class ProjectSettingsPage implements OnInit {
   protected addBuilderVolume(name = 'data') {
     this.builderVolumes.update((volumes) => [
       ...volumes,
-      { id: this.nextBuilderId++, name: uniqueBuilderName(name, volumes.map((volume) => volume.name)), external: false, driver: '', extra: '' }
+      { id: this.nextBuilderId++, name: uniqueBuilderName(name, volumes.map((volume) => volume.name)), external: false, driver: '', driverOpts: [], extra: '' }
     ]);
   }
 
@@ -901,6 +907,51 @@ export class ProjectSettingsPage implements OnInit {
     const target = event.target as HTMLInputElement;
     const value = field === 'external' ? target.checked : target.value;
     this.builderVolumes.update((volumes) => volumes.map((volume) => volume.id === id ? { ...volume, [field]: value } : volume));
+  }
+
+  protected addBuilderVolumeDriverOpt(id: number, key = 'type', value = 'nfs') {
+    this.builderVolumes.update((volumes) => volumes.map((volume) => volume.id === id ? { ...volume, driverOpts: [...volume.driverOpts, { key, value }] } : volume));
+  }
+
+  protected addNfsVolumeDriverOpts(id: number) {
+    this.builderVolumes.update((volumes) => volumes.map((volume) => {
+      if (volume.id !== id) {
+        return volume;
+      }
+
+      const existing = new Set(volume.driverOpts.map((entry) => entry.key.trim()).filter(Boolean));
+      const additions = [
+        { key: 'type', value: 'nfs' },
+        { key: 'o', value: 'addr=192.168.178.22,rw,nolock,soft,nfsvers=4' },
+        { key: 'device', value: ':/export/sharename' }
+      ].filter((entry) => !existing.has(entry.key));
+      return { ...volume, driver: volume.driver || 'local', driverOpts: [...volume.driverOpts, ...additions] };
+    }));
+  }
+
+  protected updateBuilderVolumeDriverOpt(id: number, index: number, field: keyof ComposeKeyValueEntry, event: Event) {
+    const target = event.target as HTMLInputElement;
+    this.builderVolumes.update((volumes) => volumes.map((volume) => {
+      if (volume.id !== id) {
+        return volume;
+      }
+
+      const driverOpts = [...volume.driverOpts];
+      driverOpts[index] = { ...(driverOpts[index] ?? { key: '', value: '' }), [field]: target.value };
+      return { ...volume, driverOpts };
+    }));
+  }
+
+  protected removeBuilderVolumeDriverOpt(id: number, index: number) {
+    this.builderVolumes.update((volumes) => volumes.map((volume) => {
+      if (volume.id !== id) {
+        return volume;
+      }
+
+      const driverOpts = [...volume.driverOpts];
+      driverOpts.splice(index, 1);
+      return { ...volume, driverOpts };
+    }));
   }
 
   protected generateComposeOverride() {
@@ -1636,11 +1687,31 @@ function appendTopLevelResources(
       lines.push(`  ${yamlKey(resource.name)}:`);
       if (resource.driver.trim()) {
         lines.push(`    driver: ${yamlScalar(resource.driver.trim())}`);
-      } else if (!resource.extra.trim()) {
+      } else if (!resource.extra.trim() && !hasVolumeDriverOpts(resource)) {
         lines[lines.length - 1] += ' {}';
       }
     }
+    appendVolumeDriverOpts(lines, resource);
     appendExtraYaml(lines, resource.extra);
+  }
+}
+
+function hasVolumeDriverOpts(resource: ComposeBuilderRenderableNetwork | ComposeBuilderRenderableVolume): resource is ComposeBuilderRenderableVolume {
+  return 'driverOpts' in resource && resource.driverOpts.some((entry) => entry.key.trim());
+}
+
+function appendVolumeDriverOpts(lines: string[], resource: ComposeBuilderRenderableNetwork | ComposeBuilderRenderableVolume) {
+  if (!hasVolumeDriverOpts(resource)) {
+    return;
+  }
+
+  lines.push('    driver_opts:');
+  for (const entry of resource.driverOpts) {
+    const key = entry.key.trim();
+    if (!key) {
+      continue;
+    }
+    lines.push(`      ${yamlKey(key)}: ${yamlScalar(entry.value.trim())}`);
   }
 }
 
@@ -1827,7 +1898,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
     return {
       services: [blankBuilderService('app', '.', '')],
       networks: [],
-      volumes: [{ name: 'data', external: false, driver: '', extra: '' }]
+      volumes: [{ name: 'data', external: false, driver: '', driverOpts: [], extra: '' }]
     };
   }
 
@@ -1844,6 +1915,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
   let objectKey: 'build' | 'dependsOn' | 'deploy' | 'placement' | '' = '';
   let extraKey = '';
   let resource: Omit<ComposeBuilderNetwork, 'id'> | Omit<ComposeBuilderVolume, 'id'> | undefined;
+  let resourceObjectKey: 'driverOpts' | '' = '';
 
   for (const raw of lines) {
     const indent = raw.match(/^ */)?.[0].length ?? 0;
@@ -1864,6 +1936,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
       objectKey = '';
       extraKey = '';
       resource = undefined;
+      resourceObjectKey = '';
       continue;
     }
 
@@ -2045,18 +2118,32 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
 
     if ((section === 'networks' || section === 'volumes') && indent === 2) {
       const name = unquoteYaml(text.replace(/:\s*\{\}\s*$/, '').replace(/:\s*$/, ''));
-      resource = { name, external: false, driver: '', extra: '' };
+      resource = section === 'volumes'
+        ? { name, external: false, driver: '', driverOpts: [], extra: '' }
+        : { name, external: false, driver: '', extra: '' };
       (section === 'networks' ? networks : volumes).push(resource);
+      resourceObjectKey = '';
       continue;
+    }
+
+    if (section === 'volumes' && indent === 6 && resource && resourceObjectKey === 'driverOpts' && 'driverOpts' in resource) {
+      const [key, ...rest] = text.split(':');
+      if (key.trim()) {
+        resource.driverOpts.push({ key: unquoteYaml(key.trim()), value: unquoteYaml(rest.join(':').trim()) });
+        continue;
+      }
     }
 
     if ((section === 'networks' || section === 'volumes') && indent === 4 && resource) {
       const [key, ...rest] = text.split(':');
       const value = unquoteYaml(rest.join(':').trim());
+      resourceObjectKey = '';
       if (key === 'external') {
         resource.external = value === 'true';
       } else if (key === 'driver') {
         resource.driver = value;
+      } else if (section === 'volumes' && key === 'driver_opts' && !value && 'driverOpts' in resource) {
+        resourceObjectKey = 'driverOpts';
       } else {
         resource.extra = appendRawLine(resource.extra, text);
       }

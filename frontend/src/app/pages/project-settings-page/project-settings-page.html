@@ -543,24 +543,48 @@
           }
 
           @for (volume of builderVolumes(); track volume.id) {
-          <div class="resource-row">
-            <input [value]="volume.name" (input)="updateBuilderVolume(volume.id, 'name', $event)"
-              placeholder="app-data" />
-            <input [value]="volume.driver" (input)="updateBuilderVolume(volume.id, 'driver', $event)"
-              placeholder="driver" />
-            <label class="check-row">
-              <input type="checkbox" [checked]="volume.external"
-                (change)="updateBuilderVolume(volume.id, 'external', $event)" />
-              <span>External</span>
-            </label>
-            <div class="remove-action">
-              <button type="button" class="secondary" (click)="removeBuilderVolume(volume.id)"
-                [disabled]="!canRemoveBuilderVolume(volume)">Remove</button>
-              @if (volumeRemoveReason(volume)) {
-              <small>{{ volumeRemoveReason(volume) }}</small>
-              }
+          <div class="resource-editor">
+            <div class="resource-row">
+              <input [value]="volume.name" (input)="updateBuilderVolume(volume.id, 'name', $event)"
+                placeholder="app-data" />
+              <input [value]="volume.driver" (input)="updateBuilderVolume(volume.id, 'driver', $event)"
+                placeholder="driver" />
+              <label class="check-row">
+                <input type="checkbox" [checked]="volume.external"
+                  (change)="updateBuilderVolume(volume.id, 'external', $event)" />
+                <span>External</span>
+              </label>
+              <div class="remove-action">
+                <button type="button" class="secondary" (click)="removeBuilderVolume(volume.id)"
+                  [disabled]="!canRemoveBuilderVolume(volume)">Remove</button>
+                @if (volumeRemoveReason(volume)) {
+                <small>{{ volumeRemoveReason(volume) }}</small>
+                }
+              </div>
             </div>
-          </div>
+
+            <fieldset>
+              <legend>Driver options</legend>
+              <div class="list-editor-head">
+                <button type="button" class="secondary compact"
+                  (click)="addBuilderVolumeDriverOpt(volume.id)">Add option</button>
+                <button type="button" class="secondary compact" (click)="addNfsVolumeDriverOpts(volume.id)">NFS</button>
+              </div>
+              @for (option of volume.driverOpts; track $index) {
+              <div class="list-row volume-option-row">
+                <input [value]="option.key" (input)="updateBuilderVolumeDriverOpt(volume.id, $index, 'key', $event)"
+                  placeholder="type" />
+                <input [value]="option.value"
+                  (input)="updateBuilderVolumeDriverOpt(volume.id, $index, 'value', $event)"
+                  placeholder="nfs" />
+                <button type="button" class="secondary compact"
+                  (click)="removeBuilderVolumeDriverOpt(volume.id, $index)">Remove</button>
+              </div>
+              } @empty {
+              <small>No driver options configured.</small>
+              }
+            </fieldset>
+            </div>
           }
           }
 

@@ -404,6 +404,16 @@ button.compact {
   min-width: 0;
 }
 
+.resource-editor {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.volume-option-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.5fr) minmax(180px, 1fr) auto;
+}
+
 .remove-action {
   align-items: end;
   display: grid;
