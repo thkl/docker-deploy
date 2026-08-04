@@ -118,6 +118,8 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly currentName = signal('');
   protected readonly saving = signal<'save' | 'deploy' | ''>('');
   protected readonly importingCompose = signal(false);
+  protected readonly exportingProject = signal(false);
+  protected readonly importingProject = signal(false);
   protected readonly inspectingCompose = signal(false);
   protected readonly validatingCompose = signal(false);
   protected readonly diagnosingTraefik = signal(false);
@@ -410,6 +412,69 @@ export class ProjectSettingsPage implements OnInit {
     } finally {
       this.saving.set('');
     }
+  }
+
+  protected exportProject() {
+    const projectRef = this.currentProjectRef || this.currentProject()?.id || this.currentName();
+    const projectName = this.currentProject()?.name || this.currentName() || 'project';
+    if (this.isNew() || !projectRef) {
+      this.error.set('Save the project before exporting it.');
+      return;
+    }
+
+    this.message.set('');
+    this.error.set('');
+    this.exportingProject.set(true);
+    this.api.exportProject(projectRef).subscribe({
+      next: (content) => {
+        const blob = new Blob([content], { type: 'application/yaml' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${projectName}.deploy.compose.yml`;
+        link.click();
+        URL.revokeObjectURL(url);
+        this.message.set('Project export downloaded.');
+        this.exportingProject.set(false);
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not export project.');
+        this.exportingProject.set(false);
+      },
+    });
+  }
+
+  protected importProjectFile(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) {
+      return;
+    }
+
+    this.message.set('');
+    this.error.set('');
+    this.importingProject.set(true);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      this.api.importProjectCompose(String(reader.result || '')).subscribe({
+        next: (payload) => {
+          this.applyImportedProjectPayload(payload);
+          this.message.set('Project compose imported. Review the settings, then save.');
+          this.importingProject.set(false);
+        },
+        error: (error) => {
+          this.error.set(error?.error?.error || 'Could not import project compose file.');
+          this.importingProject.set(false);
+        },
+      });
+    };
+    reader.onerror = () => {
+      this.error.set('Could not read project compose file.');
+      this.importingProject.set(false);
+    };
+    reader.readAsText(file);
   }
 
   protected cancel() {
@@ -1033,6 +1098,45 @@ export class ProjectSettingsPage implements OnInit {
     if (this.builderServices().length === 0) {
       this.addBuilderService();
     }
+  }
+
+  private applyImportedProjectPayload(payload: ProjectPayload) {
+    const projectName = payload.project?.name ?? payload.name ?? '';
+    const serverIds = payload.project?.serverIds?.length ? payload.project.serverIds : payload.serverIds?.length ? payload.serverIds : [payload.project?.serverId ?? payload.serverId ?? 'local'];
+    const traefik = payload.traefik ?? { enabled: payload.traefikEnabled };
+    const composeOverride = payload.compose?.override ?? payload.composeOverride ?? '';
+    const deploymentStrategy = payload.deployment?.strategy ?? payload.deploymentStrategy ?? 'compose';
+
+    this.form.reset({
+      name: projectName,
+      serverId: serverIds[0] ?? 'local',
+      repositoryUrl: payload.git?.repositoryUrl ?? payload.repositoryUrl ?? '',
+      token: '',
+      deployToken: '',
+      deploymentStrategy: deploymentStrategy === 'swarm' ? 'swarm' : 'compose',
+      path: payload.project?.path ?? payload.path ?? '',
+      composeOverride,
+      traefikEnabled: Boolean(traefik.enabled),
+      traefikHostname: traefik.hostname ?? payload.traefikHostname ?? '',
+      traefikService: traefik.service ?? payload.traefikService ?? '',
+      traefikPort: traefik.port ? String(traefik.port) : payload.traefikPort || '3000',
+      traefikEntryPoints: traefik.entryPoints ?? payload.traefikEntryPoints ?? this.globalDefaults().defaultTraefikEntryPoints,
+      traefikCertResolver: traefik.certResolver ?? payload.traefikCertResolver ?? this.globalDefaults().defaultTraefikCertResolver,
+      traefikNetwork: traefik.network ?? payload.traefikNetwork ?? this.globalDefaults().defaultTraefikNetwork,
+      traefikWildcardCertificate: Boolean(traefik.wildcardCertificate ?? payload.traefikWildcardCertificate),
+      traefikWildcardDomain: traefik.wildcardDomain ?? payload.traefikWildcardDomain ?? '',
+      traefikWebsocket: Boolean(traefik.websocket ?? payload.traefikWebsocket),
+      traefikRemovePublishedPorts: traefik.removePublishedPorts ?? payload.traefikRemovePublishedPorts ?? true,
+    });
+    this.traefikEnabled.set(Boolean(traefik.enabled));
+    this.wildcardCertificate.set(Boolean(traefik.wildcardCertificate ?? payload.traefikWildcardCertificate));
+    this.deploymentStrategy.set(deploymentStrategy === 'swarm' ? 'swarm' : 'compose');
+    this.selectedServerId.set(this.form.controls.serverId.value || 'local');
+    this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
+    this.loadBuilderFromCompose(composeOverride);
+    this.composeMode.set('builder');
+    this.traefikFormRevision.update((revision) => revision + 1);
+    this.applyProjectEnvSecrets(payload.compose?.envSecrets ?? payload.envSecrets ?? []);
   }
 
   private resetForNewProject() {

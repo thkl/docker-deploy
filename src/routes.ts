@@ -14,6 +14,7 @@ import { EventBus } from "./eventBus.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ControllerKeyState } from "./keyStore.js";
 import { AppDatabase, ControllerStateBackup } from "./database.js";
+import { parseProjectComposeImport, renderProjectComposeExport } from "./projectComposeTransfer.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
@@ -695,6 +696,59 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
         const deployment = deploymentService.startDeployment(projectName, appSettings, "manual");
         res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
+    });
+
+    app.get("/api/projects/:name/export", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            const globalSettings = globalSettingsStore.readSettings();
+            let compose = appSettings.composeOverride?.trim() ?? "";
+            if (!compose) {
+                const imported = await agentManager.getClient(appSettings.serverId ?? "local").importCompose(projectName, appSettings, globalSettings);
+                compose = imported.compose.trim();
+            }
+
+            if (!compose) {
+                res.status(400).json({ error: "Project has no Docker Compose content to export." });
+                return;
+            }
+
+            const exported = renderProjectComposeExport({
+                name: projectName,
+                settings: appSettings,
+                globalSettings,
+                compose
+            });
+
+            res.setHeader("content-disposition", `attachment; filename="${projectName}.deploy.compose.yml"`);
+            res.type("yaml").send(exported);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not export project." });
+        }
+    });
+
+    app.post("/api/projects/import", (req: Request, res: Response) => {
+        try {
+            const content = typeof req.body?.content === "string" ? req.body.content : "";
+            if (!content.trim()) {
+                res.status(400).json({ error: "Import file content is required." });
+                return;
+            }
+
+            res.json(parseProjectComposeImport(content));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not import project compose file." });
+        }
     });
 
     app.post("/api/projects/:name/deployments/cancel", (req: Request, res: Response) => {

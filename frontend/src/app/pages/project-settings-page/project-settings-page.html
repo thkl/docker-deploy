@@ -126,6 +126,17 @@
         [disabled]="saving() !== '' || validatingCompose()">
         {{ validatingCompose() ? 'Validating...' : 'Validate compose' }}
       </button>
+      <button type="button" class="secondary" (click)="exportProject()"
+        [disabled]="isNew() || saving() !== '' || exportingProject()">
+        {{ exportingProject() ? 'Exporting...' : 'Export project' }}
+      </button>
+      <button type="button" class="secondary" (click)="projectImportInput.click()"
+        [disabled]="saving() !== '' || importingProject()">
+        {{ importingProject() ? 'Importing...' : 'Import project' }}
+      </button>
+      <input #projectImportInput class="hidden-file-input" type="file"
+        accept=".yml,.yaml,application/yaml,text/yaml,text/plain"
+        (change)="importProjectFile($event)" />
     </div>
 
     <div class="compose-tabs" role="tablist" aria-label="Compose editor mode">

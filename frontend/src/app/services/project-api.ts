@@ -27,6 +27,14 @@ export class ProjectApi {
     return this.http.post<{ status: string; deploymentId: string }>(`/api/projects/${encodeURIComponent(projectRef)}/deploy`, {});
   }
 
+  exportProject(projectRef: string): Observable<string> {
+    return this.http.get(`/api/projects/${encodeURIComponent(projectRef)}/export`, { responseType: 'text' });
+  }
+
+  importProjectCompose(content: string): Observable<ProjectPayload> {
+    return this.http.post<ProjectPayload>('/api/projects/import', { content });
+  }
+
   cancelDeployment(projectRef: string): Observable<DeploymentRecord | null> {
     return this.http.post<DeploymentRecord | null>(`/api/projects/${encodeURIComponent(projectRef)}/deployments/cancel`, {});
   }

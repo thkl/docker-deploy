@@ -604,6 +604,10 @@ button.secondary:hover {
   color: var(--accent);
 }
 
+.hidden-file-input {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .field-grid,
   .strategy-summary,
