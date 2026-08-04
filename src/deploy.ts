@@ -66,7 +66,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
     const workerScript = `
-                apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git jq openssh-client py3-yaml python3 > /dev/null 2>&1
+                apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
 
                 PROJECT_ROOT=${quotedHostAppsPath}
                 PROJECT_ROOT="\${PROJECT_ROOT%/}"
@@ -126,67 +126,107 @@ ${persistedStorageGuardScript}
                         exit 1
                     fi
 
+                    echo "--> Rendering Swarm stack source..."
+                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --format json > /tmp/deploy-compose-stack.json
+
                     echo "--> Sanitizing Compose file for Swarm stack deployment..."
-                    python3 - "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" << 'DEPLOY_SWARM_SANITIZE_PY'
-import sys
-import yaml
+                    node - "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" /tmp/deploy-compose-stack.json << 'DEPLOY_SWARM_SANITIZE_JS'
+const fs = require("node:fs");
 
-path = sys.argv[1]
-with open(path, "r", encoding="utf-8") as handle:
-    data = yaml.safe_load(handle) or {}
+const outputPath = process.argv[2];
+const inputPath = process.argv[3];
+const data = JSON.parse(fs.readFileSync(inputPath, "utf8") || "{}");
+const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+const isEmptyObject = (value) => isObject(value) && Object.keys(value).length === 0;
 
-if isinstance(data, dict):
-    data.pop("name", None)
+if (isObject(data)) {
+  delete data.name;
+}
 
-for section in ("networks", "volumes"):
-    resources = data.get(section) if isinstance(data, dict) else None
-    if not isinstance(resources, dict):
-        continue
-    for resource in resources.values():
-        if not isinstance(resource, dict):
-            continue
-        resource.pop("name", None)
-        for key in ("ipam", "driver_opts", "labels"):
-            if resource.get(key) == {}:
-                resource.pop(key, None)
+for (const section of ["networks", "volumes"]) {
+  const resources = isObject(data) ? data[section] : undefined;
+  if (!isObject(resources)) {
+    continue;
+  }
 
-services = data.get("services") if isinstance(data, dict) else None
-if isinstance(services, dict):
-    for service in services.values():
-        if not isinstance(service, dict):
-            continue
-        for key in ("command", "entrypoint"):
-            if service.get(key) is None:
-                service.pop(key, None)
-        networks = service.get("networks")
-        if isinstance(networks, dict) and all(value is None for value in networks.values()):
-            service["networks"] = list(networks.keys())
-        volumes = service.get("volumes")
-        if isinstance(volumes, list):
-            for volume in volumes:
-                if isinstance(volume, dict) and volume.get("volume") == {}:
-                    volume.pop("volume", None)
-        deploy = service.get("deploy")
-        if not isinstance(deploy, dict):
-            continue
-        labels = deploy.get("labels")
-        if isinstance(labels, dict):
-            deploy["labels"] = [f"{key}={value}" for key, value in labels.items()]
-        if deploy.get("resources") == {}:
-            deploy.pop("resources", None)
-        placement = deploy.get("placement")
-        constraints = placement.get("constraints") if isinstance(placement, dict) else None
-        if isinstance(constraints, list):
-            seen = set()
-            placement["constraints"] = [item for item in constraints if not (item in seen or seen.add(item))]
+  for (const resource of Object.values(resources)) {
+    if (!isObject(resource)) {
+      continue;
+    }
 
-with open(path, "w", encoding="utf-8") as handle:
-    yaml.safe_dump(data, handle, default_flow_style=False, sort_keys=False)
-DEPLOY_SWARM_SANITIZE_PY
+    delete resource.name;
+    for (const key of ["ipam", "driver_opts", "labels"]) {
+      if (isEmptyObject(resource[key])) {
+        delete resource[key];
+      }
+    }
+  }
+}
+
+const services = isObject(data) ? data.services : undefined;
+if (isObject(services)) {
+  for (const service of Object.values(services)) {
+    if (!isObject(service)) {
+      continue;
+    }
+
+    for (const key of ["command", "entrypoint"]) {
+      if (service[key] === null) {
+        delete service[key];
+      }
+    }
+
+    if (isObject(service.networks) && Object.values(service.networks).every((value) => value === null)) {
+      service.networks = Object.keys(service.networks);
+    }
+
+    if (Array.isArray(service.volumes)) {
+      for (const volume of service.volumes) {
+        if (isObject(volume) && isEmptyObject(volume.volume)) {
+          delete volume.volume;
+        }
+      }
+    }
+
+    const deploy = service.deploy;
+    if (!isObject(deploy)) {
+      continue;
+    }
+
+    if (isObject(deploy.labels)) {
+      deploy.labels = Object.entries(deploy.labels).map(([key, value]) => String(key) + "=" + String(value));
+    }
+
+    if (isEmptyObject(deploy.resources)) {
+      delete deploy.resources;
+    }
+
+    const constraints = isObject(deploy.placement) ? deploy.placement.constraints : undefined;
+    if (Array.isArray(constraints)) {
+      const seen = new Set();
+      deploy.placement.constraints = constraints.filter((item) => {
+        if (seen.has(item)) {
+          return false;
+        }
+        seen.add(item);
+        return true;
+      });
+    }
+  }
+}
+
+fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
+DEPLOY_SWARM_SANITIZE_JS
 
                     echo "--> Validating Swarm stack source..."
-                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --format json > /tmp/deploy-compose-stack.json
-                    if jq -e '.services // {} | to_entries[] | select(.value.build != null)' /tmp/deploy-compose-stack.json > /dev/null; then
+                    if node - /tmp/deploy-compose-stack.json << 'DEPLOY_SWARM_VALIDATE_JS'
+const fs = require("node:fs");
+const data = JSON.parse(fs.readFileSync(process.argv[2], "utf8") || "{}");
+const services = data && typeof data === "object" && data.services && typeof data.services === "object" ? data.services : {};
+const hasBuild = Object.values(services).some((service) => service && typeof service === "object" && service.build != null);
+process.exit(hasBuild ? 0 : 1);
+DEPLOY_SWARM_VALIDATE_JS
+                    then
                         echo "--> CRITICAL: Swarm stack deployment requires image-based services. Remove build directives or publish images before deploying as a stack."
                         exit 1
                     fi
@@ -227,7 +267,7 @@ DEPLOY_SWARM_SANITIZE_PY
         `${hostAppsPath}:${hostAppsPath}`,
         "-v",
         `${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`,
-        "alpine:latest",
+        "node:24.16.0-alpine",
         "sh"
     ], { stdio: ["pipe", "pipe", "pipe"] });
     let failed = false;

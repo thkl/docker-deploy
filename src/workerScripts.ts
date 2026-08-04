@@ -75,56 +75,70 @@ export function renderPersistedStorageRewriteScript(targetFile: string) {
                     RELEASE_DEPLOY_NO_SLASH="\${RELEASE_DEPLOY%/}"
                     echo "--> Rewriting persisted temporary-checkout paths."
                     if docker compose -f ${targetFile} config --format json > /tmp/deploy-compose-persisted-before.json 2> /tmp/deploy-compose-persisted-rewrite-error.txt; then
-                        jq --arg root "$PROJECT_ROOT_NO_SLASH" --arg tmp "$TMP_DEPLOY_NO_SLASH" --arg release "$RELEASE_DEPLOY_NO_SLASH" '
-                            def tmp_suffix($path): $path[($tmp | length):];
-                            def top_segment($path):
-                                (tmp_suffix($path) | sub("^/"; "") | split("/") | .[0] // "");
-                            def external_data_path($path):
-                                (top_segment($path) | test("^(data|storage|uploads|upload|db|database)$"; "i"));
-                            def rewrite_checkout_path($path; $read_only):
-                                if ($path == $tmp or ($path | startswith($tmp + "/"))) then
-                                    if external_data_path($path) then
-                                        $root + tmp_suffix($path)
-                                    elif $read_only then
-                                        $release + tmp_suffix($path)
-                                    else
-                                        $path
-                                    end
-                                else
-                                    $path
-                                end;
-                            def rewrite_volume_string($volume):
-                                ($volume | split(":")) as $parts |
-                                if (($parts | length) > 1) and (($parts[0] == $tmp) or ($parts[0] | startswith($tmp + "/"))) then
-                                    ([rewrite_checkout_path($parts[0]; ($parts[2:] | index("ro") != null))] + $parts[1:]) | join(":")
-                                else
-                                    $volume
-                                end;
-                            .services = ((.services // {}) | with_entries(
-                                .value |= (
-                                    if (.build | type) == "object" and (.build.context | type) == "string" then
-                                        .build.context = rewrite_checkout_path(.build.context; true)
-                                    elif (.build | type) == "string" then
-                                        .build = rewrite_checkout_path(.build; true)
-                                    else
-                                        .
-                                    end
-                                    | if (.volumes | type) == "array" then
-                                        .volumes |= map(
-                                            if type == "string" then
-                                                rewrite_volume_string(.)
-                                            elif type == "object" and (.source | type) == "string" then
-                                                .source = rewrite_checkout_path(.source; ((.read_only // .readonly // false) == true))
-                                            else
-                                                .
-                                            end
-                                        )
-                                    else
-                                        .
-                                    end
-                                )
-                            ))
-                        ' /tmp/deploy-compose-persisted-before.json > /tmp/deploy-compose-persisted-after.json
+                        node - "$PROJECT_ROOT_NO_SLASH" "$TMP_DEPLOY_NO_SLASH" "$RELEASE_DEPLOY_NO_SLASH" /tmp/deploy-compose-persisted-before.json /tmp/deploy-compose-persisted-after.json << 'DEPLOY_STORAGE_REWRITE_JS'
+const fs = require("node:fs");
+
+const [root, tmp, release, inputPath, outputPath] = process.argv.slice(2);
+const data = JSON.parse(fs.readFileSync(inputPath, "utf8") || "{}");
+const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+const tmpSuffix = (path) => path.slice(tmp.length);
+const topSegment = (path) => tmpSuffix(path).replace(/^\\//, "").split("/")[0] || "";
+const isExternalDataPath = (path) => /^(data|storage|uploads|upload|db|database)$/i.test(topSegment(path));
+const isTmpPath = (path) => typeof path === "string" && (path === tmp || path.startsWith(tmp + "/"));
+const rewriteCheckoutPath = (path, readOnly) => {
+  if (!isTmpPath(path)) {
+    return path;
+  }
+
+  if (isExternalDataPath(path)) {
+    return root + tmpSuffix(path);
+  }
+
+  return readOnly ? release + tmpSuffix(path) : path;
+};
+const rewriteVolumeString = (volume) => {
+  const parts = volume.split(":");
+  if (parts.length <= 1 || !isTmpPath(parts[0])) {
+    return volume;
+  }
+
+  const readOnly = parts.slice(2).includes("ro");
+  return [rewriteCheckoutPath(parts[0], readOnly), ...parts.slice(1)].join(":");
+};
+
+if (isObject(data.services)) {
+  for (const service of Object.values(data.services)) {
+    if (!isObject(service)) {
+      continue;
+    }
+
+    if (isObject(service.build) && typeof service.build.context === "string") {
+      service.build.context = rewriteCheckoutPath(service.build.context, true);
+    } else if (typeof service.build === "string") {
+      service.build = rewriteCheckoutPath(service.build, true);
+    }
+
+    if (Array.isArray(service.volumes)) {
+      service.volumes = service.volumes.map((volume) => {
+        if (typeof volume === "string") {
+          return rewriteVolumeString(volume);
+        }
+
+        if (isObject(volume) && typeof volume.source === "string") {
+          return {
+            ...volume,
+            source: rewriteCheckoutPath(volume.source, Boolean(volume.read_only ?? volume.readonly ?? false))
+          };
+        }
+
+        return volume;
+      });
+    }
+  }
+}
+
+fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
+DEPLOY_STORAGE_REWRITE_JS
                         docker compose -f /tmp/deploy-compose-persisted-after.json config --no-interpolate > ${targetFile}
                     else
                         cat /tmp/deploy-compose-persisted-rewrite-error.txt >&2
@@ -144,24 +158,43 @@ export function renderProjectRootStorageOverlayScript() {
                     PROJECT_ROOT_NO_SLASH="\${PROJECT_ROOT%/}"
                     TMP_DEPLOY_NO_SLASH="\${TMP_DEPLOY%/}"
                     if docker compose $COMPOSE_FILES config --format json > /tmp/deploy-compose-storage-source.json 2> /tmp/deploy-compose-storage-error.txt; then
-                        jq --arg root "$PROJECT_ROOT_NO_SLASH" --arg tmp "$TMP_DEPLOY_NO_SLASH" '
-                            (.services // {}) | to_entries | map(
-                                . as $service |
-                                ($service.value.volumes // []) as $volumes |
-                                ($volumes | map(
-                                    if type == "string" and (. == $tmp or startswith($tmp + ":") or startswith($tmp + "/"))
-                                    then ($root + (.[($tmp | length):]))
-                                    elif type == "object"
-                                         and (.source | type) == "string"
-                                         and (.source == $tmp or (.source | startswith($tmp + "/")))
-                                    then .source = ($root + (.source[($tmp | length):]))
-                                    else .
-                                    end
-                                )) as $rewritten |
-                                select($rewritten != $volumes) |
-                                { key: $service.key, value: { volumes: $rewritten } }
-                            ) | from_entries | select(length > 0) | { services: . }
-                        ' /tmp/deploy-compose-storage-source.json > "$COMPOSE_WORKSPACE/docker-compose.storage.yml"
+                        node - "$PROJECT_ROOT_NO_SLASH" "$TMP_DEPLOY_NO_SLASH" /tmp/deploy-compose-storage-source.json "$COMPOSE_WORKSPACE/docker-compose.storage.yml" << 'DEPLOY_STORAGE_OVERLAY_JS'
+const fs = require("node:fs");
+
+const [root, tmp, inputPath, outputPath] = process.argv.slice(2);
+const data = JSON.parse(fs.readFileSync(inputPath, "utf8") || "{}");
+const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+const isTmpPath = (path) => typeof path === "string" && (path === tmp || path.startsWith(tmp + ":") || path.startsWith(tmp + "/"));
+const rewritePath = (path) => root + path.slice(tmp.length);
+const overlay = { services: {} };
+
+if (isObject(data.services)) {
+  for (const [serviceName, service] of Object.entries(data.services)) {
+    const volumes = isObject(service) && Array.isArray(service.volumes) ? service.volumes : [];
+    const rewritten = volumes.map((volume) => {
+      if (typeof volume === "string" && isTmpPath(volume)) {
+        return rewritePath(volume);
+      }
+
+      if (isObject(volume) && typeof volume.source === "string" && isTmpPath(volume.source)) {
+        return { ...volume, source: rewritePath(volume.source) };
+      }
+
+      return volume;
+    });
+
+    if (JSON.stringify(rewritten) !== JSON.stringify(volumes)) {
+      overlay.services[serviceName] = { volumes: rewritten };
+    }
+  }
+}
+
+if (Object.keys(overlay.services).length) {
+  fs.writeFileSync(outputPath, JSON.stringify(overlay, null, 2) + "\\n");
+} else {
+  fs.writeFileSync(outputPath, "");
+}
+DEPLOY_STORAGE_OVERLAY_JS
                         if [ -s "$COMPOSE_WORKSPACE/docker-compose.storage.yml" ]; then
                             echo "--> Writing storage bind-mount override."
                             COMPOSE_FILES="$COMPOSE_FILES -f $COMPOSE_WORKSPACE/docker-compose.storage.yml"
@@ -183,18 +216,31 @@ export function renderPersistedStorageGuardScript(targetFile: string) {
                 if [ -f ${targetFile} ] && [ -n "$TMP_DEPLOY" ]; then
                     TMP_DEPLOY_NO_SLASH="\${TMP_DEPLOY%/}"
                     if docker compose -f ${targetFile} config --format json > /tmp/deploy-compose-persisted.json 2> /tmp/deploy-compose-persisted-error.txt; then
-                        if jq -e --arg tmp "$TMP_DEPLOY_NO_SLASH" '
-                            [
-                                (.services // {})[]?.volumes[]? |
-                                if type == "string" then
-                                    (. == $tmp or startswith($tmp + ":") or startswith($tmp + "/"))
-                                elif type == "object" and (.source | type) == "string" then
-                                    (.source == $tmp or (.source | startswith($tmp + "/")))
-                                else
-                                    false
-                                end
-                            ] | any
-                        ' /tmp/deploy-compose-persisted.json > /dev/null; then
+                        if node - "$TMP_DEPLOY_NO_SLASH" /tmp/deploy-compose-persisted.json << 'DEPLOY_STORAGE_GUARD_JS'
+const fs = require("node:fs");
+
+const [tmp, inputPath] = process.argv.slice(2);
+const data = JSON.parse(fs.readFileSync(inputPath, "utf8") || "{}");
+const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+const isTmpPath = (path) => typeof path === "string" && (path === tmp || path.startsWith(tmp + ":") || path.startsWith(tmp + "/"));
+let found = false;
+
+if (isObject(data.services)) {
+  for (const service of Object.values(data.services)) {
+    const volumes = isObject(service) && Array.isArray(service.volumes) ? service.volumes : [];
+    for (const volume of volumes) {
+      if (typeof volume === "string" && isTmpPath(volume)) {
+        found = true;
+      } else if (isObject(volume) && isTmpPath(volume.source)) {
+        found = true;
+      }
+    }
+  }
+}
+
+process.exit(found ? 0 : 1);
+DEPLOY_STORAGE_GUARD_JS
+                        then
                             echo "--> CRITICAL: Persistent Compose file still contains temporary checkout bind mounts." >&2
                             exit 1
                         fi

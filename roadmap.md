@@ -294,7 +294,7 @@ Agent protocol:
 ## Phase 6.8: Deployment Strategy Planner
 
 Choose the deployment engine automatically from target-server and proxy topology.
-- [ ] Switch from python runtime scripts to js and node as runtime !!!
+- [x] Switch from python runtime scripts to js and node as runtime !!!
 - [ ] Detect Docker mode per target: standalone engine, Swarm manager, or Swarm worker.
 - [ ] Detect Traefik provider mode: local Docker provider or Swarm provider.
 - [x] Use normal `docker compose up` for standalone hosts and same-node Docker-provider Traefik.

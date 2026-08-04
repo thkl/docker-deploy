@@ -37,8 +37,8 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${quotedProjectVolume} \
             -v ${quotedSshKeyPath} \
-            alpine:latest sh << 'EOF'
-                apk add --no-cache docker-cli docker-cli-compose git jq openssh-client > /dev/null 2>&1
+            node:24.16.0-alpine sh << 'EOF'
+                apk add --no-cache docker-cli docker-cli-compose git openssh-client > /dev/null 2>&1
 
                 PROJECT_ROOT=${quotedProjectRoot}
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/inspect"
@@ -74,7 +74,17 @@ ${traefikOverrideScript}
                     echo "${composeYamlEndMarker}"
                     echo "${composeWarningsBeginMarker}"
                     docker compose $COMPOSE_FILES config --format json > /tmp/updater-compose.json 2> /tmp/updater-compose-json-error.txt
-                    jq -r '.networks // {} | to_entries[] | select(.value.external == true) | .key' /tmp/updater-compose.json | while read -r NETWORK_NAME; do
+                    node - /tmp/updater-compose.json << 'DEPLOY_EXTERNAL_NETWORKS_JS' | while read -r NETWORK_NAME; do
+const fs = require("node:fs");
+
+const data = JSON.parse(fs.readFileSync(process.argv[2], "utf8") || "{}");
+const networks = data && typeof data === "object" && data.networks && typeof data.networks === "object" ? data.networks : {};
+for (const [name, network] of Object.entries(networks)) {
+  if (network && typeof network === "object" && network.external === true) {
+    console.log(name);
+  }
+}
+DEPLOY_EXTERNAL_NETWORKS_JS
                         if ! docker network inspect "$NETWORK_NAME" > /dev/null 2>&1; then
                             echo "External network $NETWORK_NAME does not exist on the target Docker host."
                         fi
