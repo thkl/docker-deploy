@@ -820,7 +820,8 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   protected builderEnvironmentEntries(service: ComposeBuilderService): ComposeEnvironmentEntry[] {
-    return parseEnvironmentEntries(service.environment);
+    const entries = parseEnvironmentEntries(service.environment);
+    return service.environment.endsWith('\n') ? [...entries, { key: '', value: '' }] : entries;
   }
 
   protected addBuilderEnvironmentEntry(id: number) {
@@ -829,7 +830,8 @@ export class ProjectSettingsPage implements OnInit {
         return service;
       }
 
-      return { ...service, environment: renderEnvironmentEntries([...parseEnvironmentEntries(service.environment), { key: 'VARIABLE', value: 'value' }]) };
+      const current = service.environment.trimEnd();
+      return { ...service, environment: current ? `${current}\n` : '\n' };
     }));
   }
 
@@ -841,7 +843,12 @@ export class ProjectSettingsPage implements OnInit {
       }
 
       const entries = parseEnvironmentEntries(service.environment);
-      entries[index] = { ...(entries[index] ?? { key: '', value: '' }), [field]: target.value };
+      if (field === 'key' && target.value.includes('=')) {
+        const [key, ...rest] = target.value.split('=');
+        entries[index] = { key: key.trim(), value: rest.join('=').trim() };
+      } else {
+        entries[index] = { ...(entries[index] ?? { key: '', value: '' }), [field]: target.value };
+      }
       return { ...service, environment: renderEnvironmentEntries(entries) };
     }));
   }
