@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectPayload, ProjectSummary, TraefikDiagnostics } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -95,6 +95,12 @@ interface ComposeTraefikSettings {
   deploymentStrategy: DeploymentStrategy;
 }
 
+interface StrategySummary {
+  label: string;
+  reason: string;
+  details: string[];
+}
+
 @Component({
   selector: 'app-project-settings-page',
   imports: [ReactiveFormsModule],
@@ -143,6 +149,18 @@ export class ProjectSettingsPage implements OnInit {
   });
   protected readonly title = computed(() => (this.isNew() ? 'New project' : `Settings for ${this.currentName()}`));
   protected readonly submitLabel = computed(() => (this.isNew() ? 'Create project' : 'Save'));
+  protected readonly strategySummary = computed(() => {
+    this.traefikFormRevision();
+    const value = this.form.getRawValue();
+    const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId()) ?? null;
+    return formDeploymentStrategySummary({
+      strategy: value.deploymentStrategy === 'swarm' ? 'swarm' : 'compose',
+      traefikEnabled: value.traefikEnabled,
+      traefikNetwork: value.traefikNetwork.trim(),
+      targetCount: ensureServerSelected(this.selectedServerIds(), value.serverId.trim() || 'local').length,
+      server
+    });
+  });
   protected readonly builderServiceNames = computed(() => this.builderServices().map((service) => service.name.trim()).filter(Boolean));
   protected readonly builderNetworkNames = computed(() => this.builderNetworks().map((network) => network.name.trim()).filter(Boolean));
   protected readonly detectedTraefikNetworkSuggestions = computed(() => {
@@ -1410,6 +1428,51 @@ function renderComposeBuilder(
   appendTopLevelResources(lines, 'networks', prepared.networks);
   appendTopLevelResources(lines, 'volumes', volumes);
   return `${lines.join('\n')}\n`;
+}
+
+function formDeploymentStrategySummary(input: {
+  strategy: DeploymentStrategy;
+  traefikEnabled: boolean;
+  traefikNetwork: string;
+  targetCount: number;
+  server: ServerRecord | null;
+}): StrategySummary {
+  const detectedTraefikNetwork = input.server?.capabilities?.traefik.dockerProviderNetwork || input.server?.capabilities?.traefik.networks?.[0] || '';
+  const network = input.traefikNetwork || detectedTraefikNetwork;
+
+  if (input.strategy === 'swarm') {
+    return {
+      label: 'Swarm stack',
+      reason: input.traefikEnabled
+        ? 'This project will deploy as a Swarm stack and use the configured shared proxy network.'
+        : 'This project will deploy as a Swarm stack.',
+      details: [
+        'Deploy must run through a Swarm manager agent.',
+        input.targetCount > 1
+          ? 'Multiple selected targets collapse to one stack dispatch; placement constraints decide worker nodes.'
+          : 'Service placement constraints decide the target node.',
+        input.traefikEnabled
+          ? `Proxy routing uses ${network || 'the selected overlay network'}.`
+          : 'No proxy routing is configured.'
+      ]
+    };
+  }
+
+  return {
+    label: 'Single host Compose',
+    reason: input.traefikEnabled
+      ? 'This project will deploy containers on the selected Docker host and route through the configured network.'
+      : 'This project will deploy containers directly on the selected Docker host.',
+    details: [
+      'Deploy runs with Docker Compose on each selected target server.',
+      input.targetCount > 1
+        ? `${input.targetCount} target servers will receive separate Compose deploys.`
+        : `Target server: ${input.server?.name || 'local'}.`,
+      input.traefikEnabled
+        ? `Proxy routing uses ${network || 'the selected Docker network'}.`
+        : 'No proxy routing is configured.'
+    ]
+  };
 }
 
 function mergeTraefikIntoCompose(compose: string, traefik: ComposeTraefikSettings) {

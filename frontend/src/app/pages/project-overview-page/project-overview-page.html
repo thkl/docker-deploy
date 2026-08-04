@@ -190,6 +190,21 @@
         <a class="secondary" [routerLink]="['/projects', project.id, 'settings']">Edit compose</a>
       </div>
 
+      @if (strategySummary(); as strategy) {
+      <section class="strategy-summary">
+        <div>
+          <small>Deployment strategy</small>
+          <strong>{{ strategy.label }}</strong>
+          <span>{{ strategy.reason }}</span>
+        </div>
+        <ul>
+          @for (detail of strategy.details; track detail) {
+          <li>{{ detail }}</li>
+          }
+        </ul>
+      </section>
+      }
+
       <div class="compose-grid">
         <span>
           <strong>{{ project.hasComposeOverride ? 'Stored override' : 'Repository compose' }}</strong>

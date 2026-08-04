@@ -90,6 +90,21 @@
         </select>
       </label>
     </div>
+
+    @if (strategySummary(); as strategy) {
+    <section class="strategy-summary">
+      <div>
+        <small>Deployment strategy</small>
+        <strong>{{ strategy.label }}</strong>
+        <span>{{ strategy.reason }}</span>
+      </div>
+      <ul>
+        @for (detail of strategy.details; track detail) {
+        <li>{{ detail }}</li>
+        }
+      </ul>
+    </section>
+    }
   </section>
 
   <section class="form-panel">

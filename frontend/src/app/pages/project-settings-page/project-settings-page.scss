@@ -68,6 +68,45 @@ label span {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.strategy-summary {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.95fr);
+  margin-top: 0.85rem;
+  padding: 0.72rem 0.8rem;
+}
+
+.strategy-summary div {
+  display: grid;
+  gap: 0.24rem;
+  min-width: 0;
+}
+
+.strategy-summary small,
+.strategy-summary span,
+.strategy-summary li {
+  color: var(--muted);
+}
+
+.strategy-summary small {
+  font-size: 0.78rem;
+}
+
+.strategy-summary ul {
+  display: grid;
+  gap: 0.3rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.strategy-summary li {
+  overflow-wrap: anywhere;
+}
+
 label {
   display: grid;
   gap: 0.45rem;
@@ -567,6 +606,7 @@ button.secondary:hover {
 
 @media (max-width: 900px) {
   .field-grid,
+  .strategy-summary,
   .toggle-grid,
   .structured-editors,
   .builder-shell,

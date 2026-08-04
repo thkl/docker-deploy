@@ -221,6 +221,47 @@
   text-decoration: none;
 }
 
+.strategy-summary {
+  align-items: start;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.95fr);
+  padding: 0.85rem 0.9rem;
+}
+
+.strategy-summary div {
+  display: grid;
+  gap: 0.26rem;
+  min-width: 0;
+}
+
+.strategy-summary small,
+.strategy-summary span,
+.strategy-summary li {
+  color: var(--muted);
+}
+
+.strategy-summary small {
+  font-size: 0.78rem;
+}
+
+.strategy-summary strong {
+  font-size: 1rem;
+}
+
+.strategy-summary ul {
+  display: grid;
+  gap: 0.32rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.strategy-summary li {
+  overflow-wrap: anywhere;
+}
+
 .deploy-head-actions {
   align-items: center;
   display: flex;
@@ -586,6 +627,10 @@
 
   .compose-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strategy-summary {
+    grid-template-columns: 1fr;
   }
 }
 

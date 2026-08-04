@@ -307,7 +307,7 @@ Choose the deployment engine automatically from target-server and proxy topology
 - [x] Support stack deploy options: replicated mode, replica count, placement constraints such as `node.role == worker` or `node.hostname == docker-3`, external overlay networks, and named volumes.
 - [x] Require pullable images for Swarm stack mode, or add a build-and-push registry workflow before enabling `build:` projects.
 - [x] Convert project controls for Swarm projects to stack/service commands: start/stop/restart should use `docker service scale`/`docker service update --force`, delete should use `docker stack rm`, and UI labels should say stack/service instead of container where applicable.
-- [ ] Show the selected strategy and reason in the project UI while keeping provider-specific label placement hidden from users.
+- [x] Show the selected strategy and reason in the project UI while keeping provider-specific label placement hidden from users.
 - [x] Allow image-only stored Compose projects without a repository URL; agents should skip clone/pull and deploy the stored Compose file from the project root workspace.
 
 ## Phase 6.6: Runtime Status And Logs

@@ -1,7 +1,7 @@
 import { Component, computed, effect, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, WebhookEventRecord } from '../../models/project';
+import { DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerRecord, WebhookEventRecord } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
@@ -60,6 +60,14 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly deleteDeploymentHistory = signal(true);
   protected readonly selectedServer = computed(() => this.store.selectedProjectServer());
   protected readonly isSwarmProject = computed(() => this.store.selectedProject()?.deploymentStrategy === 'swarm');
+  protected readonly strategySummary = computed(() => {
+    const project = this.store.selectedProject();
+    if (!project) {
+      return null;
+    }
+
+    return deploymentStrategySummary(project, this.selectedServer());
+  });
   protected readonly targetServerLabel = computed(() => {
     const project = this.store.selectedProject();
     if (!project) {
@@ -915,6 +923,54 @@ const ansiColorClasses: Record<number, string> = {
   96: 'ansi-fg-bright-cyan',
   97: 'ansi-fg-bright-white',
 };
+
+interface StrategySummary {
+  label: string;
+  reason: string;
+  details: string[];
+}
+
+function deploymentStrategySummary(project: ProjectSummary, server: ServerRecord | null): StrategySummary {
+  const strategy = project.deploymentStrategy === 'swarm' ? 'swarm' : 'compose';
+  const targetCount = project.serverIds?.length || (project.serverId ? 1 : 0);
+  const traefikNetwork = project.traefik.network || server?.capabilities?.traefik.dockerProviderNetwork || server?.capabilities?.traefik.networks?.[0] || '';
+
+  if (strategy === 'swarm') {
+    const details = [
+      'Deploy runs as a Swarm stack.',
+      targetCount > 1
+        ? 'One manager target dispatches the stack; placement constraints decide worker nodes.'
+        : 'A Swarm manager agent must run the stack deploy.',
+      project.traefik.enabled
+        ? `Proxy settings are generated for ${traefikNetwork || 'the selected overlay network'}.`
+        : 'No proxy routing is configured for this stack.'
+    ];
+
+    return {
+      label: 'Swarm stack',
+      reason: project.traefik.enabled
+        ? 'Selected because this project is configured for Swarm deployment with shared proxy networking.'
+        : 'Selected because this project is configured for Swarm deployment.',
+      details
+    };
+  }
+
+  return {
+    label: 'Single host Compose',
+    reason: project.traefik.enabled
+      ? 'Selected because this project deploys containers on the target host and routes through the configured Docker network.'
+      : 'Selected because this project deploys containers directly on the target host.',
+    details: [
+      'Deploy runs with Docker Compose on the selected target server.',
+      project.traefik.enabled
+        ? `Proxy settings are generated for ${traefikNetwork || 'the selected Docker network'}.`
+        : 'No proxy routing is configured for this project.',
+      targetCount > 1
+        ? `${targetCount} target servers are configured for fan-out deploys.`
+        : `Target server: ${server?.name || project.serverId || 'local'}.`
+    ]
+  };
+}
 
 const ansi256ColorClasses: Record<number, string> = {
   0: 'ansi-fg-black',
