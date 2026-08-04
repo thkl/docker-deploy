@@ -1088,6 +1088,9 @@ export class ProjectSettingsPage implements OnInit {
     const parsed = parseComposeBuilder(compose);
     if (!parsed) {
       this.resetComposeBuilder();
+      if (compose.trim()) {
+        this.composeMode.set('yaml');
+      }
       return;
     }
 
@@ -2119,7 +2122,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
 
     if (section === 'services') {
       if (indent === 2 && text.endsWith(':')) {
-        service = blankBuilderService(unquoteYaml(text.slice(0, -1)), '', '');
+        service = blankBuilderService(unquoteYaml(text.slice(0, -1)), '', '', '');
         services.push(service);
         listKey = '';
         objectKey = '';
@@ -2331,7 +2334,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
   return { services, networks, volumes };
 }
 
-function blankBuilderService(name: string, build: string, networks: string): Omit<ComposeBuilderService, 'id'> {
+function blankBuilderService(name: string, build: string, networks: string, restart = 'unless-stopped'): Omit<ComposeBuilderService, 'id'> {
   return {
     name,
     image: '',
@@ -2340,7 +2343,7 @@ function blankBuilderService(name: string, build: string, networks: string): Omi
     buildTarget: '',
     containerName: '',
     command: '',
-    restart: 'unless-stopped',
+    restart,
     networkMode: '',
     init: false,
     ports: '',
