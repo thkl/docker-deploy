@@ -829,7 +829,7 @@ export class ProjectSettingsPage implements OnInit {
         return service;
       }
 
-      return { ...service, environment: renderEnvironmentEntries([...parseEnvironmentEntries(service.environment), { key: 'VARIABLE', value: 'value' }]) };
+      return { ...service, environment: renderEnvironmentEntries([...parseEnvironmentEntries(service.environment), { key: '', value: '' }]) };
     }));
   }
 
