@@ -59,6 +59,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly deleteCheckout = signal(true);
   protected readonly deleteDeploymentHistory = signal(true);
   protected readonly selectedServer = computed(() => this.store.selectedProjectServer());
+  protected readonly isSwarmProject = computed(() => this.store.selectedProject()?.deploymentStrategy === 'swarm');
   protected readonly targetServerLabel = computed(() => {
     const project = this.store.selectedProject();
     if (!project) {
@@ -448,6 +449,16 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   }
 
   protected runtimeActionLabel(action: RuntimeServiceAction) {
+    if (this.isSwarmProject()) {
+      return action === 'restart'
+        ? 'Force update'
+        : action === 'start'
+          ? 'Scale to 1'
+          : action === 'stop'
+            ? 'Scale to 0'
+            : 'Update';
+    }
+
     return action === 'restart'
       ? 'Restart'
       : action === 'start'

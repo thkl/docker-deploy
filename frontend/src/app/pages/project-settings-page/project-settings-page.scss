@@ -268,6 +268,20 @@ textarea {
   padding: 0.65rem 0.75rem;
 }
 
+.builder-note {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.builder-note strong {
+  color: var(--ink);
+}
+
 .builder-diagnostics p {
   color: inherit;
   margin: 0;

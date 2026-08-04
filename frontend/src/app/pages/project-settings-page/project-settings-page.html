@@ -160,6 +160,13 @@
         </nav>
 
         <div class="builder-workspace">
+          @if (isSwarmMode()) {
+          <div class="builder-note">
+            <strong>Swarm stack mode</strong>
+            <span>Compose-only service options are locked and omitted from generated stack YAML.</span>
+          </div>
+          }
+
           @if (builderDiagnostics().length) {
           <div class="builder-diagnostics">
             @for (diagnostic of builderDiagnostics(); track diagnostic) {
@@ -204,41 +211,55 @@
               <label>
                 <span>Build context</span>
                 <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)"
-                  placeholder="." />
+                  placeholder="." [disabled]="isSwarmMode()" />
+                @if (isSwarmMode() && service.build) {
+                <small>Swarm stack deployment requires a pullable image.</small>
+                }
               </label>
               <label>
                 <span>Dockerfile</span>
                 <input [value]="service.dockerfile" (input)="updateBuilderService(service.id, 'dockerfile', $event)"
-                  placeholder="Dockerfile" />
+                  placeholder="Dockerfile" [disabled]="isSwarmMode()" />
               </label>
               <label>
                 <span>Build target</span>
                 <input [value]="service.buildTarget" (input)="updateBuilderService(service.id, 'buildTarget', $event)"
-                  placeholder="runtime" />
+                  placeholder="runtime" [disabled]="isSwarmMode()" />
               </label>
               <label>
                 <span>Container name</span>
                 <input [value]="service.containerName"
-                  (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay" />
+                  (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay"
+                  [disabled]="isSwarmMode()" />
+                @if (isSwarmMode() && service.containerName) {
+                <small>Stacks create service task containers automatically.</small>
+                }
               </label>
               <label>
                 <span>Restart policy</span>
-                <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)">
+                <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)"
+                  [disabled]="isSwarmMode()">
                   <option value="">none</option>
                   <option value="unless-stopped">unless-stopped</option>
                   <option value="always">always</option>
                   <option value="on-failure">on-failure</option>
                   <option value="no">no</option>
                 </select>
+                @if (isSwarmMode() && service.restart) {
+                <small>Use Swarm deploy policy instead of Compose restart.</small>
+                }
               </label>
               <label>
                 <span>Network mode</span>
                 <input [value]="service.networkMode" (input)="updateBuilderService(service.id, 'networkMode', $event)"
-                  placeholder="host" />
+                  placeholder="host" [disabled]="isSwarmMode()" />
+                @if (isSwarmMode() && service.networkMode) {
+                <small>Attach the service to Swarm networks instead.</small>
+                }
               </label>
               <label class="check-row inline-check">
                 <input type="checkbox" [checked]="service.init"
-                  (change)="updateBuilderService(service.id, 'init', $event)" />
+                  (change)="updateBuilderService(service.id, 'init', $event)" [disabled]="isSwarmMode()" />
                 <span>Init process</span>
               </label>
             </div>
@@ -275,7 +296,7 @@
                 <label class="check-row">
                   <input type="checkbox"
                     [checked]="isBuilderServiceListValueSelected(service, 'dependsOn', serviceName)"
-                    [disabled]="service.dependsOnAdvanced !== ''"
+                    [disabled]="service.dependsOnAdvanced !== '' || isSwarmMode()"
                     (change)="toggleBuilderServiceListValue(service.id, 'dependsOn', serviceName, $event)" />
                   <span>{{ serviceName }}</span>
                 </label>
@@ -285,6 +306,8 @@
                 }
                 @if (service.dependsOnAdvanced) {
                 <small>Advanced dependency options are preserved in YAML.</small>
+                } @else if (isSwarmMode()) {
+                <small>Swarm does not start services by Compose dependency order.</small>
                 }
               </fieldset>
             </div>

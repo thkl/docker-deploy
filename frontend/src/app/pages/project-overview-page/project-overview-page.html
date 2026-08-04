@@ -23,6 +23,7 @@
     <div class="status-facts">
       <span>{{ selectedServer()?.name || project.serverId || 'local' }}</span>
       <span>{{ targetServerLabel() }}</span>
+      <span>{{ isSwarmProject() ? 'Swarm stack' : 'Compose project' }}</span>
       <span>{{ project.hasComposeOverride ? 'Stored override' : 'Repository compose' }}</span>
       <span>{{ project.traefik.enabled && project.traefik.hostname ? project.traefik.hostname : 'No proxy' }}</span>
       <span>{{ project.path || '/root/docker-apps/' + project.name }}</span>
@@ -54,20 +55,22 @@
       </select>
       @if (selectedRuntimeServiceStatus(); as service) {
         <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'restart')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'restart') ? 'Restarting...' : 'Restart' }}
+          {{ runtimeActionBusy(service, 'restart') ? (isSwarmProject() ? 'Updating...' : 'Restarting...') : runtimeActionLabel('restart') }}
         </button>
         <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'start')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'start') ? 'Starting...' : 'Start' }}
+          {{ runtimeActionBusy(service, 'start') ? (isSwarmProject() ? 'Scaling...' : 'Starting...') : runtimeActionLabel('start') }}
         </button>
         <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'stop')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'stop') ? 'Stopping...' : 'Stop' }}
+          {{ runtimeActionBusy(service, 'stop') ? (isSwarmProject() ? 'Scaling...' : 'Stopping...') : runtimeActionLabel('stop') }}
         </button>
+        @if (!isSwarmProject()) {
         <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'recreate')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'recreate') ? 'Recreating...' : 'Recreate' }}
+          {{ runtimeActionBusy(service, 'recreate') ? 'Recreating...' : runtimeActionLabel('recreate') }}
         </button>
         <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'pull')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'pull') ? 'Pulling...' : 'Pull' }}
+          {{ runtimeActionBusy(service, 'pull') ? 'Pulling...' : runtimeActionLabel('pull') }}
         </button>
+        }
       }
     </div>
 
@@ -98,11 +101,11 @@
         <div>
           <h2>Runtime services</h2>
           @if (loadingRuntimeStatus()) {
-            <p>Checking Compose containers on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
+            <p>Checking {{ isSwarmProject() ? 'Swarm services' : 'Compose containers' }} on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
           } @else if (runtimeStatus(); as status) {
             <p>Checked {{ formatDate(status.checkedAt) }} on {{ selectedServer()?.name || project.serverId || 'local' }}.</p>
           } @else {
-            <p>Inspect Compose containers on the target server.</p>
+            <p>Inspect {{ isSwarmProject() ? 'Swarm services' : 'Compose containers' }} on the target server.</p>
           }
         </div>
       </div>
@@ -159,7 +162,7 @@
               <div class="service-row selectable" [class.selected]="selectedRuntimeService() === service.service" (click)="selectedRuntimeService.set(service.service)">
                 <div class="service-item">
                   <strong>{{ service.service }}</strong>
-                  <small>{{ service.containerName || service.containerId || 'container unavailable' }}</small>
+                  <small>{{ isSwarmProject() ? (service.containerName || service.containerId || 'service task unavailable') : (service.containerName || service.containerId || 'container unavailable') }}</small>
                 </div>
                 <span class="service-state">{{ service.state }}</span>
                 <span>{{ service.health || 'no healthcheck' }}</span>
@@ -169,7 +172,7 @@
             }
           </div>
         } @else {
-          <div class="empty-log">No Compose containers were found for this project.</div>
+          <div class="empty-log">No {{ isSwarmProject() ? 'Swarm services' : 'Compose containers' }} were found for this project.</div>
         }
       } @else {
         <div class="empty-log">Status has not been checked yet.</div>
@@ -461,7 +464,7 @@
       <div class="delete-options">
         <label class="check-row">
           <input type="checkbox" [checked]="deleteStopContainers()" (change)="updateDeleteOption('stop', $event)" [disabled]="deleting()" />
-          <span>Stop containers with Docker Compose</span>
+          <span>{{ project.deploymentStrategy === 'swarm' ? 'Remove Swarm stack' : 'Stop containers with Docker Compose' }}</span>
         </label>
         <label class="check-row">
           <input type="checkbox" [checked]="deleteCheckout()" (change)="updateDeleteOption('checkout', $event)" [disabled]="deleting()" />

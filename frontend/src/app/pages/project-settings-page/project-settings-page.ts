@@ -127,6 +127,8 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly error = signal('');
   protected readonly traefikEnabled = signal(false);
   protected readonly wildcardCertificate = signal(false);
+  protected readonly deploymentStrategy = signal<DeploymentStrategy>('compose');
+  protected readonly isSwarmMode = computed(() => this.deploymentStrategy() === 'swarm');
   private readonly traefikFormRevision = signal(0);
   protected readonly selectedServerId = signal('local');
   protected readonly selectedServerIds = signal<string[]>(['local']);
@@ -272,6 +274,9 @@ export class ProjectSettingsPage implements OnInit {
     });
     this.form.controls.traefikWildcardCertificate.valueChanges.pipe(takeUntilDestroyed()).subscribe((enabled) => {
       this.wildcardCertificate.set(enabled);
+    });
+    this.form.controls.deploymentStrategy.valueChanges.pipe(takeUntilDestroyed()).subscribe((strategy) => {
+      this.deploymentStrategy.set(strategy === 'swarm' ? 'swarm' : 'compose');
     });
     for (const control of [
       this.form.controls.traefikHostname,
@@ -1037,6 +1042,7 @@ export class ProjectSettingsPage implements OnInit {
       traefikWebsocket: false,
       traefikRemovePublishedPorts: true,
     });
+    this.deploymentStrategy.set('compose');
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set([this.form.controls.serverId.value || 'local']);
     this.resetComposeBuilder();
@@ -1052,13 +1058,14 @@ export class ProjectSettingsPage implements OnInit {
     this.patchedProjectName = project.name;
     this.traefikEnabled.set(Boolean(traefik.enabled));
     this.wildcardCertificate.set(Boolean(traefik.wildcardCertificate));
+    const deploymentStrategy = deploymentSection?.strategy ?? project.deploymentStrategy ?? 'compose';
     this.form.reset({
       name: projectSection?.name ?? project.name,
       serverId: serverIds[0] ?? 'local',
       repositoryUrl: gitSection?.repositoryUrl ?? project.repositoryUrl ?? '',
       token: '',
       deployToken: '',
-      deploymentStrategy: deploymentSection?.strategy ?? project.deploymentStrategy ?? 'compose',
+      deploymentStrategy,
       path: projectSection?.path ?? project.path ?? '',
       composeOverride: composeSection?.override ?? project.composeOverride ?? '',
       traefikEnabled: Boolean(traefik.enabled),
@@ -1073,6 +1080,7 @@ export class ProjectSettingsPage implements OnInit {
       traefikWebsocket: Boolean(traefik.websocket),
       traefikRemovePublishedPorts: traefik.removePublishedPorts !== false,
     });
+    this.deploymentStrategy.set(deploymentStrategy === 'swarm' ? 'swarm' : 'compose');
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
     this.loadBuilderFromCompose(composeSection?.override ?? project.composeOverride ?? '');
@@ -1279,11 +1287,12 @@ export class ProjectSettingsPage implements OnInit {
 
     for (const service of this.builderServices()) {
       const serviceName = service.name.trim() || 'Unnamed service';
-      if (this.form.controls.deploymentStrategy.value === 'swarm' && service.build.trim()) {
-        diagnostics.push(`${serviceName} uses build, but Swarm stack deployment requires an image.`);
+      const swarmMode = this.form.controls.deploymentStrategy.value === 'swarm';
+      if (swarmMode && !service.image.trim()) {
+        diagnostics.push(`${serviceName} needs an image for Swarm stack deployment.`);
       }
 
-      if (service.networkMode.trim() && splitLines(service.networks).length) {
+      if (!swarmMode && service.networkMode.trim() && splitLines(service.networks).length) {
         diagnostics.push(`${serviceName} cannot use network_mode and selected networks together.`);
       }
 
@@ -1347,6 +1356,7 @@ function renderComposeBuilder(
   traefik?: ComposeTraefikSettings
 ) {
   const lines = ['services:'];
+  const useSwarmStack = traefik?.deploymentStrategy === 'swarm';
   const prepared = prepareComposeBuilderForTraefik(services, networks, traefik);
   const validServices = prepared.services.filter((service) => service.name.trim());
 
@@ -1355,7 +1365,7 @@ function renderComposeBuilder(
     if (service.image.trim()) {
       lines.push(`    image: ${yamlScalar(service.image.trim())}`);
     }
-    if (service.build.trim() && (service.dockerfile.trim() || service.buildTarget.trim())) {
+    if (!useSwarmStack && service.build.trim() && (service.dockerfile.trim() || service.buildTarget.trim())) {
       lines.push('    build:');
       lines.push(`      context: ${yamlScalar(service.build.trim())}`);
       if (service.dockerfile.trim()) {
@@ -1364,22 +1374,22 @@ function renderComposeBuilder(
       if (service.buildTarget.trim()) {
         lines.push(`      target: ${yamlScalar(service.buildTarget.trim())}`);
       }
-    } else if (service.build.trim()) {
+    } else if (!useSwarmStack && service.build.trim()) {
       lines.push(`    build: ${yamlScalar(service.build.trim())}`);
     }
-    if (service.containerName.trim()) {
+    if (!useSwarmStack && service.containerName.trim()) {
       lines.push(`    container_name: ${yamlScalar(service.containerName.trim())}`);
     }
     if (service.command.trim()) {
       lines.push(`    command: ${yamlScalar(service.command.trim())}`);
     }
-    if (service.restart.trim()) {
+    if (!useSwarmStack && service.restart.trim()) {
       lines.push(`    restart: ${yamlScalar(service.restart.trim())}`);
     }
-    if (service.networkMode.trim()) {
+    if (!useSwarmStack && service.networkMode.trim()) {
       lines.push(`    network_mode: ${yamlScalar(service.networkMode.trim())}`);
     }
-    if (service.init) {
+    if (!useSwarmStack && service.init) {
       lines.push('    init: true');
     }
     appendList(lines, 'ports', service.ports);
@@ -1387,12 +1397,12 @@ function renderComposeBuilder(
     appendEnvironment(lines, mergeEnvironmentWithSecretPlaceholders(service.name, service.environment, service.secretEnvironment));
     appendList(lines, 'volumes', service.volumes);
     appendList(lines, 'networks', service.networks);
-    if (service.dependsOnAdvanced.trim()) {
+    if (!useSwarmStack && service.dependsOnAdvanced.trim()) {
       appendExtraYaml(lines, service.dependsOnAdvanced);
-    } else {
+    } else if (!useSwarmStack) {
       appendList(lines, 'depends_on', service.dependsOn);
     }
-    appendDeploy(lines, service, traefik?.deploymentStrategy === 'swarm');
+    appendDeploy(lines, service, useSwarmStack);
     appendList(lines, 'profiles', service.profiles);
     appendExtraYaml(lines, service.extra);
   }
