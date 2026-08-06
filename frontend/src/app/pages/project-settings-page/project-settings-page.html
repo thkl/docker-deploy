@@ -317,7 +317,9 @@
                   <input [value]="service.healthcheckCommand"
                     (input)="updateBuilderService(service.id, 'healthcheckCommand', $event)"
                     placeholder="curl -fsS http://localhost:3000/health || exit 1" />
-                </label>
+                  <small>You can use also environment variables like this: 'http://localhost:' + (process.env.SERVER_PORT || 3000) + '/api/v1/health'</small>  
+              </label>
+
                 }
               </div>
 
