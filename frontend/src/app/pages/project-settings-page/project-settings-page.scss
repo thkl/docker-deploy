@@ -68,6 +68,18 @@ label span {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.compact-grid {
+  grid-template-columns: minmax(10rem, 0.6fr) minmax(0, 1.4fr);
+}
+
+.timing-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.wide-field {
+  min-width: 0;
+}
+
 .strategy-summary {
   background: var(--panel-soft);
   border: 1px solid var(--line);
@@ -390,6 +402,10 @@ fieldset small {
   color: var(--muted);
 }
 
+.healthcheck-editor {
+  background: var(--panel);
+}
+
 .structured-editors {
   display: grid;
   gap: 0.75rem;
@@ -610,6 +626,8 @@ button.secondary:hover {
 
 @media (max-width: 900px) {
   .field-grid,
+  .compact-grid,
+  .timing-grid,
   .strategy-summary,
   .toggle-grid,
   .structured-editors,

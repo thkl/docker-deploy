@@ -19,6 +19,14 @@ interface ComposeBuilderService {
   restart: string;
   networkMode: string;
   init: boolean;
+  healthcheckMode: ComposeHealthcheckMode;
+  healthcheckHttpUrl: string;
+  healthcheckCommand: string;
+  healthcheckInterval: string;
+  healthcheckTimeout: string;
+  healthcheckRetries: string;
+  healthcheckStartPeriod: string;
+  healthcheckExtra: string;
   ports: string;
   expose: string;
   environment: string;
@@ -35,6 +43,8 @@ interface ComposeBuilderService {
   profiles: string;
   extra: string;
 }
+
+type ComposeHealthcheckMode = '' | 'http' | 'command' | 'disabled';
 
 interface ComposeBuilderNetwork {
   id: number;
@@ -666,6 +676,14 @@ export class ProjectSettingsPage implements OnInit {
         restart: 'unless-stopped',
         networkMode: '',
         init: false,
+        healthcheckMode: '',
+        healthcheckHttpUrl: 'http://localhost:3000/health',
+        healthcheckCommand: '',
+        healthcheckInterval: '30s',
+        healthcheckTimeout: '10s',
+        healthcheckRetries: '3',
+        healthcheckStartPeriod: '40s',
+        healthcheckExtra: '',
         ports: '',
         expose: '',
         environment: '',
@@ -1524,6 +1542,7 @@ function renderComposeBuilder(
     if (!useSwarmStack && service.init) {
       lines.push('    init: true');
     }
+    appendHealthcheck(lines, service);
     appendList(lines, 'ports', service.ports);
     appendList(lines, 'expose', service.expose);
     appendEnvironment(lines, mergeEnvironmentWithSecretPlaceholders(service.name, service.environment, service.secretEnvironment));
@@ -1542,6 +1561,52 @@ function renderComposeBuilder(
   appendTopLevelResources(lines, 'networks', prepared.networks);
   appendTopLevelResources(lines, 'volumes', volumes);
   return `${lines.join('\n')}\n`;
+}
+
+function appendHealthcheck(lines: string[], service: ComposeBuilderRenderableService) {
+  if (!service.healthcheckMode) {
+    return;
+  }
+
+  lines.push('    healthcheck:');
+  if (service.healthcheckMode === 'disabled') {
+    lines.push('      disable: true');
+    appendExtraYaml(lines, service.healthcheckExtra, 6);
+    return;
+  }
+
+  const command = service.healthcheckMode === 'http'
+    ? renderHttpHealthcheckCommand(service.healthcheckHttpUrl.trim())
+    : service.healthcheckCommand.trim();
+  if (command) {
+    lines.push('      test:');
+    lines.push('        - CMD-SHELL');
+    lines.push(`        - ${yamlScalar(command)}`);
+  }
+  if (service.healthcheckInterval.trim()) {
+    lines.push(`      interval: ${yamlScalar(service.healthcheckInterval.trim())}`);
+  }
+  if (service.healthcheckTimeout.trim()) {
+    lines.push(`      timeout: ${yamlScalar(service.healthcheckTimeout.trim())}`);
+  }
+  if (service.healthcheckRetries.trim()) {
+    lines.push(`      retries: ${Number.isFinite(Number(service.healthcheckRetries)) ? Math.max(0, Math.trunc(Number(service.healthcheckRetries))) : yamlScalar(service.healthcheckRetries.trim())}`);
+  }
+  if (service.healthcheckStartPeriod.trim()) {
+    lines.push(`      start_period: ${yamlScalar(service.healthcheckStartPeriod.trim())}`);
+  }
+  appendExtraYaml(lines, service.healthcheckExtra, 6);
+}
+
+function renderHttpHealthcheckCommand(url: string) {
+  const target = url || 'http://localhost:3000/health';
+  const targetExpression = looksLikeJavascriptExpression(target) ? target : JSON.stringify(target);
+  const script = `const u=${targetExpression};const m=u.startsWith('https:')?require('https'):require('http');m.get(u,(r)=>process.exit(r.statusCode>=200&&r.statusCode<400?0:1)).on('error',()=>process.exit(1))`;
+  return `node -e ${shellArg(script)}`;
+}
+
+function looksLikeJavascriptExpression(value: string) {
+  return /process\.env| \+ |\?\?|\|\||\$\{/.test(value);
 }
 
 function formDeploymentStrategySummary(input: {
@@ -2126,7 +2191,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
   let section: 'services' | 'networks' | 'volumes' | '' = '';
   let service: Omit<ComposeBuilderService, 'id'> | undefined;
   let listKey: ComposeBuilderListField | 'environment' | '' = '';
-  let objectKey: 'build' | 'dependsOn' | 'deploy' | 'placement' | '' = '';
+  let objectKey: 'build' | 'dependsOn' | 'deploy' | 'placement' | 'healthcheck' | '' = '';
   let extraKey = '';
   let resource: Omit<ComposeBuilderNetwork, 'id'> | Omit<ComposeBuilderVolume, 'id'> | undefined;
   let resourceObjectKey: 'driverOpts' | '' = '';
@@ -2178,6 +2243,55 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
             service.extra = appendRawLine(service.extra, raw.slice(4));
           }
           continue;
+        }
+        if (service && objectKey === 'healthcheck') {
+          if (indent === 6) {
+            const [healthKey, ...healthRest] = text.split(':');
+            const healthValue = unquoteYaml(healthRest.join(':').trim());
+            if (healthKey === 'test') {
+              service.healthcheckMode = 'command';
+              if (healthValue) {
+                service.healthcheckCommand = healthValue;
+              } else {
+                extraKey = 'healthcheckTest';
+              }
+              continue;
+            }
+            if (healthKey === 'disable') {
+              service.healthcheckMode = healthValue === 'true' ? 'disabled' : service.healthcheckMode;
+              continue;
+            }
+            if (healthKey === 'interval') {
+              service.healthcheckInterval = healthValue;
+              continue;
+            }
+            if (healthKey === 'timeout') {
+              service.healthcheckTimeout = healthValue;
+              continue;
+            }
+            if (healthKey === 'retries') {
+              service.healthcheckRetries = healthValue;
+              continue;
+            }
+            if (healthKey === 'start_period' || healthKey === 'startPeriod') {
+              service.healthcheckStartPeriod = healthValue;
+              continue;
+            }
+            service.healthcheckExtra = appendRawLine(service.healthcheckExtra, raw.slice(6));
+            if (!healthValue) {
+              extraKey = 'healthcheckExtra';
+            }
+            continue;
+          }
+          if (extraKey === 'healthcheckTest' && indent > 6) {
+            service.healthcheckMode = 'command';
+            service.healthcheckCommand = appendRawLine(service.healthcheckCommand, raw.slice(6));
+            continue;
+          }
+          if (extraKey === 'healthcheckExtra' && indent > 6) {
+            service.healthcheckExtra = appendRawLine(service.healthcheckExtra, raw.slice(6));
+            continue;
+          }
         }
         if (service && objectKey === 'dependsOn' && indent === 6 && text.endsWith(':')) {
           appendParsedServiceListValue(service, 'dependsOn', unquoteYaml(text.slice(0, -1)));
@@ -2313,6 +2427,12 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
         continue;
       }
 
+      if (key === 'healthcheck' && !value) {
+        objectKey = 'healthcheck';
+        service.healthcheckMode = 'command';
+        continue;
+      }
+
       if (key === 'target' && service.build) {
         service.buildTarget = unquoteYaml(value);
         continue;
@@ -2365,7 +2485,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
     }
   }
 
-  return { services, networks, volumes };
+  return { services: services.map(normalizeParsedHealthcheck), networks, volumes };
 }
 
 function blankBuilderService(name: string, build: string, networks: string, restart = 'unless-stopped'): Omit<ComposeBuilderService, 'id'> {
@@ -2380,6 +2500,14 @@ function blankBuilderService(name: string, build: string, networks: string, rest
     restart,
     networkMode: '',
     init: false,
+    healthcheckMode: '',
+    healthcheckHttpUrl: 'http://localhost:3000/health',
+    healthcheckCommand: '',
+    healthcheckInterval: '30s',
+    healthcheckTimeout: '10s',
+    healthcheckRetries: '3',
+    healthcheckStartPeriod: '40s',
+    healthcheckExtra: '',
     ports: '',
     expose: '',
     environment: '',
@@ -2396,6 +2524,87 @@ function blankBuilderService(name: string, build: string, networks: string, rest
     profiles: '',
     extra: ''
   };
+}
+
+function normalizeParsedHealthcheck(service: Omit<ComposeBuilderService, 'id'>): Omit<ComposeBuilderService, 'id'> {
+  if (!service.healthcheckMode) {
+    return service;
+  }
+
+  if (service.healthcheckMode === 'disabled') {
+    return service;
+  }
+
+  const testCommand = normalizeHealthcheckTestCommand(service.healthcheckCommand);
+  const httpTarget = extractNodeHttpHealthcheckTarget(testCommand);
+  return {
+    ...service,
+    healthcheckMode: httpTarget ? 'http' : 'command',
+    healthcheckHttpUrl: httpTarget || service.healthcheckHttpUrl,
+    healthcheckCommand: httpTarget ? '' : testCommand
+  };
+}
+
+function normalizeHealthcheckTestCommand(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const items = parseYamlInlineOrBlockList(trimmed);
+  if (!items.length) {
+    return unquoteYaml(trimmed);
+  }
+
+  const [kind, ...rest] = items;
+  if (kind === 'CMD-SHELL') {
+    return rest.join(' ').trim();
+  }
+  if (kind === 'CMD') {
+    return rest.map(shellArg).join(' ');
+  }
+  return items.map(shellArg).join(' ');
+}
+
+function parseYamlInlineOrBlockList(value: string) {
+  if (value.includes('\n')) {
+    return value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && line !== '[' && line !== ']')
+      .map((line) => line.replace(/,$/, ''))
+      .map((line) => line.startsWith('- ') ? line.slice(2) : line)
+      .map(unquoteYaml)
+      .filter(Boolean);
+  }
+
+  if (value.startsWith('[') && value.endsWith(']')) {
+    return value
+      .slice(1, -1)
+      .split(',')
+      .map((item) => unquoteYaml(item.trim()))
+      .filter(Boolean);
+  }
+
+  return [unquoteYaml(value)];
+}
+
+function extractNodeHttpHealthcheckTarget(command: string) {
+  if (!/require\(['"]https?['"]\)|require\(['"]http['"]\)/.test(command) || !/\.get\(/.test(command)) {
+    return '';
+  }
+
+  const constMatch = command.match(/const\s+u\s*=\s*([^;]+);/);
+  if (constMatch?.[1]) {
+    return unquoteYaml(constMatch[1].trim());
+  }
+
+  const getMatch = command.match(/\.get\((.+?),\s*\(?r\)?\s*=>/);
+  return getMatch?.[1] ? unquoteYaml(getMatch[1].trim()) : '';
+}
+
+function shellArg(value: string) {
+  return /^[a-zA-Z0-9_./:@=-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function applyParsedServiceScalar(service: Omit<ComposeBuilderService, 'id'>, key: string, value: string) {

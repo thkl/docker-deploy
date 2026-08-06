@@ -290,6 +290,71 @@
               </label>
             </div>
 
+            <fieldset class="healthcheck-editor">
+              <legend>Healthcheck</legend>
+              <div class="field-grid compact-grid">
+                <label>
+                  <span>Check type</span>
+                  <select [value]="service.healthcheckMode"
+                    (change)="updateBuilderService(service.id, 'healthcheckMode', $event)">
+                    <option value="">none</option>
+                    <option value="http">HTTP endpoint</option>
+                    <option value="command">Command</option>
+                    <option value="disabled">Disable image healthcheck</option>
+                  </select>
+                </label>
+                @if (service.healthcheckMode === 'http') {
+                <label class="wide-field">
+                  <span>Endpoint</span>
+                  <input [value]="service.healthcheckHttpUrl"
+                    (input)="updateBuilderService(service.id, 'healthcheckHttpUrl', $event)"
+                    placeholder="http://localhost:3000/health" />
+                </label>
+                }
+                @if (service.healthcheckMode === 'command') {
+                <label class="wide-field">
+                  <span>Command</span>
+                  <input [value]="service.healthcheckCommand"
+                    (input)="updateBuilderService(service.id, 'healthcheckCommand', $event)"
+                    placeholder="curl -fsS http://localhost:3000/health || exit 1" />
+                </label>
+                }
+              </div>
+
+              @if (service.healthcheckMode && service.healthcheckMode !== 'disabled') {
+              <div class="field-grid timing-grid">
+                <label>
+                  <span>Interval</span>
+                  <input [value]="service.healthcheckInterval"
+                    (input)="updateBuilderService(service.id, 'healthcheckInterval', $event)" placeholder="30s" />
+                </label>
+                <label>
+                  <span>Timeout</span>
+                  <input [value]="service.healthcheckTimeout"
+                    (input)="updateBuilderService(service.id, 'healthcheckTimeout', $event)" placeholder="10s" />
+                </label>
+                <label>
+                  <span>Retries</span>
+                  <input [value]="service.healthcheckRetries"
+                    (input)="updateBuilderService(service.id, 'healthcheckRetries', $event)" placeholder="3" />
+                </label>
+                <label>
+                  <span>Start period</span>
+                  <input [value]="service.healthcheckStartPeriod"
+                    (input)="updateBuilderService(service.id, 'healthcheckStartPeriod', $event)" placeholder="40s" />
+                </label>
+              </div>
+              }
+
+              @if (service.healthcheckExtra) {
+              <label class="wide-field">
+                <span>Advanced healthcheck YAML</span>
+                <textarea [value]="service.healthcheckExtra"
+                  (input)="updateBuilderService(service.id, 'healthcheckExtra', $event)" rows="3"></textarea>
+              </label>
+              }
+            </fieldset>
+
             <div class="choice-grid">
               <fieldset>
                 <legend>Networks</legend>
