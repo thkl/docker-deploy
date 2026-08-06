@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CheckoutBindMountInspection, DockerNetworkInventory, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
+import { CheckoutBindMountInspection, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -29,6 +29,44 @@ export interface RuntimeLogHooks {
 
 export interface RuntimeLogStream {
     stop(): void;
+}
+
+export async function inspectDockerTopology(): Promise<DockerTopology> {
+    const checkedAt = new Date().toISOString();
+    try {
+        const { stdout } = await execAsync(
+            "docker info --format '{{json .Swarm}}' 2>/dev/null",
+            { maxBuffer: 128 * 1024 }
+        );
+        const swarm = JSON.parse(stdout.trim() || "{}") as {
+            LocalNodeState?: string;
+            ControlAvailable?: boolean;
+            NodeID?: string;
+        };
+        const state = String(swarm.LocalNodeState || "").toLowerCase();
+        const controlAvailable = Boolean(swarm.ControlAvailable);
+        const mode: DockerTopology["mode"] = state === "active"
+            ? controlAvailable ? "swarm-manager" : "swarm-worker"
+            : state === "inactive"
+                ? "swarm-inactive"
+                : "standalone";
+
+        return {
+            checkedAt,
+            available: true,
+            mode,
+            ...(swarm.LocalNodeState ? { swarmLocalNodeState: swarm.LocalNodeState } : {}),
+            swarmControlAvailable: controlAvailable,
+            ...(swarm.NodeID ? { nodeId: swarm.NodeID } : {})
+        };
+    } catch (error) {
+        return {
+            checkedAt,
+            available: false,
+            mode: "unknown",
+            error: error instanceof Error ? error.message : "Could not inspect Docker topology."
+        };
+    }
 }
 
 /**
@@ -673,6 +711,55 @@ export async function validateTraefikConfig(serverId: string, globalSettings: Gl
     };
 }
 
+export async function applyTraefikDefaults(serverId: string, globalSettings: GlobalSettings, defaults: TraefikDefaultsPayload): Promise<TraefikConfigApplyResult> {
+    const actions: string[] = [];
+    const backup = await backupTraefikConfig(serverId, globalSettings);
+    const target = backup.files.find((file) => file.kind === "static" && !file.error && isSupportedTraefikConfigPath(file.path));
+    if (!target) {
+        throw new Error("No writable mounted Traefik static config file was discovered. Export backup and manage this server manually.");
+    }
+
+    const nextContent = renderManagedTraefikStaticConfig(target.content, defaults);
+    if (nextContent === target.content) {
+        return {
+            serverId,
+            appliedAt: new Date().toISOString(),
+            changed: false,
+            target: traefikApplyTarget(target),
+            backup: target,
+            validation: await validateTraefikConfig(serverId, globalSettings),
+            actions: ["Static Traefik config already matches requested defaults."]
+        };
+    }
+
+    actions.push(`Created in-memory backup for ${target.path}.`);
+    await writeMountedTraefikConfig(target, nextContent);
+    actions.push(`Updated ${target.path} through target-server Docker mount.`);
+    const validation = await validateTraefikConfig(serverId, {
+        ...globalSettings,
+        defaultTraefikNetwork: defaults.network?.trim() || globalSettings.defaultTraefikNetwork,
+        defaultTraefikEntryPoints: defaults.entryPoints?.trim() || globalSettings.defaultTraefikEntryPoints,
+        defaultTraefikCertResolver: defaults.certResolver?.trim() || globalSettings.defaultTraefikCertResolver
+    });
+
+    if (validation.status === "fail") {
+        await writeMountedTraefikConfig(target, target.content);
+        actions.push("Validation failed after write; restored previous static config content.");
+        throw new Error(`Traefik config validation failed after apply. Previous content was restored. ${validation.checks.find((check) => check.status === "fail")?.detail ?? ""}`.trim());
+    }
+
+    actions.push(`Validation ${validation.status} after apply.`);
+    return {
+        serverId,
+        appliedAt: new Date().toISOString(),
+        changed: true,
+        target: traefikApplyTarget(target),
+        backup: target,
+        validation,
+        actions
+    };
+}
+
 async function inspectTraefikContainers(networkName: string) {
     const command = `TRAEFIK_IDS="$(docker ps -aq --filter label=org.opencontainers.image.title=Traefik)"
 if [ -z "$TRAEFIK_IDS" ]; then
@@ -738,6 +825,8 @@ async function buildTraefikInventory(inspectedContainers: DockerInspectContainer
     const entryPoints = unique([...extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./), ...staticConfig.entryPoints]);
     const certResolvers = unique([...extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./), ...staticConfig.certResolvers]);
     const dockerProviderNetwork = extractTraefikValue(configArgs, "--providers.docker.network=") || staticConfig.dockerProviderNetwork || inferTraefikDockerNetwork(containers, networkName);
+    const swarmProviderNetwork = extractTraefikValue(configArgs, "--providers.swarm.network=") || staticConfig.swarmProviderNetwork;
+    const providerMode = detectTraefikProviderMode(configArgs, staticConfig);
     const acmeStorage = extractTraefikValue(configArgs, "--certificatesresolvers.", ".acme.storage=") || staticConfig.acmeStorage;
 
     return {
@@ -745,12 +834,13 @@ async function buildTraefikInventory(inspectedContainers: DockerInspectContainer
         containerCount,
         networkPresent,
         checkedAt,
+        providerMode,
         ...(containers.length ? { containers } : {}),
         ...(unique(containers.flatMap((container) => container.networks)).length ? { networks: unique(containers.flatMap((container) => container.networks)) } : {}),
         ...(networkDetails.length ? { networkDetails } : {}),
         ...(entryPoints.length ? { entryPoints } : {}),
         ...(certResolvers.length ? { certResolvers } : {}),
-        ...(dockerProviderNetwork ? { dockerProviderNetwork } : {}),
+        ...(swarmProviderNetwork || dockerProviderNetwork ? { dockerProviderNetwork: swarmProviderNetwork || dockerProviderNetwork } : {}),
         ...(acmeStorage ? { acmeStorage } : {}),
         ...(mountedTargets.filter(isLikelyTraefikStaticConfigPath).length ? { staticConfigPaths: unique(mountedTargets.filter(isLikelyTraefikStaticConfigPath)) } : {}),
         ...(mountedTargets.filter(isLikelyTraefikDynamicConfigPath).length ? { dynamicConfigPaths: unique(mountedTargets.filter(isLikelyTraefikDynamicConfigPath)) } : {})
@@ -863,6 +953,9 @@ async function readTraefikStaticConfigInventory(containers: DockerInspectContain
         entryPoints: [] as string[],
         certResolvers: [] as string[],
         dockerProviderNetwork: "",
+        swarmProviderNetwork: "",
+        dockerProviderEnabled: false,
+        swarmProviderEnabled: false,
         acmeStorage: ""
     };
 
@@ -878,6 +971,9 @@ async function readTraefikStaticConfigInventory(containers: DockerInspectContain
             inventory.entryPoints.push(...parsed.entryPoints);
             inventory.certResolvers.push(...parsed.certResolvers);
             inventory.dockerProviderNetwork ||= parsed.dockerProviderNetwork;
+            inventory.swarmProviderNetwork ||= parsed.swarmProviderNetwork;
+            inventory.dockerProviderEnabled ||= parsed.dockerProviderEnabled;
+            inventory.swarmProviderEnabled ||= parsed.swarmProviderEnabled;
             inventory.acmeStorage ||= parsed.acmeStorage;
         }
     }
@@ -886,6 +982,9 @@ async function readTraefikStaticConfigInventory(containers: DockerInspectContain
         entryPoints: unique(inventory.entryPoints),
         certResolvers: unique(inventory.certResolvers),
         dockerProviderNetwork: inventory.dockerProviderNetwork,
+        swarmProviderNetwork: inventory.swarmProviderNetwork,
+        dockerProviderEnabled: inventory.dockerProviderEnabled,
+        swarmProviderEnabled: inventory.swarmProviderEnabled,
         acmeStorage: inventory.acmeStorage
     };
 }
@@ -920,6 +1019,7 @@ async function collectTraefikBackupFiles(containers: DockerInspectContainerWithM
                     containerId: containerId.slice(0, 12),
                     ...(containerName ? { containerName } : {}),
                     source: mount.Source,
+                    mountTarget: mount.Destination,
                     path,
                     kind,
                     content: read.content,
@@ -1078,8 +1178,174 @@ function parseTraefikStaticConfig(content: string) {
         entryPoints: unique([...parseYamlTopLevelObjectKeys(content, "entryPoints"), ...parseTomlSectionKeys(content, "entryPoints")]),
         certResolvers: unique([...parseYamlTopLevelObjectKeys(content, "certificatesResolvers"), ...parseTomlSectionKeys(content, "certificatesResolvers")]),
         dockerProviderNetwork: parseYamlNestedScalar(content, ["providers", "docker", "network"]) || parseTomlScalar(content, "providers.docker", "network"),
+        swarmProviderNetwork: parseYamlNestedScalar(content, ["providers", "swarm", "network"]) || parseTomlScalar(content, "providers.swarm", "network"),
+        dockerProviderEnabled: hasYamlPath(content, ["providers", "docker"]) || hasTomlSection(content, "providers.docker"),
+        swarmProviderEnabled: hasYamlPath(content, ["providers", "swarm"]) || hasTomlSection(content, "providers.swarm"),
         acmeStorage: parseYamlAcmeStorage(content) || parseTomlAcmeStorage(content)
     };
+}
+
+function detectTraefikProviderMode(args: string[], staticConfig: ReturnType<typeof readTraefikStaticConfigInventory> extends Promise<infer T> ? T : never): ServerCapabilities["traefik"]["providerMode"] {
+    const dockerEnabled = args.some((arg) => arg.startsWith("--providers.docker")) || staticConfig.dockerProviderEnabled || Boolean(staticConfig.dockerProviderNetwork);
+    const swarmEnabled = args.some((arg) => arg.startsWith("--providers.swarm")) || staticConfig.swarmProviderEnabled || Boolean(staticConfig.swarmProviderNetwork);
+    if (dockerEnabled && swarmEnabled) {
+        return "mixed";
+    }
+    if (swarmEnabled) {
+        return "swarm";
+    }
+    if (dockerEnabled) {
+        return "docker";
+    }
+    return "unknown";
+}
+
+function isSupportedTraefikConfigPath(path: string) {
+    return /\.(ya?ml|toml)$/i.test(path);
+}
+
+function traefikApplyTarget(file: TraefikConfigBackupFile) {
+    return {
+        ...(file.containerId ? { containerId: file.containerId } : {}),
+        ...(file.containerName ? { containerName: file.containerName } : {}),
+        source: file.source,
+        path: file.path,
+        kind: file.kind
+    };
+}
+
+function renderManagedTraefikStaticConfig(content: string, defaults: TraefikDefaultsPayload) {
+    const block = /\.(toml)$/i.test(defaultsConfigPathHint(content)) ? renderManagedTraefikToml(defaults) : renderManagedTraefikYaml(defaults);
+    const start = "# deploy-managed-defaults:start";
+    const end = "# deploy-managed-defaults:end";
+    const managed = `${start}\n${block.trim()}\n${end}`;
+    const normalized = content.trimEnd();
+    const pattern = new RegExp(`${escapeRegExp(start)}[\\s\\S]*?${escapeRegExp(end)}`, "m");
+    if (pattern.test(content)) {
+        return content.replace(pattern, managed);
+    }
+    return `${normalized}${normalized ? "\n\n" : ""}${managed}\n`;
+}
+
+function defaultsConfigPathHint(content: string) {
+    return /^\s*\[/.test(content) ? "traefik.toml" : "traefik.yml";
+}
+
+function renderManagedTraefikYaml(defaults: TraefikDefaultsPayload) {
+    const entryPoints = splitCsv(defaults.entryPoints || "websecure");
+    const certResolver = defaults.certResolver?.trim() || "letsencrypt";
+    const network = defaults.network?.trim() || "proxy";
+    const acmeStorage = defaults.acmeStorage?.trim() || "/letsencrypt/acme.json";
+    const acmeEmail = defaults.acmeEmail?.trim();
+    const lines = [
+        "entryPoints:",
+        ...entryPoints.flatMap((entryPoint) => [
+            `  ${yamlConfigKey(entryPoint)}:`,
+            "    address: \":443\""
+        ]),
+        "providers:",
+        "  docker:",
+        "    exposedByDefault: false",
+        `    network: ${yamlScalar(network)}`,
+        "  swarm:",
+        "    exposedByDefault: false",
+        `    network: ${yamlScalar(network)}`,
+        "certificatesResolvers:",
+        `  ${yamlConfigKey(certResolver)}:`,
+        "    acme:",
+        ...(acmeEmail ? [`      email: ${yamlScalar(acmeEmail)}`] : []),
+        `      storage: ${yamlScalar(acmeStorage)}`,
+        "      httpChallenge:",
+        `        entryPoint: ${yamlScalar(entryPoints[0] || "websecure")}`
+    ];
+    return lines.join("\n");
+}
+
+function renderManagedTraefikToml(defaults: TraefikDefaultsPayload) {
+    const entryPoints = splitCsv(defaults.entryPoints || "websecure");
+    const certResolver = defaults.certResolver?.trim() || "letsencrypt";
+    const network = defaults.network?.trim() || "proxy";
+    const acmeStorage = defaults.acmeStorage?.trim() || "/letsencrypt/acme.json";
+    const acmeEmail = defaults.acmeEmail?.trim();
+    return [
+        ...entryPoints.flatMap((entryPoint) => [
+            `[entryPoints.${entryPoint}]`,
+            "  address = \":443\"",
+            ""
+        ]),
+        "[providers.docker]",
+        "  exposedByDefault = false",
+        `  network = ${JSON.stringify(network)}`,
+        "",
+        "[providers.swarm]",
+        "  exposedByDefault = false",
+        `  network = ${JSON.stringify(network)}`,
+        "",
+        `[certificatesResolvers.${certResolver}.acme]`,
+        ...(acmeEmail ? [`  email = ${JSON.stringify(acmeEmail)}`] : []),
+        `  storage = ${JSON.stringify(acmeStorage)}`,
+        "",
+        `[certificatesResolvers.${certResolver}.acme.httpChallenge]`,
+        `  entryPoint = ${JSON.stringify(entryPoints[0] || "websecure")}`
+    ].join("\n");
+}
+
+function splitCsv(value: string) {
+    return unique(value.split(",").map((item) => item.trim()).filter(Boolean));
+}
+
+function yamlConfigKey(value: string) {
+    return /^[A-Za-z0-9_-]+$/.test(value) ? value : yamlScalar(value);
+}
+
+async function writeMountedTraefikConfig(file: TraefikConfigBackupFile, content: string) {
+    const mountTarget = file.mountTarget || file.path;
+    const isFileMount = mountTarget === file.path;
+    const targetPath = isFileMount ? "/mnt/deploy-target" : `/mnt/deploy-target/${relativeContainerPath(mountTarget, file.path)}`;
+    const backupSuffix = new Date().toISOString().replace(/[:.]/g, "-");
+    const script = [
+        "set -eu",
+        "target=\"$1\"",
+        "mkdir -p \"$(dirname \"$target\")\"",
+        "if [ -f \"$target\" ]; then cp \"$target\" \"$target.deploy-backup-$2\"; fi",
+        "cat > \"$target\""
+    ].join("\n");
+
+    await runDockerWrite(
+        ["run", "--rm", "-i", "-v", `${file.source}:/mnt/deploy-target`, "alpine:latest", "sh", "-c", script, "sh", targetPath, backupSuffix],
+        content
+    );
+}
+
+function relativeContainerPath(mountTarget: string, path: string) {
+    const normalizedMount = mountTarget.replace(/\/+$/, "");
+    const normalizedPath = path.replace(/\/+$/, "");
+    if (normalizedPath === normalizedMount) {
+        return ".";
+    }
+    if (!normalizedPath.startsWith(`${normalizedMount}/`)) {
+        throw new Error(`Discovered Traefik config path ${path} is not inside mount ${mountTarget}.`);
+    }
+    return normalizedPath.slice(normalizedMount.length + 1);
+}
+
+function runDockerWrite(args: string[], input: string) {
+    return new Promise<void>((resolve, reject) => {
+        const child = spawn("docker", args, { stdio: ["pipe", "pipe", "pipe"] });
+        let stderr = "";
+        child.stderr?.on("data", (chunk: Buffer | string) => {
+            stderr += String(chunk);
+        });
+        child.on("error", reject);
+        child.on("close", (code) => {
+            if (code === 0) {
+                resolve();
+            } else {
+                reject(new Error(stderr.trim() || `Docker writer exited with code ${code}.`));
+            }
+        });
+        child.stdin?.end(input);
+    });
 }
 
 function parseYamlTopLevelObjectKeys(content: string, key: string) {
@@ -1153,6 +1419,38 @@ function parseYamlNestedScalar(content: string, path: string[]) {
     return "";
 }
 
+function hasYamlPath(content: string, path: string[]) {
+    if (!path.length) {
+        return false;
+    }
+
+    const lines = content.split(/\r?\n/);
+    let startIndex = 0;
+    let parentIndent = -1;
+    for (const key of path) {
+        const foundIndex = lines.findIndex((line, index) => {
+            if (index < startIndex) {
+                return false;
+            }
+            const trimmed = line.trim();
+            const indent = countIndent(line);
+            if (!trimmed || trimmed.startsWith("#")) {
+                return false;
+            }
+            if (parentIndent >= 0 && indent <= parentIndent) {
+                return false;
+            }
+            return trimmed === `${key}:` || trimmed.startsWith(`${key}: `);
+        });
+        if (foundIndex === -1) {
+            return false;
+        }
+        parentIndent = countIndent(lines[foundIndex]);
+        startIndex = foundIndex + 1;
+    }
+    return true;
+}
+
 function parseYamlAcmeStorage(content: string) {
     for (const resolver of parseYamlTopLevelObjectKeys(content, "certificatesResolvers")) {
         const storage = parseYamlNestedScalar(content, ["certificatesResolvers", resolver, "acme", "storage"]);
@@ -1175,6 +1473,10 @@ function parseTomlScalar(content: string, section: string, key: string) {
     const body = sectionMatch?.[1] ?? "";
     const valueMatch = body.match(new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*(.+?)\\s*$`, "m"));
     return valueMatch ? unquoteConfigScalar(valueMatch[1]) : "";
+}
+
+function hasTomlSection(content: string, section: string) {
+    return new RegExp(`^\\[${escapeRegExp(section)}\\]\\s*$`, "m").test(content);
 }
 
 function parseTomlAcmeStorage(content: string) {

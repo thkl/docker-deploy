@@ -341,6 +341,7 @@ label span,
 .server-health span,
 .metric-row,
 .traefik-panel,
+.traefik-defaults,
 .traefik-impact,
 .managed-panel,
 .agent-install {
@@ -389,11 +390,12 @@ meter {
 .traefik-summary {
   display: grid;
   gap: 0.55rem;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
 }
 
 .traefik-summary span,
-.traefik-container {
+.traefik-container,
+.traefik-defaults label {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -402,9 +404,36 @@ meter {
 }
 
 .traefik-summary span,
-.traefik-container > div:first-child {
+.traefik-container > div:first-child,
+.traefik-defaults label {
   display: grid;
   gap: 0.22rem;
+}
+
+.traefik-defaults {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.traefik-default-grid {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+.traefik-defaults input {
+  min-width: 0;
+}
+
+.check-row {
+  align-items: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.check-row input {
+  height: 1rem;
+  width: 1rem;
 }
 
 .traefik-summary strong,

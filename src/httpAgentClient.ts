@@ -1,11 +1,11 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
 import { ControllerKeyState } from "./keyStore.js";
-import { GlobalSettings, ProjectSettings, RuntimeServiceAction, ServerRecord } from "./types.js";
+import { GlobalSettings, ProjectSettings, RuntimeServiceAction, ServerRecord, TraefikDefaultsPayload } from "./types.js";
 
 /**
  * Controller-side client for a remote Deploy agent.
@@ -105,6 +105,17 @@ export class HttpAgentClient implements AgentClient {
     }
 
     /**
+     * Detects Docker standalone/Swarm role on a remote target server.
+     */
+    async inspectDocker() {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["inspectDocker"]>> }>({
+            jobType: "inspectDocker",
+            payload: { serverId: this.server.id, globalSettings: defaultGlobalSettingsForRemoteJobs() } satisfies DetectTraefikJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
      * Detects Traefik on a remote target server.
      */
     async detectTraefik(globalSettings: GlobalSettings) {
@@ -133,6 +144,17 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["validateTraefik"]>> }>({
             jobType: "validateTraefik",
             payload: { serverId, globalSettings } satisfies DetectTraefikJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
+     * Applies guarded common Traefik defaults through a remote target server.
+     */
+    async applyTraefikDefaults(serverId: string, globalSettings: GlobalSettings, defaults: TraefikDefaultsPayload) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["applyTraefikDefaults"]>> }>({
+            jobType: "applyTraefikDefaults",
+            payload: { serverId, globalSettings, defaults } satisfies ApplyTraefikDefaultsJobPayload
         });
         return accepted.result;
     }
@@ -475,4 +497,15 @@ export class HttpAgentClient implements AgentClient {
 
         return `Agent rejected job: ${message}`;
     }
+}
+
+function defaultGlobalSettingsForRemoteJobs(): GlobalSettings {
+    return {
+        dataRoot: "/root/docker-apps",
+        defaultTraefikNetwork: "proxy",
+        defaultTraefikEntryPoints: "websecure",
+        defaultTraefikCertResolver: "letsencrypt",
+        sshKeyPath: "~/.ssh",
+        cleanupAfterDeploy: false
+    };
 }

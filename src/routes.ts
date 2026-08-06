@@ -20,7 +20,7 @@ import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
-import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload, TraefikAffectedProject } from "./types.js";
+import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject, webhookProjectCandidates } from "./webhookResolver.js";
 import { WebhookStore } from "./webhookStore.js";
@@ -149,6 +149,7 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
 
             const system = server.kind === "local" ? await collectSystemMetrics() : server.capabilities?.system;
             const capabilities = {
+                docker: await agentManager.getClient(serverId).inspectDocker(),
                 traefik: await agentManager.getClient(serverId).detectTraefik(globalSettingsStore.readSettings()),
                 ...(system ? { system } : {})
             };
@@ -215,6 +216,48 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             });
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not preview Traefik impact." });
+        }
+    });
+
+    app.post("/api/servers/:id/traefik/defaults", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            const server = serverStore.get(serverId);
+            if (!server) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+
+            const payload = normalizeTraefikDefaultsPayload(req.body as TraefikDefaultsPayload);
+            const currentSettings = globalSettingsStore.readSettings();
+            const nextSettings = {
+                ...currentSettings,
+                defaultTraefikNetwork: payload.network || currentSettings.defaultTraefikNetwork,
+                defaultTraefikEntryPoints: payload.entryPoints || currentSettings.defaultTraefikEntryPoints,
+                defaultTraefikCertResolver: payload.certResolver || currentSettings.defaultTraefikCertResolver
+            };
+
+            let applyResult = null;
+            if (payload.applyToServer) {
+                applyResult = await agentManager.getClient(serverId).applyTraefikDefaults(serverId, nextSettings, payload);
+            }
+
+            globalSettingsStore.writeSettings(nextSettings);
+            const capabilities = {
+                docker: await agentManager.getClient(serverId).inspectDocker(),
+                traefik: await agentManager.getClient(serverId).detectTraefik(nextSettings),
+                ...(server.kind === "local" ? { system: await collectSystemMetrics() } : server.capabilities?.system ? { system: server.capabilities.system } : {})
+            };
+            const updatedServer = serverStore.updateCapabilities(serverId, capabilities);
+            eventBus.publish({ type: "server.health", server: updatedServer ?? server });
+
+            res.json({
+                settings: nextSettings,
+                applyResult,
+                server: updatedServer
+            });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not update Traefik defaults." });
         }
     });
 
@@ -368,6 +411,44 @@ function buildTraefikImpactProjects(config: Record<string, ProjectSettings>, ser
             };
         })
         .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function normalizeTraefikDefaultsPayload(payload: TraefikDefaultsPayload): Required<Pick<TraefikDefaultsPayload, "applyToServer">> & TraefikDefaultsPayload {
+    const network = payload.network?.trim();
+    const entryPoints = payload.entryPoints?.trim();
+    const certResolver = payload.certResolver?.trim();
+    const acmeEmail = payload.acmeEmail?.trim();
+    const acmeStorage = payload.acmeStorage?.trim();
+    const wildcardDomain = payload.wildcardDomain?.trim();
+
+    if (network && !/^[a-zA-Z0-9._-]+$/.test(network)) {
+        throw new Error("Traefik network can only contain letters, numbers, dots, underscores, and hyphens.");
+    }
+    if (entryPoints && !/^[a-zA-Z0-9._,-]+$/.test(entryPoints)) {
+        throw new Error("Traefik entrypoints can only contain letters, numbers, dots, underscores, hyphens, and commas.");
+    }
+    if (certResolver && !/^[a-zA-Z0-9._-]+$/.test(certResolver)) {
+        throw new Error("Traefik cert resolver can only contain letters, numbers, dots, underscores, and hyphens.");
+    }
+    if (wildcardDomain && !/^[a-zA-Z0-9.-]+$/.test(wildcardDomain)) {
+        throw new Error("Wildcard domain can only contain letters, numbers, dots, and hyphens.");
+    }
+    if (acmeEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(acmeEmail)) {
+        throw new Error("ACME email must be a valid email address.");
+    }
+    if (acmeStorage && !/^\/?[a-zA-Z0-9._/-]+$/.test(acmeStorage)) {
+        throw new Error("ACME storage path contains unsupported characters.");
+    }
+
+    return {
+        ...(network ? { network } : {}),
+        ...(entryPoints ? { entryPoints } : {}),
+        ...(certResolver ? { certResolver } : {}),
+        ...(acmeEmail ? { acmeEmail } : {}),
+        ...(acmeStorage ? { acmeStorage } : {}),
+        ...(wildcardDomain ? { wildcardDomain } : {}),
+        applyToServer: Boolean(payload.applyToServer)
+    };
 }
 
 function payloadProjectName(payload: ProjectPayload) {

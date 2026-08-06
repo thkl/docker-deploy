@@ -1,4 +1,5 @@
 import { AgentManager } from "./agentManager.js";
+import { inspectDockerTopology } from "./deploy.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ServerStore } from "./serverStore.js";
@@ -52,6 +53,7 @@ export class AgentHealthService {
      */
     async refreshLocal() {
         const capabilities = this.serverStore.get("local")?.capabilities;
+        const docker = await inspectDockerTopology();
         return this.publishUpdatedServer(this.serverStore.updateHealth("local", {
             status: "online",
             agentVersion: appVersion(),
@@ -65,6 +67,7 @@ export class AgentHealthService {
                         checkedAt: new Date().toISOString()
                     }
                 }),
+                docker,
                 system: await collectSystemMetrics()
             }
         }));
@@ -79,6 +82,7 @@ export class AgentHealthService {
             agentVersion: appVersion(),
             activeJobs: this.localActiveJobs(),
             capabilities: {
+                docker: await inspectDockerTopology(),
                 traefik: {
                     ...traefik
                 },

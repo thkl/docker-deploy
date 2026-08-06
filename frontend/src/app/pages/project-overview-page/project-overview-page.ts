@@ -1,7 +1,7 @@
 import { Component, computed, effect, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerRecord, WebhookEventRecord } from '../../models/project';
+import { DeploymentRecord, DeploymentStrategy, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerRecord, WebhookEventRecord } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
@@ -934,9 +934,14 @@ function deploymentStrategySummary(project: ProjectSummary, server: ServerRecord
   const strategy = project.deploymentStrategy === 'swarm' ? 'swarm' : 'compose';
   const targetCount = project.serverIds?.length || (project.serverId ? 1 : 0);
   const traefikNetwork = project.traefik.network || server?.capabilities?.traefik.dockerProviderNetwork || server?.capabilities?.traefik.networks?.[0] || '';
+  const recommendation = recommendedDeploymentStrategy(server, project.traefik.enabled, targetCount);
+  const recommendationDetail = recommendation.strategy !== strategy
+    ? `Detected topology recommends ${recommendation.strategy === 'swarm' ? 'Swarm stack' : 'Single host Compose'}: ${recommendation.reason}`
+    : `Detected topology matches this mode: ${recommendation.reason}`;
 
   if (strategy === 'swarm') {
     const details = [
+      recommendationDetail,
       'Deploy runs as a Swarm stack.',
       targetCount > 1
         ? 'One manager target dispatches the stack; placement constraints decide worker nodes.'
@@ -961,6 +966,7 @@ function deploymentStrategySummary(project: ProjectSummary, server: ServerRecord
       ? 'Selected because this project deploys containers on the target host and routes through the configured Docker network.'
       : 'Selected because this project deploys containers directly on the target host.',
     details: [
+      recommendationDetail,
       'Deploy runs with Docker Compose on the selected target server.',
       project.traefik.enabled
         ? `Proxy settings are generated for ${traefikNetwork || 'the selected Docker network'}.`
@@ -970,6 +976,27 @@ function deploymentStrategySummary(project: ProjectSummary, server: ServerRecord
         : `Target server: ${server?.name || project.serverId || 'local'}.`
     ]
   };
+}
+
+function recommendedDeploymentStrategy(server: ServerRecord | null, traefikEnabled: boolean, targetCount: number): { strategy: DeploymentStrategy; reason: string } {
+  const dockerMode = server?.capabilities?.docker.mode;
+  const providerMode = server?.capabilities?.traefik.providerMode;
+  const providerNetwork = server?.capabilities?.traefik.networkDetails?.find((network) => network.name === server.capabilities?.traefik.dockerProviderNetwork);
+
+  if (dockerMode === 'swarm-worker') {
+    return { strategy: 'swarm', reason: 'the selected target is a Swarm worker and stack deploys must be dispatched by a manager.' };
+  }
+  if (dockerMode === 'swarm-manager' && (providerMode === 'swarm' || providerMode === 'mixed')) {
+    return { strategy: 'swarm', reason: `Traefik is using the ${providerMode} provider on a Swarm manager.` };
+  }
+  if (targetCount > 1 && dockerMode === 'swarm-manager') {
+    return { strategy: 'swarm', reason: 'multiple targets can be represented with Swarm placement constraints from one manager deploy.' };
+  }
+  if (traefikEnabled && providerNetwork?.driver === 'overlay' && providerNetwork.attachable === false) {
+    return { strategy: 'swarm', reason: `${providerNetwork.name} is a non-attachable overlay network.` };
+  }
+
+  return { strategy: 'compose', reason: dockerMode ? `${dockerMode.replace(/-/g, ' ')} with Docker-provider compatible networking.` : 'no Swarm-only topology was detected.' };
 }
 
 const ansi256ColorClasses: Record<number, string> = {

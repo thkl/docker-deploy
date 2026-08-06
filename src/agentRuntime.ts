@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, resetAgentPairing, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
@@ -102,6 +102,7 @@ export class AgentRuntime {
                 pairedControllerId: this.state.controllerId,
                 pairedAt: this.state.pairedAt,
                 capabilities: {
+                    docker: await this.localAgent.inspectDocker(),
                     traefik: await this.localAgent.detectTraefik({
                         dataRoot: "/root/docker-apps",
                         defaultTraefikNetwork,
@@ -267,6 +268,10 @@ export class AgentRuntime {
             return { result: await this.localAgent.inspectCheckoutBindMounts(payload.checkoutPath) };
         }
 
+        if (request.jobType === "inspectDocker") {
+            return { result: await this.localAgent.inspectDocker() };
+        }
+
         if (request.jobType === "detectTraefik") {
             const payload = request.payload as DetectTraefikJobPayload;
             return { result: await this.localAgent.detectTraefik(payload.globalSettings) };
@@ -280,6 +285,11 @@ export class AgentRuntime {
         if (request.jobType === "validateTraefik") {
             const payload = request.payload as DetectTraefikJobPayload;
             return { result: await this.localAgent.validateTraefik(payload.serverId || this.state.serverId, payload.globalSettings) };
+        }
+
+        if (request.jobType === "applyTraefikDefaults") {
+            const payload = request.payload as ApplyTraefikDefaultsJobPayload;
+            return { result: await this.localAgent.applyTraefikDefaults(payload.serverId || this.state.serverId, payload.globalSettings, payload.defaults) };
         }
 
         if (request.jobType === "diagnoseTraefik") {

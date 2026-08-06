@@ -670,10 +670,27 @@ export function listServers(database: DatabaseSync): ServerRecord[] {
         ...(row.agentVersion ? { agentVersion: row.agentVersion } : {}),
         ...(row.activeJobsJson ? { activeJobs: parseActiveJobs(row.activeJobsJson) } : {}),
         ...(row.lastHealthError ? { lastHealthError: row.lastHealthError } : {}),
-        ...(row.capabilitiesJson ? { capabilities: JSON.parse(row.capabilitiesJson) } : {}),
+        ...(row.capabilitiesJson ? { capabilities: normalizeServerCapabilities(JSON.parse(row.capabilitiesJson)) } : {}),
         createdAt: row.createdAt,
         updatedAt: row.updatedAt
     }));
+}
+
+function normalizeServerCapabilities(capabilities: NonNullable<Partial<ServerRecord["capabilities"]>>): ServerRecord["capabilities"] {
+    return {
+        docker: capabilities.docker ?? {
+            checkedAt: new Date().toISOString(),
+            available: false,
+            mode: "unknown"
+        },
+        traefik: capabilities.traefik ?? {
+            available: false,
+            containerCount: 0,
+            networkPresent: false,
+            checkedAt: new Date().toISOString()
+        },
+        ...(capabilities.system ? { system: capabilities.system } : {})
+    };
 }
 
 interface ServerRow {

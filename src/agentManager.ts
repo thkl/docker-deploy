@@ -33,4 +33,17 @@ export class AgentManager {
 
         return new HttpAgentClient(server, this.controllerKeys);
     }
+
+    /**
+     * Picks a known Swarm manager agent, preferring one of the requested target
+     * servers when possible.
+     */
+    findSwarmManagerServerId(preferredServerIds: string[]) {
+        const preferred = new Set(preferredServerIds);
+        const managers = this.serverStore
+            .list()
+            .filter((server) => server.status !== "offline" && server.capabilities?.docker.mode === "swarm-manager");
+
+        return managers.find((server) => preferred.has(server.id))?.id ?? managers[0]?.id;
+    }
 }

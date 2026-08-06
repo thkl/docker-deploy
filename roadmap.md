@@ -254,7 +254,7 @@ Supported triggers:
 
 Supported statuses:
 
-- [ ] `queued`
+- [x] `queued` deployment phase before worker dispatch
 - [x] `running`
 - [x] `succeeded`
 - [x] `failed`
@@ -295,12 +295,12 @@ Agent protocol:
 
 Choose the deployment engine automatically from target-server and proxy topology.
 - [x] Switch from python runtime scripts to js and node as runtime !!!
-- [ ] Detect Docker mode per target: standalone engine, Swarm manager, or Swarm worker.
-- [ ] Detect Traefik provider mode: local Docker provider or Swarm provider.
+- [x] Detect Docker mode per target: standalone engine, Swarm manager, or Swarm worker.
+- [x] Detect Traefik provider mode: local Docker provider or Swarm provider.
 - [x] Use normal `docker compose up` for standalone hosts and same-node Docker-provider Traefik.
 - [x] Add a manual project deployment mode switch between single-host Compose and Swarm stack deployment.
 - [x] Use Swarm stack rendering/deploy when Swarm stack mode is selected.
-- [ ] Run `docker stack deploy` through a Swarm manager agent, preferably the controller/local manager, even when the service placement targets another worker node.
+- [x] Run `docker stack deploy` through a Swarm manager agent, preferably the controller/local manager, even when the service placement targets another worker node.
 - [x] Move Traefik labels to `deploy.labels` in Swarm stack mode.
 - [x] Emit Traefik v3 Swarm labels such as `traefik.swarm.network=<overlay>` instead of Docker-provider labels such as `traefik.providers.docker.network`.
 - [x] Add placement constraints for selected target nodes in Swarm stack mode.
@@ -368,9 +368,9 @@ Management workflow:
 - [x] Inventory Traefik containers, static config paths, dynamic config paths, entrypoints, cert resolvers, Docker provider network, and ACME storage.
 - [x] Show read-only server-level Traefik configuration before offering edits.
 - [x] Add explicit backup/export before writing any Traefik config.
-- [ ] Manage common defaults: entrypoints, cert resolvers, Docker network, wildcard domains, and ACME email/storage.
+- [x] Manage common defaults: entrypoints, cert resolvers, Docker network, wildcard domains, and ACME email/storage.
 - [x] Validate generated Traefik config with the target agent before applying.
-- [ ] Apply changes through the target server agent and keep rollback instructions/output.
+- [x] Apply changes through the target server agent and keep rollback instructions/output.
 - [x] Surface affected projects before changing a shared Traefik network or entrypoint.
 
 ## Phase 7: Storage Cleanup And Data Mapping
@@ -421,11 +421,11 @@ Example target layout:
 - [x] Show last webhook receipt/match/ignore/error details per project.
 - [ ] Finish moving page-specific live updates onto the global event stream where it makes sense, while keeping raw log streams separate if needed.
 - [x] Add encrypted-at-rest storage for project secrets.
-- [ ] Add explicit `queued` deployment status if deployments become queued before workers start.
+- [x] Add `queued` deployment phase before workers start. Top-level deployment status remains `running` while a queued/dispatching/running target is active.
 - [x] Split compose/deployments/logs into dedicated child routes if the overview becomes crowded again.
 - [x] Add cleanup-after-deploy enforcement based on externalized storage mappings.
-- [ ] Build guarded server-level Traefik management for entrypoints, cert resolvers, networks, and static/dynamic config.
+- [x] Build guarded server-level Traefik management for entrypoints, cert resolvers, networks, and static config.
 - [ ] Add recovery-secret based automatic re-pairing for agents whose keypair changed but whose persistent recovery secret is still intact.
-- [ ] Add automatic deployment strategy planner with Swarm stack support for cross-node Traefik discovery.
+- [x] Add automatic deployment strategy planner with Swarm stack support for cross-node Traefik discovery.
 - [x] Rename the user-facing product to Deploy while keeping legacy `.updater`, `docker-compose.updater.yml`, and `UPDATER_*` compatibility.
 - [x] Better UI for the Compose Editors Volume Section. Selector for volume or bind mount; creating a volume makes it available in services and bind paths are shown explicitly.

@@ -2,8 +2,8 @@ import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js"
 import { inspectCompose } from "./composeInspection.js";
 import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { backupTraefikConfig, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
-import { GlobalSettings, ProjectSettings, RuntimeServiceAction } from "./types.js";
+import { applyTraefikDefaults, backupTraefikConfig, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectDockerTopology, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { GlobalSettings, ProjectSettings, RuntimeServiceAction, TraefikDefaultsPayload } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
 /**
@@ -64,6 +64,13 @@ export class LocalAgent implements AgentClient {
     }
 
     /**
+     * Detects Docker standalone/Swarm role on the target server.
+     */
+    inspectDocker() {
+        return inspectDockerTopology();
+    }
+
+    /**
      * Detects whether Traefik is available on the target Docker server.
      */
     detectTraefik(globalSettings: GlobalSettings) {
@@ -82,6 +89,13 @@ export class LocalAgent implements AgentClient {
      */
     validateTraefik(serverId: string, globalSettings: GlobalSettings) {
         return validateTraefikConfig(serverId, globalSettings);
+    }
+
+    /**
+     * Applies guarded common Traefik defaults through target-server Docker mounts.
+     */
+    applyTraefikDefaults(serverId: string, globalSettings: GlobalSettings, defaults: TraefikDefaultsPayload) {
+        return applyTraefikDefaults(serverId, globalSettings, defaults);
     }
 
     /**

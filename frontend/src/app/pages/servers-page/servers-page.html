@@ -342,6 +342,14 @@
                 <small>status</small>
               </span>
               <span>
+                <strong>{{ dockerModeLabel(server) }}</strong>
+                <small>Docker mode</small>
+              </span>
+              <span>
+                <strong>{{ traefikProviderMode(server) }}</strong>
+                <small>provider mode</small>
+              </span>
+              <span>
                 <strong>{{ traefikValue(traefik.entryPoints) }}</strong>
                 <small>entrypoints</small>
               </span>
@@ -358,6 +366,48 @@
                 <small>ACME storage</small>
               </span>
             </div>
+
+            <form class="traefik-defaults" [formGroup]="traefikDefaultsForm" (ngSubmit)="applyTraefikDefaults(server)">
+              <div class="validation-head">
+                <strong>Common defaults</strong>
+                <span>Backup is captured before target-server config writes.</span>
+              </div>
+              <div class="traefik-default-grid">
+                <label>
+                  <span>Docker network</span>
+                  <input formControlName="network" placeholder="proxy" />
+                </label>
+                <label>
+                  <span>Entrypoints</span>
+                  <input formControlName="entryPoints" placeholder="websecure" />
+                </label>
+                <label>
+                  <span>Cert resolver</span>
+                  <input formControlName="certResolver" placeholder="letsencrypt" />
+                </label>
+                <label>
+                  <span>ACME email</span>
+                  <input formControlName="acmeEmail" placeholder="admin@example.com" />
+                </label>
+                <label>
+                  <span>ACME storage</span>
+                  <input formControlName="acmeStorage" placeholder="/letsencrypt/acme.json" />
+                </label>
+                <label>
+                  <span>Wildcard domain</span>
+                  <input formControlName="wildcardDomain" placeholder="example.com" />
+                </label>
+              </div>
+              <label class="check-row">
+                <input type="checkbox" formControlName="applyToServer" />
+                <span>Apply managed static config block to this server</span>
+              </label>
+              <div class="server-actions">
+                <button type="submit" class="primary" [disabled]="applyingTraefikDefaults() !== ''">
+                  {{ applyingTraefikDefaults() === server.id ? 'Applying...' : 'Save defaults' }}
+                </button>
+              </div>
+            </form>
 
             @if (traefik.staticConfigPaths?.length || traefik.dynamicConfigPaths?.length) {
               <div class="traefik-paths">

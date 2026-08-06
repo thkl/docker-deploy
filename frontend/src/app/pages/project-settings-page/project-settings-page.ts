@@ -1553,6 +1553,10 @@ function formDeploymentStrategySummary(input: {
 }): StrategySummary {
   const detectedTraefikNetwork = input.server?.capabilities?.traefik.dockerProviderNetwork || input.server?.capabilities?.traefik.networks?.[0] || '';
   const network = input.traefikNetwork || detectedTraefikNetwork;
+  const recommendation = recommendedDeploymentStrategy(input.server, input.traefikEnabled, input.targetCount);
+  const recommendationDetail = recommendation.strategy !== input.strategy
+    ? `Detected topology recommends ${recommendation.strategy === 'swarm' ? 'Swarm stack' : 'Single host Compose'}: ${recommendation.reason}`
+    : `Detected topology matches this mode: ${recommendation.reason}`;
 
   if (input.strategy === 'swarm') {
     return {
@@ -1561,6 +1565,7 @@ function formDeploymentStrategySummary(input: {
         ? 'This project will deploy as a Swarm stack and use the configured shared proxy network.'
         : 'This project will deploy as a Swarm stack.',
       details: [
+        recommendationDetail,
         'Deploy must run through a Swarm manager agent.',
         input.targetCount > 1
           ? 'Multiple selected targets collapse to one stack dispatch; placement constraints decide worker nodes.'
@@ -1578,6 +1583,7 @@ function formDeploymentStrategySummary(input: {
       ? 'This project will deploy containers on the selected Docker host and route through the configured network.'
       : 'This project will deploy containers directly on the selected Docker host.',
     details: [
+      recommendationDetail,
       'Deploy runs with Docker Compose on each selected target server.',
       input.targetCount > 1
         ? `${input.targetCount} target servers will receive separate Compose deploys.`
@@ -1587,6 +1593,27 @@ function formDeploymentStrategySummary(input: {
         : 'No proxy routing is configured.'
     ]
   };
+}
+
+function recommendedDeploymentStrategy(server: ServerRecord | null, traefikEnabled: boolean, targetCount: number): { strategy: DeploymentStrategy; reason: string } {
+  const dockerMode = server?.capabilities?.docker.mode;
+  const providerMode = server?.capabilities?.traefik.providerMode;
+  const providerNetwork = server?.capabilities?.traefik.networkDetails?.find((network) => network.name === server.capabilities?.traefik.dockerProviderNetwork);
+
+  if (dockerMode === 'swarm-worker') {
+    return { strategy: 'swarm', reason: 'the selected target is a Swarm worker and stack deploys must be dispatched by a manager.' };
+  }
+  if (dockerMode === 'swarm-manager' && (providerMode === 'swarm' || providerMode === 'mixed')) {
+    return { strategy: 'swarm', reason: `Traefik is using the ${providerMode} provider on a Swarm manager.` };
+  }
+  if (targetCount > 1 && dockerMode === 'swarm-manager') {
+    return { strategy: 'swarm', reason: 'multiple targets can be represented with Swarm placement constraints from one manager deploy.' };
+  }
+  if (traefikEnabled && providerNetwork?.driver === 'overlay' && providerNetwork.attachable === false) {
+    return { strategy: 'swarm', reason: `${providerNetwork.name} is a non-attachable overlay network.` };
+  }
+
+  return { strategy: 'compose', reason: dockerMode ? `${dockerMode.replace(/-/g, ' ')} with Docker-provider compatible networking.` : 'no Swarm-only topology was detected.' };
 }
 
 function mergeTraefikIntoCompose(compose: string, traefik: ComposeTraefikSettings) {

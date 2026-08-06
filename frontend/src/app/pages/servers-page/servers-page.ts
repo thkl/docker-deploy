@@ -1,7 +1,7 @@
 import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { forkJoin, Subscription } from 'rxjs';
-import { ProjectSummary, ServerRecord, TraefikConfigValidation, TraefikDiagnosticStatus, TraefikImpactPreview } from '../../models/project';
+import { GlobalSettings, ProjectSummary, ServerRecord, TraefikConfigValidation, TraefikDiagnosticStatus, TraefikImpactPreview } from '../../models/project';
 import { readMigratedSessionStorageKey, removeSessionStorageKeys } from '../../services/browser-storage';
 import { ControllerEvent, EventBusService } from '../../services/event-bus';
 import { ProjectApi } from '../../services/project-api';
@@ -39,6 +39,7 @@ export class ServersPage implements OnInit, OnDestroy {
   protected readonly backingUpTraefik = signal('');
   protected readonly validatingTraefik = signal('');
   protected readonly previewingTraefikImpact = signal('');
+  protected readonly applyingTraefikDefaults = signal('');
   protected readonly deletingServer = signal('');
   protected readonly editingServer = signal('');
   protected readonly savingServerName = signal('');
@@ -52,15 +53,33 @@ export class ServersPage implements OnInit, OnDestroy {
   protected readonly pairingTokens = signal<Record<string, string>>({});
   protected readonly traefikValidation = signal<Record<string, TraefikConfigValidation>>({});
   protected readonly traefikImpact = signal<Record<string, TraefikImpactPreview>>({});
+  protected readonly globalDefaults = signal<GlobalSettings>({
+    dataRoot: '',
+    defaultTraefikNetwork: 'proxy',
+    defaultTraefikEntryPoints: 'websecure',
+    defaultTraefikCertResolver: 'letsencrypt',
+    sshKeyPath: '~/.ssh',
+    cleanupAfterDeploy: false,
+  });
   protected readonly servers = this.store.servers;
   protected readonly serverForm = this.fb.group({
     name: [''],
     baseUrl: ['http://', [Validators.required]],
     pairingToken: ['', [Validators.required]],
   });
+  protected readonly traefikDefaultsForm = this.fb.group({
+    network: ['proxy', [Validators.required]],
+    entryPoints: ['websecure', [Validators.required]],
+    certResolver: ['letsencrypt', [Validators.required]],
+    acmeEmail: [''],
+    acmeStorage: ['/letsencrypt/acme.json'],
+    wildcardDomain: [''],
+    applyToServer: [false],
+  });
 
   ngOnInit() {
     this.pairingTokens.set(readStoredPairingTokens());
+    this.loadGlobalDefaults();
     this.store.loadServers();
     this.connectServerActivity();
   }
@@ -237,6 +256,38 @@ export class ServersPage implements OnInit, OnDestroy {
       error: (error) => {
         this.error.set(error?.error?.error || 'Could not preview Traefik impact.');
         this.previewingTraefikImpact.set('');
+      },
+    });
+  }
+
+  protected applyTraefikDefaults(server: ServerRecord) {
+    if (this.traefikDefaultsForm.invalid) {
+      this.traefikDefaultsForm.markAllAsTouched();
+      this.error.set('Enter Traefik network, entrypoints, and cert resolver before applying defaults.');
+      return;
+    }
+
+    const payload = this.traefikDefaultsForm.getRawValue();
+    this.applyingTraefikDefaults.set(server.id);
+    this.message.set('');
+    this.error.set('');
+
+    this.api.applyTraefikDefaults(server.id, payload).subscribe({
+      next: (result) => {
+        this.globalDefaults.set(result.settings);
+        if (result.applyResult?.validation) {
+          this.traefikValidation.update((current) => ({ ...current, [server.id]: result.applyResult!.validation }));
+        }
+        this.store.loadServers();
+        this.previewTraefikImpact(server);
+        this.message.set(result.applyResult?.changed
+          ? `Traefik defaults applied to ${server.name}.`
+          : `Traefik defaults saved for ${server.name}.`);
+        this.applyingTraefikDefaults.set('');
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not apply Traefik defaults.');
+        this.applyingTraefikDefaults.set('');
       },
     });
   }
@@ -487,6 +538,19 @@ export class ServersPage implements OnInit, OnDestroy {
     return traefik.networkPresent ? 'Network exists, no container' : 'Not detected';
   }
 
+  protected dockerModeLabel(server: ServerRecord) {
+    const docker = server.capabilities?.docker;
+    if (!docker?.available) {
+      return docker?.error || 'Docker unknown';
+    }
+
+    return docker.mode.replace(/-/g, ' ');
+  }
+
+  protected traefikProviderMode(server: ServerRecord) {
+    return server.capabilities?.traefik.providerMode || 'unknown';
+  }
+
   protected traefikValue(values?: string[], fallback = 'Not detected') {
     return values?.length ? values.join(', ') : fallback;
   }
@@ -619,6 +683,19 @@ export class ServersPage implements OnInit, OnDestroy {
       sessionStorage.setItem(pairingTokenStorageKey, JSON.stringify(next));
       sessionStorage.removeItem(legacyPairingTokenStorageKey);
       return next;
+    });
+  }
+
+  private loadGlobalDefaults() {
+    this.api.getGlobalSettings().subscribe({
+      next: (settings) => {
+        this.globalDefaults.set(settings);
+        this.traefikDefaultsForm.patchValue({
+          network: settings.defaultTraefikNetwork || 'proxy',
+          entryPoints: settings.defaultTraefikEntryPoints || 'websecure',
+          certResolver: settings.defaultTraefikCertResolver || 'letsencrypt',
+        });
+      },
     });
   }
 }

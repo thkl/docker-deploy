@@ -63,6 +63,16 @@ export interface GlobalSettingsPayload {
     cleanupAfterDeploy?: boolean;
 }
 
+export interface TraefikDefaultsPayload {
+    network?: string;
+    entryPoints?: string;
+    certResolver?: string;
+    acmeEmail?: string;
+    acmeStorage?: string;
+    wildcardDomain?: string;
+    applyToServer?: boolean;
+}
+
 export interface ProjectPayload {
     name?: string;
     serverId?: string;
@@ -170,11 +180,13 @@ export interface ServerActiveJob {
 }
 
 export interface ServerCapabilities {
+    docker: DockerTopology;
     traefik: {
         available: boolean;
         containerCount: number;
         networkPresent: boolean;
         checkedAt: string;
+        providerMode?: "docker" | "swarm" | "mixed" | "unknown";
         containers?: TraefikContainerInventory[];
         networks?: string[];
         networkDetails?: DockerNetworkInventory[];
@@ -186,6 +198,16 @@ export interface ServerCapabilities {
         dynamicConfigPaths?: string[];
     };
     system?: ServerSystemMetrics;
+}
+
+export interface DockerTopology {
+    checkedAt: string;
+    available: boolean;
+    mode: "standalone" | "swarm-manager" | "swarm-worker" | "swarm-inactive" | "unknown";
+    swarmLocalNodeState?: string;
+    swarmControlAvailable?: boolean;
+    nodeId?: string;
+    error?: string;
 }
 
 export interface DockerNetworkInventory {
@@ -224,6 +246,7 @@ export interface TraefikConfigBackupFile {
     containerId?: string;
     containerName?: string;
     source: string;
+    mountTarget?: string;
     path: string;
     kind: "static" | "dynamic" | "other";
     content: string;
@@ -245,6 +268,22 @@ export interface TraefikConfigValidationCheck {
     status: TraefikDiagnosticStatus;
     detail: string;
     output?: string;
+}
+
+export interface TraefikConfigApplyResult {
+    serverId: string;
+    appliedAt: string;
+    changed: boolean;
+    target?: {
+        containerId?: string;
+        containerName?: string;
+        source: string;
+        path: string;
+        kind: "static" | "dynamic" | "other";
+    };
+    backup?: TraefikConfigBackupFile;
+    validation: TraefikConfigValidation;
+    actions: string[];
 }
 
 export interface TraefikImpactPreview {
