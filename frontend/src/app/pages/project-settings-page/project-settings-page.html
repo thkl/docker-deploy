@@ -309,7 +309,7 @@
                   <input [value]="service.healthcheckHttpUrl"
                     (input)="updateBuilderService(service.id, 'healthcheckHttpUrl', $event)"
                     placeholder="http://localhost:3000/health" />
-                    <small>You can use also environment variables like this: 'http://localhost:' + (process.env.SERVER_PORT || 3000) + '/api/v1/health'</small>
+                    <small>You can use shell environment variables like http://localhost:$&#123;SERVER_PORT:-3000&#125;/api/v1/health</small>
                 </label>
                 }
                 @if (service.healthcheckMode === 'command') {

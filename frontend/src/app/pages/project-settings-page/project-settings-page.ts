@@ -1603,13 +1603,7 @@ function appendHealthcheck(lines: string[], service: ComposeBuilderRenderableSer
 
 function renderHttpHealthcheckCommand(url: string) {
   const target = url || 'http://localhost:3000/health';
-  const targetExpression = looksLikeJavascriptExpression(target) ? target : JSON.stringify(target);
-  const script = `const u=${targetExpression};const m=u.startsWith('https:')?require('https'):require('http');m.get(u,(r)=>process.exit(r.statusCode>=200&&r.statusCode<400?0:1)).on('error',()=>process.exit(1))`;
-  return `node -e ${shellArg(script)}`;
-}
-
-function looksLikeJavascriptExpression(value: string) {
-  return /process\.env| \+ |\?\?|\|\||\$\{/.test(value);
+  return `curl -fsS ${shellHealthcheckUrlArg(target)} >/dev/null || exit 1`;
 }
 
 function formDeploymentStrategySummary(input: {
@@ -2565,7 +2559,7 @@ function normalizeParsedHealthcheck(service: Omit<ComposeBuilderService, 'id'>):
     };
   }
 
-  const httpTarget = extractNodeHttpHealthcheckTarget(testCommand);
+  const httpTarget = extractCurlHttpHealthcheckTarget(testCommand) || extractNodeHttpHealthcheckTarget(testCommand);
   return {
     ...service,
     healthcheckMode: httpTarget ? 'http' : 'command',
@@ -2630,6 +2624,27 @@ function extractNodeHttpHealthcheckTarget(command: string) {
 
   const getMatch = command.match(/\.get\((.+?),\s*\(?r\)?\s*=>/);
   return getMatch?.[1] ? unquoteYaml(getMatch[1].trim()) : '';
+}
+
+function extractCurlHttpHealthcheckTarget(command: string) {
+  if (!/(?:^|\s)curl\s/.test(command)) {
+    return '';
+  }
+
+  const match = command.match(/(?:^|\s)curl\s+(?:-[a-zA-Z]+\s+)*(?:"((?:\\"|[^"])*)"|'((?:'\\''|[^'])*)'|([^\s>]+))/);
+  const target = match?.[1] ?? match?.[2] ?? match?.[3] ?? '';
+  if (!/^https?:\/\//.test(target) && !/^\$[{a-zA-Z_]/.test(target)) {
+    return '';
+  }
+  return target.replace(/\\"/g, '"').replace(/'\\''/g, "'").replace(/\$\$/g, '$');
+}
+
+function shellHealthcheckUrlArg(value: string) {
+  if (/\$[{a-zA-Z_]/.test(value)) {
+    return `"${value.replace(/\$/g, '$$$$').replace(/(["\\`])/g, '\\$1')}"`;
+  }
+
+  return shellArg(value);
 }
 
 function shellArg(value: string) {

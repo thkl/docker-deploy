@@ -2,7 +2,7 @@ FROM node:24.16.0-alpine AS base
 
 WORKDIR /app
 
-RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client
+RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client curl
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml* tsconfig.json ./
