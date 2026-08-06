@@ -1578,6 +1578,9 @@ function appendHealthcheck(lines: string[], service: ComposeBuilderRenderableSer
   const command = service.healthcheckMode === 'http'
     ? renderHttpHealthcheckCommand(service.healthcheckHttpUrl.trim())
     : service.healthcheckCommand.trim();
+  if (service.healthcheckMode === 'http') {
+    lines.push(`      # deploy-http-endpoint: ${yamlScalar(service.healthcheckHttpUrl.trim() || 'http://localhost:3000/health')}`);
+  }
   if (command) {
     lines.push('      test:');
     lines.push('        - CMD-SHELL');
@@ -2156,6 +2159,19 @@ function isPlainYamlScalar(value: string) {
   return !/^(?:y|yes|n|no|true|false|on|off|null|~)$/i.test(trimmed);
 }
 
+function stripBuilderIgnoredComment(raw: string) {
+  if (/^\s*#\s*deploy-http-endpoint:/.test(raw)) {
+    return raw;
+  }
+
+  return raw.replace(/\s+#.*$/, '').trim().startsWith('#') ? '' : raw.replace(/\s+#.*$/, '');
+}
+
+function parseHealthcheckEndpointComment(text: string) {
+  const match = text.match(/^#\s*deploy-http-endpoint:\s*(.+)$/);
+  return match?.[1] ? unquoteYaml(match[1]) : '';
+}
+
 function traefikRouterName(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
@@ -2183,8 +2199,8 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
 
   const lines = compose
     .split(/\r?\n/)
-    .map((raw) => raw.replace(/\s+#.*$/, ''))
-    .filter((raw) => raw.trim() && !raw.trim().startsWith('#'));
+    .map(stripBuilderIgnoredComment)
+    .filter((raw) => raw.trim());
   const services: Omit<ComposeBuilderService, 'id'>[] = [];
   const networks: Omit<ComposeBuilderNetwork, 'id'>[] = [];
   const volumes: Omit<ComposeBuilderVolume, 'id'>[] = [];
@@ -2245,11 +2261,17 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
           continue;
         }
         if (service && objectKey === 'healthcheck') {
+          const endpoint = parseHealthcheckEndpointComment(text);
+          if (endpoint) {
+            service.healthcheckMode = 'http';
+            service.healthcheckHttpUrl = endpoint;
+            continue;
+          }
           if (indent === 6) {
             const [healthKey, ...healthRest] = text.split(':');
             const healthValue = unquoteYaml(healthRest.join(':').trim());
             if (healthKey === 'test') {
-              service.healthcheckMode = 'command';
+              service.healthcheckMode = service.healthcheckMode === 'http' ? 'http' : 'command';
               if (healthValue) {
                 service.healthcheckCommand = healthValue;
               } else {
@@ -2284,7 +2306,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
             continue;
           }
           if (extraKey === 'healthcheckTest' && indent > 6) {
-            service.healthcheckMode = 'command';
+            service.healthcheckMode = service.healthcheckMode === 'http' ? 'http' : 'command';
             service.healthcheckCommand = appendRawLine(service.healthcheckCommand, raw.slice(6));
             continue;
           }
@@ -2536,6 +2558,13 @@ function normalizeParsedHealthcheck(service: Omit<ComposeBuilderService, 'id'>):
   }
 
   const testCommand = normalizeHealthcheckTestCommand(service.healthcheckCommand);
+  if (service.healthcheckMode === 'http') {
+    return {
+      ...service,
+      healthcheckCommand: ''
+    };
+  }
+
   const httpTarget = extractNodeHttpHealthcheckTarget(testCommand);
   return {
     ...service,
