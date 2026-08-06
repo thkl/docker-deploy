@@ -43,6 +43,11 @@ async function inspectStoredOverride(projectName: string, appSettings: ProjectSe
                 PROJECT_ROOT=${quotedProjectRoot}
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/inspect"
                 mkdir -p "$PROJECT_ROOT/.updater"
+                cleanup_inspect() {
+                    cd /
+                    rm -rf "$TMP_DEPLOY"
+                }
+                trap cleanup_inspect EXIT
 
                 if [ -n "${quotedRepositoryUrl}" ]; then
                     rm -rf "$TMP_DEPLOY"
@@ -95,6 +100,11 @@ async function inspectRepositoryCompose(projectName: string, appSettings: Projec
                 PROJECT_ROOT=${quotedProjectRoot}
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/inspect"
                 mkdir -p "$PROJECT_ROOT/.updater"
+                cleanup_inspect() {
+                    cd /
+                    rm -rf "$TMP_DEPLOY"
+                }
+                trap cleanup_inspect EXIT
 
                 if [ -n "${quotedRepositoryUrl}" ]; then
                     rm -rf "$TMP_DEPLOY"

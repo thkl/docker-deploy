@@ -429,3 +429,4 @@ Example target layout:
 - [x] Add automatic deployment strategy planner with Swarm stack support for cross-node Traefik discovery.
 - [x] Rename the user-facing product to Deploy while keeping legacy `.updater`, `docker-compose.updater.yml`, and `UPDATER_*` compatibility.
 - [x] Better UI for the Compose Editors Volume Section. Selector for volume or bind mount; creating a volume makes it available in services and bind paths are shown explicitly.
+- [ ] build and push to registry before stack deploy

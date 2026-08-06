@@ -245,7 +245,7 @@
               <label>
                 <span>Dockerfile</span>
                 <input [value]="service.dockerfile" (input)="updateBuilderService(service.id, 'dockerfile', $event)"
-                  placeholder="Dockerfile" [disabled]="isSwarmMode()" />
+                  placeholder="Dockerfile" />
               </label>
               <label>
                 <span>Build target</span>
@@ -309,6 +309,7 @@
                   <input [value]="service.healthcheckHttpUrl"
                     (input)="updateBuilderService(service.id, 'healthcheckHttpUrl', $event)"
                     placeholder="http://localhost:3000/health" />
+                    <small>You can use also environment variables like this: 'http://localhost:' + (process.env.SERVER_PORT || 3000) + '/api/v1/health'</small>
                 </label>
                 }
                 @if (service.healthcheckMode === 'command') {
@@ -317,7 +318,7 @@
                   <input [value]="service.healthcheckCommand"
                     (input)="updateBuilderService(service.id, 'healthcheckCommand', $event)"
                     placeholder="curl -fsS http://localhost:3000/health || exit 1" />
-                  <small>You can use also environment variables like this: 'http://localhost:' + (process.env.SERVER_PORT || 3000) + '/api/v1/health'</small>  
+                    
               </label>
 
                 }

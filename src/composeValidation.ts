@@ -44,6 +44,11 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/inspect"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
                 mkdir -p "$COMPOSE_WORKSPACE"
+                cleanup_inspect() {
+                    cd /
+                    rm -rf "$TMP_DEPLOY"
+                }
+                trap cleanup_inspect EXIT
 
                 if [ -n "${quotedRepositoryUrl}" ]; then
                     rm -rf "$TMP_DEPLOY"

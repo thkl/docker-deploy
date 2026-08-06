@@ -155,6 +155,10 @@ ${secretOverlayScript}
 ${persistedEnvFileRewriteScript}
 ${persistedStorageRewriteScript}
 ${persistedStorageGuardScript}
+                if [ -d "$RELEASE_DEPLOY" ] && ! grep -F "$RELEASE_DEPLOY" "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" > /dev/null 2>&1; then
+                    echo "--> Removing unused stable release checkout."
+                    rm -rf "$RELEASE_DEPLOY"
+                fi
                 COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
 
                 if [ "$DEPLOYMENT_STRATEGY" = "swarm" ]; then
