@@ -61,10 +61,10 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
     // conflicts and are not needed.
     const resetPorts = traefik.removePublishedPorts !== false ? "\n    ports: !reset []" : "";
 
-    const labelIndent = deploymentStrategy === "swarm" ? "        " : "      ";
-    const labelContent = labels.map(([key, value]) => `${labelIndent}${yamlQuote(key)}: ${yamlQuote(value)}`).join("\n");
+    const serviceLabelContent = labels.map(([key, value]) => `      ${yamlQuote(key)}: ${yamlQuote(value)}`).join("\n");
+    const deployLabelContent = labels.map(([key, value]) => `        ${yamlQuote(key)}: ${yamlQuote(value)}`).join("\n");
 
-    const serviceLabelContent = deploymentStrategy === "swarm"
+    const labelContent = deploymentStrategy === "swarm"
         ? `    deploy:
       mode: replicated
       replicas: 1
@@ -72,13 +72,15 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
         constraints:
           - ${yamlQuote("node.role == worker")}
       labels:
-${labelContent}`
+${deployLabelContent}
+    labels:
+${serviceLabelContent}`
         : `    labels:
-${labelContent}`;
+${serviceLabelContent}`;
 
     const overrideContent = `services:
   ${yamlQuote(serviceName)}:
-${serviceLabelContent}
+${labelContent}
     networks:
       - ${yamlQuote(network)}
 ${resetPorts}
