@@ -1750,22 +1750,28 @@ function prepareComposeBuilderForTraefik(
   networks: ComposeBuilderRenderableNetwork[],
   traefik?: ComposeTraefikSettings
 ) {
+  const cleanedServices = services.map((service) => ({
+    ...service,
+    deployLabels: removeTraefikDeployLabels(service.deployLabels),
+    extra: removeTraefikLabelBlocks(service.extra),
+  }));
+
   if (!traefik?.enabled || !traefik.hostname || !traefik.service || !traefik.network) {
-    return { services, networks };
+    return { services: cleanedServices, networks };
   }
 
-  const serviceExists = services.some((service) => service.name.trim() === traefik.service);
-  const targetServiceName = serviceExists ? traefik.service : services.find((service) => service.name.trim())?.name.trim();
+  const serviceExists = cleanedServices.some((service) => service.name.trim() === traefik.service);
+  const targetServiceName = serviceExists ? traefik.service : cleanedServices.find((service) => service.name.trim())?.name.trim();
 
   if (!targetServiceName) {
-    return { services, networks };
+    return { services: cleanedServices, networks };
   }
 
   const labels = renderTraefikLabels({ ...traefik, service: targetServiceName }, traefik.deploymentStrategy === 'swarm' ? 'deploy' : 'service');
   const serviceLabels = traefik.deploymentStrategy === 'swarm'
     ? renderTraefikLabels({ ...traefik, service: targetServiceName }, 'service')
     : labels;
-  const preparedServices = services.map((service) => {
+  const preparedServices = cleanedServices.map((service) => {
     if (service.name.trim() !== targetServiceName) {
       return service;
     }
@@ -1839,6 +1845,10 @@ function removeTraefikLabelBlocks(extra: string) {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
+    if (isTraefikLabelLine(line)) {
+      continue;
+    }
+
     if (line.trim() !== 'labels:') {
       kept.push(line);
       continue;
@@ -1870,6 +1880,10 @@ function isTraefikOnlyLabelsBlock(lines: string[]) {
 
 function isTraefikLabelLine(line: string) {
   return /^\s*-\s*["']?traefik\./.test(line) || /^\s*["']?traefik\./.test(line);
+}
+
+function removeTraefikDeployLabels(labels: string) {
+  return splitLines(labels).filter((label) => !isTraefikLabelLine(label)).join('\n');
 }
 
 function addListValue(value: string, item: string) {
