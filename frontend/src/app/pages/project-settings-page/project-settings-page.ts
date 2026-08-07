@@ -1790,10 +1790,11 @@ function prepareComposeBuilderForTraefik(
 
 function renderTraefikLabels(traefik: ComposeTraefikSettings) {
   const routerName = traefikRouterName(traefik.projectName || traefik.service);
-  const networkLabel = traefik.deploymentStrategy === 'swarm' ? 'traefik.swarm.network' : 'traefik.providers.docker.network';
   const labels = [
     `traefik.enable=true`,
-    `${networkLabel}=${traefik.network}`,
+    ...(traefik.deploymentStrategy === 'swarm'
+      ? [`traefik.swarm.network=${traefik.network}`, `traefik.docker.network=${traefik.network}`]
+      : [`traefik.docker.network=${traefik.network}`]),
     `traefik.http.routers.${routerName}.rule=Host(\`${traefik.hostname}\`)`,
     `traefik.http.routers.${routerName}.entrypoints=${traefik.entryPoints}`,
     `traefik.http.routers.${routerName}.tls=true`,
@@ -1809,7 +1810,7 @@ function renderTraefikLabels(traefik: ComposeTraefikSettings) {
   if (traefik.websocket) {
     labels.push(`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection=Upgrade`);
     labels.push(`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Upgrade=websocket`);
-    labels.push(`traefik.http.routers.${routerName}.middlewares=${routerName}-websocket@docker`);
+    labels.push(`traefik.http.routers.${routerName}.middlewares=${routerName}-websocket`);
   }
 
   return traefik.deploymentStrategy === 'swarm'

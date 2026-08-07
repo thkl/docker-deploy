@@ -28,11 +28,12 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
     const routerName = traefikRouterName(repoName);
     const network = traefik.network || globalSettings.defaultTraefikNetwork;
     const deploymentStrategy = settings.deploymentStrategy === "swarm" ? "swarm" : "compose";
-    const networkLabel = deploymentStrategy === "swarm" ? "traefik.swarm.network" : "traefik.providers.docker.network";
     const rule = `Host(\`${traefik.hostname}\`)`;
     const labels: Array<[string, string | number | boolean]> = [
         ["traefik.enable", "true"],
-        [networkLabel, network],
+        ...(deploymentStrategy === "swarm"
+            ? [["traefik.swarm.network", network], ["traefik.docker.network", network]] as Array<[string, string]>
+            : [["traefik.docker.network", network]] as Array<[string, string]>),
         [`traefik.http.routers.${routerName}.rule`, rule],
         [`traefik.http.routers.${routerName}.entrypoints`, traefik.entryPoints || globalSettings.defaultTraefikEntryPoints],
         [`traefik.http.routers.${routerName}.tls`, "true"],
@@ -52,7 +53,7 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
         labels.push(
             [`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection`, "Upgrade"],
             [`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Upgrade`, "websocket"],
-            [`traefik.http.routers.${routerName}.middlewares`, `${routerName}-websocket@docker`]
+            [`traefik.http.routers.${routerName}.middlewares`, `${routerName}-websocket`]
         );
     }
   
