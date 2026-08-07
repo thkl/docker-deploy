@@ -270,6 +270,9 @@ export class ProjectSettingsPage implements OnInit {
     defaultTraefikCertResolver: 'letsencrypt',
     sshKeyPath: '~/.ssh',
     cleanupAfterDeploy: false,
+    registryAddress: '',
+    registryUsername: '',
+    registryPassword: '',
   });
 
   protected readonly form = this.fb.group({
@@ -279,6 +282,10 @@ export class ProjectSettingsPage implements OnInit {
     token: [''],
     deployToken: [''],
     deploymentStrategy: ['compose' as DeploymentStrategy],
+    registryPublish: [false],
+    registryDeployFromRegistry: [false],
+    registryImageNamespace: [''],
+    registryImageTag: ['latest'],
     path: [''],
     composeOverride: [''],
     traefikEnabled: [false],
@@ -1134,6 +1141,12 @@ export class ProjectSettingsPage implements OnInit {
     const traefik = payload.traefik ?? { enabled: payload.traefikEnabled };
     const composeOverride = payload.compose?.override ?? payload.composeOverride ?? '';
     const deploymentStrategy = payload.deployment?.strategy ?? payload.deploymentStrategy ?? 'compose';
+    const registry = payload.registry ?? {
+      publish: Boolean(payload.registryPublish),
+      deployFromRegistry: Boolean(payload.registryDeployFromRegistry),
+      imageNamespace: payload.registryImageNamespace,
+      imageTag: payload.registryImageTag,
+    };
 
     this.form.reset({
       name: projectName,
@@ -1142,6 +1155,10 @@ export class ProjectSettingsPage implements OnInit {
       token: '',
       deployToken: '',
       deploymentStrategy: deploymentStrategy === 'swarm' ? 'swarm' : 'compose',
+      registryPublish: Boolean(registry.publish),
+      registryDeployFromRegistry: Boolean(registry.deployFromRegistry),
+      registryImageNamespace: registry.imageNamespace ?? '',
+      registryImageTag: registry.imageTag ?? 'latest',
       path: payload.project?.path ?? payload.path ?? '',
       composeOverride,
       traefikEnabled: Boolean(traefik.enabled),
@@ -1178,6 +1195,10 @@ export class ProjectSettingsPage implements OnInit {
       token: '',
       deployToken: '',
       deploymentStrategy: 'compose',
+      registryPublish: false,
+      registryDeployFromRegistry: false,
+      registryImageNamespace: '',
+      registryImageTag: 'latest',
       path: '',
       composeOverride: '',
       traefikEnabled: false,
@@ -1204,6 +1225,7 @@ export class ProjectSettingsPage implements OnInit {
     const gitSection = project.git;
     const deploymentSection = project.deployment;
     const composeSection = project.compose;
+    const registry = project.registry ?? { publish: false, deployFromRegistry: false };
     const serverIds = projectSection?.serverIds?.length ? projectSection.serverIds : project.serverIds?.length ? project.serverIds : [projectSection?.serverId ?? project.serverId ?? 'local'];
     this.patchedProjectName = project.name;
     this.traefikEnabled.set(Boolean(traefik.enabled));
@@ -1216,6 +1238,10 @@ export class ProjectSettingsPage implements OnInit {
       token: '',
       deployToken: '',
       deploymentStrategy,
+      registryPublish: Boolean(registry.publish),
+      registryDeployFromRegistry: Boolean(registry.deployFromRegistry),
+      registryImageNamespace: registry.imageNamespace ?? '',
+      registryImageTag: registry.imageTag ?? 'latest',
       path: projectSection?.path ?? project.path ?? '',
       composeOverride: composeSection?.override ?? project.composeOverride ?? '',
       traefikEnabled: Boolean(traefik.enabled),
@@ -1308,6 +1334,10 @@ export class ProjectSettingsPage implements OnInit {
       token: value.token.trim(),
       deployToken: value.deployToken.trim(),
       deploymentStrategy,
+      registryPublish: value.registryPublish,
+      registryDeployFromRegistry: value.registryDeployFromRegistry,
+      registryImageNamespace: value.registryImageNamespace.trim(),
+      registryImageTag: value.registryImageTag.trim(),
       path: value.path.trim(),
       composeOverride: composeOverride.trim(),
       envSecrets,
@@ -1335,6 +1365,12 @@ export class ProjectSettingsPage implements OnInit {
       deployment: {
         deployToken: value.deployToken.trim(),
         strategy: deploymentStrategy,
+      },
+      registry: {
+        publish: value.registryPublish,
+        deployFromRegistry: value.registryDeployFromRegistry,
+        imageNamespace: value.registryImageNamespace.trim(),
+        imageTag: value.registryImageTag.trim(),
       },
       compose: {
         override: composeOverride.trim(),

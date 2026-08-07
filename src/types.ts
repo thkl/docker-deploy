@@ -31,6 +31,7 @@ export interface ProjectSettings {
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
     deploymentStrategy?: DeploymentStrategy;
+    registry?: ProjectRegistrySettings;
     traefik?: TraefikSettings;
 }
 
@@ -52,6 +53,9 @@ export interface GlobalSettings {
     defaultTraefikCertResolver: string;
     sshKeyPath: string;
     cleanupAfterDeploy: boolean;
+    registryAddress: string;
+    registryUsername: string;
+    registryPassword?: string;
 }
 
 export interface GlobalSettingsPayload {
@@ -61,6 +65,16 @@ export interface GlobalSettingsPayload {
     defaultTraefikCertResolver?: string;
     sshKeyPath?: string;
     cleanupAfterDeploy?: boolean;
+    registryAddress?: string;
+    registryUsername?: string;
+    registryPassword?: string;
+}
+
+export interface ProjectRegistrySettings {
+    publish: boolean;
+    deployFromRegistry: boolean;
+    imageNamespace?: string;
+    imageTag?: string;
 }
 
 export interface TraefikDefaultsPayload {
@@ -84,6 +98,10 @@ export interface ProjectPayload {
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
     deploymentStrategy?: DeploymentStrategy;
+    registryPublish?: boolean;
+    registryDeployFromRegistry?: boolean;
+    registryImageNamespace?: string;
+    registryImageTag?: string;
     traefikEnabled?: boolean;
     traefikHostname?: string;
     traefikService?: string;
@@ -110,6 +128,7 @@ export interface ProjectPayload {
         strategy?: DeploymentStrategy;
         deploymentStrategy?: DeploymentStrategy;
     };
+    registry?: Partial<ProjectRegistrySettings>;
     compose?: {
         override?: string;
         envSecrets?: ProjectEnvironmentSecret[];

@@ -60,6 +60,9 @@ export class ServersPage implements OnInit, OnDestroy {
     defaultTraefikCertResolver: 'letsencrypt',
     sshKeyPath: '~/.ssh',
     cleanupAfterDeploy: false,
+    registryAddress: '',
+    registryUsername: '',
+    registryPassword: '',
   });
   protected readonly servers = this.store.servers;
   protected readonly serverForm = this.fb.group({

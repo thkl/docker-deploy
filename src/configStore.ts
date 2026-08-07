@@ -29,6 +29,10 @@ export class ConfigStore {
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
                     p.deployment_strategy AS deploymentStrategy,
+                    p.registry_publish AS registryPublish,
+                    p.registry_deploy_from_registry AS registryDeployFromRegistry,
+                    p.registry_image_namespace AS registryImageNamespace,
+                    p.registry_image_tag AS registryImageTag,
                     t.enabled AS traefikEnabled,
                     t.hostname AS traefikHostname,
                     t.service AS traefikService,
@@ -104,6 +108,10 @@ export class ConfigStore {
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
                     p.deployment_strategy AS deploymentStrategy,
+                    p.registry_publish AS registryPublish,
+                    p.registry_deploy_from_registry AS registryDeployFromRegistry,
+                    p.registry_image_namespace AS registryImageNamespace,
+                    p.registry_image_tag AS registryImageTag,
                     t.enabled AS traefikEnabled,
                     t.hostname AS traefikHostname,
                     t.service AS traefikService,
@@ -138,6 +146,10 @@ interface ProjectRow {
     composeOverride: string | null;
     envSecretsJson: string | null;
     deploymentStrategy: string | null;
+    registryPublish: number | null;
+    registryDeployFromRegistry: number | null;
+    registryImageNamespace: string | null;
+    registryImageTag: string | null;
     traefikEnabled: number | null;
     traefikHostname: string | null;
     traefikService: string | null;
@@ -167,6 +179,12 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
         ...(row.composeOverride ? { composeOverride: row.composeOverride } : {}),
         ...(row.envSecretsJson ? { envSecrets: parseProjectEnvSecrets(row.envSecretsJson) } : {}),
         deploymentStrategy: row.deploymentStrategy === "swarm" ? "swarm" : "compose",
+        registry: {
+            publish: Boolean(row.registryPublish),
+            deployFromRegistry: Boolean(row.registryDeployFromRegistry),
+            ...(row.registryImageNamespace ? { imageNamespace: row.registryImageNamespace } : {}),
+            ...(row.registryImageTag ? { imageTag: row.registryImageTag } : {})
+        },
         ...(row.traefikEnabled === null
             ? {}
             : {

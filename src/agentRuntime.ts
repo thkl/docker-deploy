@@ -109,7 +109,10 @@ export class AgentRuntime {
                         defaultTraefikEntryPoints: "websecure",
                         defaultTraefikCertResolver: "letsencrypt",
                         sshKeyPath: "~/.ssh",
-                        cleanupAfterDeploy: false
+                        cleanupAfterDeploy: false,
+                        registryAddress: "",
+                        registryUsername: "",
+                        registryPassword: ""
                     }),
                     system: await collectSystemMetrics()
                 }

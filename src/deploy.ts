@@ -88,6 +88,10 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
     const deploymentStrategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
+    const registry = appSettings.registry;
+    const registryPublish = Boolean(registry?.publish);
+    const registryDeployFromRegistry = Boolean(registry?.deployFromRegistry);
+    const registryEnabled = registryPublish || registryDeployFromRegistry;
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
@@ -98,8 +102,15 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const persistedStorageRewriteScript = renderPersistedStorageRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const persistedStorageGuardScript = renderPersistedStorageGuardScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
+    const registryRewriteScript = renderRegistryComposeRewriteScript();
+    const registryStripBuildScript = renderRegistryStripBuildScript();
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
+    const registryAddress = globalSettings.registryAddress.trim();
+    const registryUsername = globalSettings.registryUsername.trim();
+    const registryPassword = globalSettings.registryPassword?.trim() ?? "";
+    const registryImageNamespace = registry?.imageNamespace?.trim() || composeProjectName;
+    const registryImageTag = registry?.imageTag?.trim() || "latest";
 
     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
@@ -110,6 +121,14 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 PROJECT_ROOT="\${PROJECT_ROOT%/}"
                 PROJECT_NAME=${shellQuote(composeProjectName)}
                 DEPLOYMENT_STRATEGY=${shellQuote(deploymentStrategy)}
+                REGISTRY_ENABLED=${shellQuote(registryEnabled ? "true" : "false")}
+                REGISTRY_PUBLISH=${shellQuote(registryPublish ? "true" : "false")}
+                REGISTRY_DEPLOY_FROM_REGISTRY=${shellQuote(registryDeployFromRegistry ? "true" : "false")}
+                REGISTRY_ADDRESS=${shellQuote(registryAddress)}
+                REGISTRY_USERNAME=${shellQuote(registryUsername)}
+                REGISTRY_PASSWORD=${shellQuote(registryPassword)}
+                REGISTRY_IMAGE_NAMESPACE=${shellQuote(registryImageNamespace)}
+                REGISTRY_IMAGE_TAG=${shellQuote(registryImageTag)}
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/tmpdeploy"
                 RELEASE_DEPLOY="$PROJECT_ROOT/.updater/release"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
@@ -160,6 +179,51 @@ ${persistedStorageGuardScript}
                     rm -rf "$RELEASE_DEPLOY"
                 fi
                 COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
+
+                if [ "$REGISTRY_ENABLED" = "true" ]; then
+                    if [ -z "$REGISTRY_ADDRESS" ]; then
+                        echo "--> CRITICAL: Registry deployment is enabled for this project, but no controller registry address is configured."
+                        exit 1
+                    fi
+
+                    echo "--> Preparing registry image references..."
+${registryRewriteScript}
+
+                    if [ -n "$REGISTRY_USERNAME" ]; then
+                        if [ -z "$REGISTRY_PASSWORD" ]; then
+                            echo "--> CRITICAL: Registry username is configured, but the registry password is empty."
+                            exit 1
+                        fi
+                        echo "--> Logging in to Docker registry $REGISTRY_ADDRESS..."
+                        printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_ADDRESS" --username "$REGISTRY_USERNAME" --password-stdin >/dev/null
+                    fi
+                fi
+
+                if [ "$REGISTRY_PUBLISH" = "true" ]; then
+                    echo "--> Building registry-tagged images..."
+                    REGISTRY_SERVICES="$(cat /tmp/deploy-registry-services 2>/dev/null || true)"
+                    if [ -z "$REGISTRY_SERVICES" ]; then
+                        echo "--> No build-backed services found to publish."
+                    else
+                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build $REGISTRY_SERVICES
+                    if [ $? -ne 0 ]; then
+                        echo "--> CRITICAL: Registry image build failed."
+                        exit 1
+                    fi
+
+                    echo "--> Pushing images to registry..."
+                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES push $REGISTRY_SERVICES
+                    if [ $? -ne 0 ]; then
+                        echo "--> CRITICAL: Registry image push failed."
+                        exit 1
+                    fi
+                    fi
+                fi
+
+                if [ "$REGISTRY_DEPLOY_FROM_REGISTRY" = "true" ]; then
+                    echo "--> Switching Compose deployment file to registry images only..."
+${registryStripBuildScript}
+                fi
 
                 if [ "$DEPLOYMENT_STRATEGY" = "swarm" ]; then
                     echo "--> Checking Swarm manager availability..."
@@ -282,20 +346,39 @@ DEPLOY_SWARM_VALIDATE_JS
                         exit 1
                     fi
                 else
-                    echo "--> Testing build for new changes..."
-                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build
-                    if [ $? -eq 0 ]; then
-                        echo "--> Build succeeded! Recreating changed services via compose..."
+                    if [ "$REGISTRY_DEPLOY_FROM_REGISTRY" = "true" ]; then
+                        echo "--> Pulling images from registry..."
+                        REGISTRY_SERVICES="$(cat /tmp/deploy-registry-services 2>/dev/null || true)"
+                        docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES pull $REGISTRY_SERVICES
+                        if [ $? -ne 0 ]; then
+                            echo "--> CRITICAL: Registry image pull failed."
+                            exit 1
+                        fi
+
+                        echo "--> Recreating changed services from registry images..."
                         docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
                         if [ $? -eq 0 ]; then
                             echo "--> Deployment successful."
                         else
-                            echo "--> CRITICAL: Compose up failed after a successful build. Existing containers were not intentionally removed by Deploy."
+                            echo "--> CRITICAL: Compose up failed after pulling registry images. Existing containers were not intentionally removed by Deploy."
                             exit 1
                         fi
                     else
-                        echo "--> CRITICAL: Build failed! Keeping the old container running."
-                        exit 1
+                        echo "--> Testing build for new changes..."
+                        docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build
+                        if [ $? -eq 0 ]; then
+                            echo "--> Build succeeded! Recreating changed services via compose..."
+                            docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
+                            if [ $? -eq 0 ]; then
+                                echo "--> Deployment successful."
+                            else
+                                echo "--> CRITICAL: Compose up failed after a successful build. Existing containers were not intentionally removed by Deploy."
+                                exit 1
+                            fi
+                        else
+                            echo "--> CRITICAL: Build failed! Keeping the old container running."
+                            exit 1
+                        fi
                     fi
                 fi`;
     
@@ -316,7 +399,7 @@ DEPLOY_SWARM_VALIDATE_JS
 
     worker.on("error", (error) => {
         failed = true;
-        const safeError = redactProjectSecrets(error, appSettings.envSecrets);
+        const safeError = redactProjectSecrets(error, appSettings.envSecrets, globalSettings);
         console.error(`Deployment Aborted: ${safeError.message}`);
         hooks.onFailure?.(safeError);
     });
@@ -332,15 +415,15 @@ DEPLOY_SWARM_VALIDATE_JS
 
         const error = new Error(signal ? `Deployment worker stopped by ${signal}.` : `Deployment worker exited with code ${code ?? "unknown"}.`) as Error & { code?: number | string };
         error.code = code ?? signal ?? "unknown";
-        hooks.onFailure?.(redactProjectSecrets(error, appSettings.envSecrets));
+        hooks.onFailure?.(redactProjectSecrets(error, appSettings.envSecrets, globalSettings));
     });
 
     worker.stdout?.on("data", (chunk: Buffer | string) => {
-        hooks.onOutput?.("stdout", String(chunk));
+        hooks.onOutput?.("stdout", redactDeploymentOutput(String(chunk), appSettings.envSecrets, globalSettings));
     });
 
     worker.stderr?.on("data", (chunk: Buffer | string) => {
-        hooks.onOutput?.("stderr", String(chunk));
+        hooks.onOutput?.("stderr", redactDeploymentOutput(String(chunk), appSettings.envSecrets, globalSettings));
     });
 
     worker.stdin?.end(workerScript);
@@ -424,6 +507,83 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
     return lines.join("\n");
 }
 
+function renderRegistryComposeRewriteScript() {
+    return `
+                    docker compose -p "$PROJECT_NAME" $COMPOSE_FILES config --format json > /tmp/deploy-compose-registry.json
+                    node - "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" /tmp/deploy-compose-registry.json "$REGISTRY_ADDRESS" "$REGISTRY_IMAGE_NAMESPACE" "$REGISTRY_IMAGE_TAG" "$PROJECT_NAME" << 'DEPLOY_REGISTRY_REWRITE_JS'
+const fs = require("node:fs");
+
+const outputPath = process.argv[2];
+const inputPath = process.argv[3];
+const registryAddress = process.argv[4].replace(/\\/+$/, "");
+const namespace = sanitizePathPart(process.argv[5] || "app");
+const tag = sanitizeTag(process.argv[6] || "latest");
+const projectName = sanitizeName(process.argv[7] || "project");
+const data = JSON.parse(fs.readFileSync(inputPath, "utf8") || "{}");
+const services = data && typeof data === "object" && data.services && typeof data.services === "object" ? data.services : {};
+let changed = 0;
+const registryServices = [];
+
+for (const [serviceName, service] of Object.entries(services)) {
+  if (!service || typeof service !== "object" || service.build == null) {
+    continue;
+  }
+
+  service.image = registryAddress + "/" + namespace + "/" + projectName + "-" + sanitizeName(serviceName) + ":" + tag;
+  registryServices.push(serviceName);
+  changed += 1;
+}
+
+if (!changed) {
+  console.log("--> No build-backed services found for registry image tagging.");
+}
+
+fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
+fs.writeFileSync("/tmp/deploy-registry-services", registryServices.map(shellArg).join(" "));
+
+function sanitizePathPart(value) {
+  return String(value)
+    .split("/")
+    .map((part) => sanitizeName(part))
+    .filter(Boolean)
+    .join("/") || "app";
+}
+
+function sanitizeName(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "service";
+}
+
+function sanitizeTag(value) {
+  return String(value).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "latest";
+}
+
+function shellArg(value) {
+  return /^[a-zA-Z0-9_./:@=-]+$/.test(value) ? value : "'" + String(value).replace(/'/g, "'\\\\''") + "'";
+}
+DEPLOY_REGISTRY_REWRITE_JS`;
+}
+
+function renderRegistryStripBuildScript() {
+    return `
+                    docker compose -p "$PROJECT_NAME" $COMPOSE_FILES config --format json > /tmp/deploy-compose-registry-pull.json
+                    node - "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" /tmp/deploy-compose-registry-pull.json << 'DEPLOY_REGISTRY_PULL_JS'
+const fs = require("node:fs");
+
+const outputPath = process.argv[2];
+const inputPath = process.argv[3];
+const data = JSON.parse(fs.readFileSync(inputPath, "utf8") || "{}");
+const services = data && typeof data === "object" && data.services && typeof data.services === "object" ? data.services : {};
+
+for (const service of Object.values(services)) {
+  if (service && typeof service === "object" && service.image) {
+    delete service.build;
+  }
+}
+
+fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
+DEPLOY_REGISTRY_PULL_JS`;
+}
+
 function composeSecretName(service: string, key: string) {
     return `${service}_${key}`.toLowerCase().replace(/[^a-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "") || "deploy_secret";
 }
@@ -437,8 +597,8 @@ function yamlScalar(value: string) {
     return `"${escaped}"`;
 }
 
-function redactProjectSecrets(error: Error & { code?: number | string }, secrets: ProjectEnvironmentSecret[] | undefined) {
-    const values = (secrets ?? []).map((secret) => secret.value).filter((value) => value.length >= 3);
+function redactProjectSecrets(error: Error & { code?: number | string }, secrets: ProjectEnvironmentSecret[] | undefined, globalSettings?: GlobalSettings) {
+    const values = deploymentSecretValues(secrets, globalSettings);
     if (!values.length) {
         return error;
     }
@@ -448,6 +608,17 @@ function redactProjectSecrets(error: Error & { code?: number | string }, secrets
     safeError.stack = error.stack ? redactValues(error.stack, values) : error.stack;
     safeError.code = error.code;
     return safeError;
+}
+
+function redactDeploymentOutput(value: string, secrets: ProjectEnvironmentSecret[] | undefined, globalSettings: GlobalSettings) {
+    return redactValues(value, deploymentSecretValues(secrets, globalSettings));
+}
+
+function deploymentSecretValues(secrets: ProjectEnvironmentSecret[] | undefined, globalSettings?: GlobalSettings) {
+    return [
+        ...(secrets ?? []).map((secret) => secret.value),
+        globalSettings?.registryPassword ?? ""
+    ].filter((value) => value.length >= 3);
 }
 
 function redactValues(value: string, secrets: string[]) {

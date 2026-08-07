@@ -89,6 +89,28 @@
           <option value="swarm">Swarm stack</option>
         </select>
       </label>
+
+      <fieldset class="target-server-list">
+        <legend>Registry deployment</legend>
+        <label class="check-row">
+          <input type="checkbox" formControlName="registryPublish" />
+          <span>Publish build images to the controller registry</span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" formControlName="registryDeployFromRegistry" />
+          <span>Deploy by pulling registry images</span>
+        </label>
+      </fieldset>
+
+      <label>
+        <span>Registry namespace</span>
+        <input formControlName="registryImageNamespace" autocomplete="off" placeholder="defaults to project name" />
+      </label>
+
+      <label>
+        <span>Registry tag</span>
+        <input formControlName="registryImageTag" autocomplete="off" placeholder="latest" />
+      </label>
     </div>
 
     @if (strategySummary(); as strategy) {

@@ -1,4 +1,5 @@
 import { AppDatabase, runDatabaseTransaction } from "./database.js";
+import { decryptSecret, encryptSecret } from "./secretStore.js";
 import { GlobalSettings, GlobalSettingsPayload } from "./types.js";
 
 export const defaultGlobalSettings: GlobalSettings = {
@@ -7,7 +8,10 @@ export const defaultGlobalSettings: GlobalSettings = {
     defaultTraefikEntryPoints: "websecure",
     defaultTraefikCertResolver: "letsencrypt",
     sshKeyPath: "~/.ssh",
-    cleanupAfterDeploy: false
+    cleanupAfterDeploy: false,
+    registryAddress: "",
+    registryUsername: "",
+    registryPassword: ""
 };
 
 /**
@@ -30,17 +34,22 @@ export class GlobalSettingsStore {
             return settings;
         }, {});
 
-        return normalizeGlobalSettings({ ...defaultGlobalSettings, ...stored });
+        return normalizeGlobalSettings({ ...defaultGlobalSettings, ...stored, registryPassword: decryptSecret(stored.registryPassword) ?? "" });
     }
 
     /**
      * Normalizes and persists global settings.
      */
     writeSettings(payload: GlobalSettingsPayload) {
-        const settings = normalizeGlobalSettings(payload);
+        const existing = this.readSettings();
+        const settings = normalizeGlobalSettings({
+            ...payload,
+            registryPassword: shouldKeepExistingSecret(payload.registryPassword) ? existing.registryPassword : payload.registryPassword
+        });
         runDatabaseTransaction(this.database, () => {
             for (const [key, value] of Object.entries(settings)) {
-                this.database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, JSON.stringify(value));
+                const storedValue = key === "registryPassword" ? encryptSecret(String(value || "")) : value;
+                this.database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, JSON.stringify(storedValue));
             }
         });
         return settings;
@@ -56,6 +65,9 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
     const defaultTraefikNetwork = normalizeName(payload.defaultTraefikNetwork, "Default Traefik network") || defaultGlobalSettings.defaultTraefikNetwork;
     const defaultTraefikEntryPoints = normalizeCsvNames(payload.defaultTraefikEntryPoints, "Default Traefik entry points") || defaultGlobalSettings.defaultTraefikEntryPoints;
     const defaultTraefikCertResolver = normalizeName(payload.defaultTraefikCertResolver, "Default Traefik cert resolver") || defaultGlobalSettings.defaultTraefikCertResolver;
+    const registryAddress = normalizeRegistryAddress(payload.registryAddress);
+    const registryUsername = payload.registryUsername?.trim() ?? "";
+    const registryPassword = shouldKeepExistingSecret(payload.registryPassword) ? "" : payload.registryPassword?.trim() ?? "";
 
     if (!sshKeyPath.startsWith("/") && !sshKeyPath.startsWith("~/")) {
         throw new Error("SSH key path must be an absolute path or start with ~/.");
@@ -67,7 +79,10 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
         defaultTraefikEntryPoints,
         defaultTraefikCertResolver,
         sshKeyPath,
-        cleanupAfterDeploy: Boolean(payload.cleanupAfterDeploy)
+        cleanupAfterDeploy: Boolean(payload.cleanupAfterDeploy),
+        registryAddress,
+        registryUsername,
+        registryPassword
     };
 }
 
@@ -124,4 +139,26 @@ function normalizeCsvNames(value: string | undefined, label: string) {
     }
 
     return trimmed;
+}
+
+function normalizeRegistryAddress(value: string | undefined) {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+        return "";
+    }
+
+    if (/^https?:\/\//i.test(trimmed)) {
+        throw new Error("Registry address should not include http:// or https://.");
+    }
+
+    if (!/^[a-zA-Z0-9._:-]+(?:\/[a-zA-Z0-9._-]+)*$/.test(trimmed)) {
+        throw new Error("Registry address can only contain host, port, and optional path characters.");
+    }
+
+    return trimmed.replace(/\/+$/, "");
+}
+
+function shouldKeepExistingSecret(value: string | undefined) {
+    const trimmed = value?.trim();
+    return !trimmed || /^\*+$/.test(trimmed) || /^[^*]+?\.\.\.[^*]+$/.test(trimmed);
 }

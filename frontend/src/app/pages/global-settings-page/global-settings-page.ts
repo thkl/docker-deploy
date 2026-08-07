@@ -27,6 +27,9 @@ export class GlobalSettingsPage implements OnInit {
     defaultTraefikCertResolver: ['letsencrypt', [Validators.required]],
     sshKeyPath: ['~/.ssh', [Validators.required]],
     cleanupAfterDeploy: [false],
+    registryAddress: [''],
+    registryUsername: [''],
+    registryPassword: [''],
   });
 
   ngOnInit() {

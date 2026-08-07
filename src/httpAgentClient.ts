@@ -506,6 +506,9 @@ function defaultGlobalSettingsForRemoteJobs(): GlobalSettings {
         defaultTraefikEntryPoints: "websecure",
         defaultTraefikCertResolver: "letsencrypt",
         sshKeyPath: "~/.ssh",
-        cleanupAfterDeploy: false
+        cleanupAfterDeploy: false,
+        registryAddress: "",
+        registryUsername: "",
+        registryPassword: ""
     };
 }

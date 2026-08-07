@@ -88,13 +88,13 @@ function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependenci
     const { database, globalSettingsStore, eventBus } = dependencies;
 
     app.get("/api/settings", (req: Request, res: Response) => {
-        res.json(globalSettingsStore.readSettings());
+        res.json(publicGlobalSettings(globalSettingsStore.readSettings()));
     });
 
     app.put("/api/settings", (req: Request, res: Response) => {
         try {
             const settings = globalSettingsStore.writeSettings(req.body as GlobalSettingsPayload);
-            res.json(settings);
+            res.json(publicGlobalSettings(settings));
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not save global settings." });
         }
@@ -493,6 +493,28 @@ function payloadDeploymentStrategy(payload: ProjectPayload, fallback: "compose" 
     return fallback;
 }
 
+function payloadRegistrySettings(payload: ProjectPayload, fallback?: ProjectSettings["registry"]) {
+    const registry = payload.registry ?? {};
+    const publish = Boolean(registry.publish ?? payload.registryPublish ?? fallback?.publish);
+    const deployFromRegistry = Boolean(registry.deployFromRegistry ?? payload.registryDeployFromRegistry ?? fallback?.deployFromRegistry);
+    const imageNamespace = (registry.imageNamespace ?? payload.registryImageNamespace ?? fallback?.imageNamespace)?.trim() || "";
+    const imageTag = (registry.imageTag ?? payload.registryImageTag ?? fallback?.imageTag)?.trim() || "";
+
+    return {
+        publish,
+        deployFromRegistry,
+        ...(imageNamespace ? { imageNamespace } : {}),
+        ...(imageTag ? { imageTag } : {})
+    };
+}
+
+function publicGlobalSettings(settings: GlobalSettings): GlobalSettings {
+    return {
+        ...settings,
+        registryPassword: settings.registryPassword ? maskSecretValue(settings.registryPassword) : ""
+    };
+}
+
 function payloadComposeOverride(payload: ProjectPayload) {
     return payload.compose?.override?.trim() || payload.composeOverride?.trim();
 }
@@ -629,6 +651,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(composeOverride ? { composeOverride } : {}),
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload),
+                registry: payloadRegistrySettings(payload),
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
@@ -685,6 +708,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 composeOverride: composeOverride || undefined,
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
+                registry: payloadRegistrySettings(payload, existing.registry),
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
@@ -939,6 +963,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(payloadProjectPath(payload) ? { path: payloadProjectPath(payload) } : existing.path ? { path: existing.path } : {}),
                 ...(composeOverride ? { composeOverride } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
+                registry: payloadRegistrySettings(payload, existing.registry),
                 ...(traefik ? { traefik } : {})
             };
 
@@ -1302,6 +1327,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
     const composeOverride = settings.composeOverride ?? "";
     const envSecrets = maskEnvSecrets(settings.envSecrets);
     const deploymentStrategy = settings.deploymentStrategy === "swarm" ? "swarm" : "compose";
+    const registry = settings.registry ?? { publish: false, deployFromRegistry: false };
     const traefik = settings.traefik ?? { enabled: false };
     const lastDeployment = stripInternalDeploymentFields(deploymentStore.latest(settings.id ?? name));
 
@@ -1317,6 +1343,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         composeOverride,
         envSecrets,
         deploymentStrategy,
+        registry,
         hasComposeOverride: Boolean(composeOverride),
         traefik,
         lastDeployment,

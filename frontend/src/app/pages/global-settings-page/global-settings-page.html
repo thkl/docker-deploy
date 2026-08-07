@@ -69,6 +69,30 @@
 
     <section class="settings-panel">
       <div class="panel-head">
+        <h3>Docker registry</h3>
+        <span>Used by projects that publish or pull deployment images</span>
+      </div>
+
+      <div class="field-grid">
+        <label>
+          <span>Registry address</span>
+          <input formControlName="registryAddress" autocomplete="off" placeholder="registry.example.com:5000" />
+        </label>
+
+        <label>
+          <span>Username</span>
+          <input formControlName="registryUsername" autocomplete="off" placeholder="optional" />
+        </label>
+
+        <label>
+          <span>Password</span>
+          <input formControlName="registryPassword" autocomplete="new-password" type="password" placeholder="leave blank to keep current password" />
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-panel">
+      <div class="panel-head">
         <h3>Admin access</h3>
         <span>Set DEPLOY_ADMIN_TOKEN or ADMIN_TOKEN on the server to require login</span>
       </div>
