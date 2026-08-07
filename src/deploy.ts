@@ -286,6 +286,22 @@ if (isObject(services)) {
       service.networks = Object.keys(service.networks);
     }
 
+    if (isObject(service.labels)) {
+      for (const key of Object.keys(service.labels)) {
+        if (key.startsWith("traefik.")) {
+          delete service.labels[key];
+        }
+      }
+      if (isEmptyObject(service.labels)) {
+        delete service.labels;
+      }
+    } else if (Array.isArray(service.labels)) {
+      service.labels = service.labels.filter((label) => !String(label).startsWith("traefik."));
+      if (!service.labels.length) {
+        delete service.labels;
+      }
+    }
+
     if (Array.isArray(service.volumes)) {
       for (const volume of service.volumes) {
         if (isObject(volume) && isEmptyObject(volume.volume)) {
