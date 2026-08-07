@@ -133,6 +133,14 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 RELEASE_DEPLOY="$PROJECT_ROOT/.updater/release"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
                 mkdir -p "$COMPOSE_WORKSPACE"
+                DEPLOY_ACTIVE_MARKER="$PROJECT_ROOT/.updater/deploy.active"
+                date +%s > "$DEPLOY_ACTIVE_MARKER"
+                cleanup_deploy_active_marker() {
+                    rm -f "$DEPLOY_ACTIVE_MARKER"
+                }
+                trap cleanup_deploy_active_marker EXIT
+                trap 'cleanup_deploy_active_marker; exit 130' INT
+                trap 'cleanup_deploy_active_marker; exit 143' TERM
 
                 if [ -n "${quotedRepositoryUrl}" ]; then
                     echo "--> Preparing temporary deployment checkout..."
@@ -182,6 +190,7 @@ ${persistedStorageGuardScript}
                 }
                 cleanup_release_if_unused
                 COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
+                cd "$PROJECT_ROOT"
 
                 if [ "$REGISTRY_ENABLED" = "true" ]; then
                     if [ -z "$REGISTRY_ADDRESS" ]; then
@@ -720,9 +729,26 @@ export async function deleteCheckoutPath(checkoutPath: string) {
     const dockerRunCommand = `docker run -i --rm \
             -v ${shellQuote(`${parentPath}:${parentPath}`)} \
             alpine:latest sh << 'EOF'
-                echo "--> Docker host cleanup exists before delete: $(test -e ${shellQuote(`${parentPath}/${checkoutName}`)} && echo true || echo false)"
-                rm -rf -- ${shellQuote(`${parentPath}/${checkoutName}`)}
-                if [ -e ${shellQuote(`${parentPath}/${checkoutName}`)} ]; then
+                TARGET_PATH=${shellQuote(`${parentPath}/${checkoutName}`)}
+                CHECKOUT_NAME=${shellQuote(checkoutName)}
+                ACTIVE_MARKER=${shellQuote(`${parentPath}/deploy.active`)}
+                if { [ "$CHECKOUT_NAME" = "tmpdeploy" ] || [ "$CHECKOUT_NAME" = "release" ]; } && [ -f "$ACTIVE_MARKER" ]; then
+                    NOW="$(date +%s)"
+                    START="$(cat "$ACTIVE_MARKER" 2>/dev/null || echo 0)"
+                    case "$START" in
+                        ''|*[!0-9]*) START=0 ;;
+                    esac
+                    AGE=$((NOW - START))
+                    if [ "$AGE" -lt 3600 ]; then
+                        echo "--> Docker host cleanup skipped: active deployment marker is \${AGE}s old."
+                        exit 0
+                    fi
+                    echo "--> Docker host cleanup found stale deployment marker (\${AGE}s old); continuing."
+                    rm -f "$ACTIVE_MARKER"
+                fi
+                echo "--> Docker host cleanup exists before delete: $(test -e "$TARGET_PATH" && echo true || echo false)"
+                rm -rf -- "$TARGET_PATH"
+                if [ -e "$TARGET_PATH" ]; then
                     echo "--> CRITICAL: Docker host checkout path still exists after rm."
                     exit 1
                 fi
