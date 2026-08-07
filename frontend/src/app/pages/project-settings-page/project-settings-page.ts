@@ -1768,9 +1768,6 @@ function prepareComposeBuilderForTraefik(
   }
 
   const labels = renderTraefikLabels({ ...traefik, service: targetServiceName }, traefik.deploymentStrategy === 'swarm' ? 'deploy' : 'service');
-  const serviceLabels = traefik.deploymentStrategy === 'swarm'
-    ? renderTraefikLabels({ ...traefik, service: targetServiceName }, 'service')
-    : labels;
   const preparedServices = cleanedServices.map((service) => {
     if (service.name.trim() !== targetServiceName) {
       return service;
@@ -1785,7 +1782,7 @@ function prepareComposeBuilderForTraefik(
       ports: traefik.removePublishedPorts ? '' : service.ports,
       networks: serviceNetworks,
       deployLabels: traefik.deploymentStrategy === 'swarm' ? labels : service.deployLabels,
-      extra: replaceGeneratedTraefikBlock(service.extra, serviceLabels),
+      extra: traefik.deploymentStrategy === 'swarm' ? service.extra : replaceGeneratedTraefikBlock(service.extra, labels),
     };
   });
 

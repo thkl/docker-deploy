@@ -72,9 +72,7 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
         constraints:
           - ${yamlQuote("node.role == worker")}
       labels:
-${deployLabelContent}
-    labels:
-${serviceLabelContent}`
+${deployLabelContent}`
         : `    labels:
 ${serviceLabelContent}`;
 
