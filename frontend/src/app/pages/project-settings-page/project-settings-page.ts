@@ -1474,7 +1474,8 @@ export class ProjectSettingsPage implements OnInit {
     for (const service of this.builderServices()) {
       const serviceName = service.name.trim() || 'Unnamed service';
       const swarmMode = this.form.controls.deploymentStrategy.value === 'swarm';
-      if (swarmMode && !service.image.trim()) {
+      const registryImageFromBuild = this.form.controls.registryDeployFromRegistry.value && service.build.trim();
+      if (swarmMode && !service.image.trim() && !registryImageFromBuild) {
         diagnostics.push(`${serviceName} needs an image for Swarm stack deployment.`);
       }
 

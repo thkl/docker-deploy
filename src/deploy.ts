@@ -338,7 +338,11 @@ DEPLOY_SWARM_VALIDATE_JS
                     fi
 
                     echo "--> Deploying Swarm stack..."
-                    docker stack deploy -c "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" "$PROJECT_NAME"
+                    if [ "$REGISTRY_DEPLOY_FROM_REGISTRY" = "true" ]; then
+                        docker stack deploy --with-registry-auth -c "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" "$PROJECT_NAME"
+                    else
+                        docker stack deploy -c "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" "$PROJECT_NAME"
+                    fi
                     if [ $? -eq 0 ]; then
                         echo "--> Swarm stack deployment successful."
                     else

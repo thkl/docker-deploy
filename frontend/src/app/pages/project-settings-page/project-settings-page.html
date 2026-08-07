@@ -259,9 +259,11 @@
               <label>
                 <span>Build context</span>
                 <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)"
-                  placeholder="." [disabled]="isSwarmMode()" />
-                @if (isSwarmMode() && service.build) {
-                <small>Swarm stack deployment requires a pullable image.</small>
+                  placeholder="." [disabled]="isSwarmMode() && !form.controls.registryDeployFromRegistry.value" />
+                @if (isSwarmMode() && service.build && form.controls.registryDeployFromRegistry.value) {
+                <small>Deploy will publish or pull this service through the configured registry image.</small>
+                } @else if (isSwarmMode() && service.build) {
+                <small>Enable registry deployment or set a pullable image.</small>
                 }
               </label>
               <label>
@@ -272,7 +274,7 @@
               <label>
                 <span>Build target</span>
                 <input [value]="service.buildTarget" (input)="updateBuilderService(service.id, 'buildTarget', $event)"
-                  placeholder="runtime" [disabled]="isSwarmMode()" />
+                  placeholder="runtime" [disabled]="isSwarmMode() && !form.controls.registryDeployFromRegistry.value" />
               </label>
               <label>
                 <span>Container name</span>
