@@ -262,6 +262,8 @@
                   placeholder="." [disabled]="isSwarmMode() && !registryDeployFromRegistry()" />
                 @if (isSwarmMode() && service.build && registryDeployFromRegistry()) {
                 <small>Deploy will publish or pull this service through the configured registry image.</small>
+                } @else if (isSwarmMode() && registryDeployFromRegistry()) {
+                <small>Set a build context so Deploy can create the registry image.</small>
                 } @else if (isSwarmMode() && service.build) {
                 <small>Enable registry deployment or set a pullable image.</small>
                 }

@@ -1484,7 +1484,9 @@ export class ProjectSettingsPage implements OnInit {
       const swarmMode = this.form.controls.deploymentStrategy.value === 'swarm';
       const registryImageFromBuild = this.registryDeployFromRegistry() && service.build.trim();
       if (swarmMode && !service.image.trim() && !registryImageFromBuild) {
-        diagnostics.push(`${serviceName} needs an image for Swarm stack deployment.`);
+        diagnostics.push(this.registryDeployFromRegistry()
+          ? `${serviceName} needs a build context so Deploy can publish a registry image for Swarm.`
+          : `${serviceName} needs an image for Swarm stack deployment, or enable registry image deployment.`);
       }
 
       if (!swarmMode && service.networkMode.trim() && splitLines(service.networks).length) {
