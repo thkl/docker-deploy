@@ -1800,7 +1800,9 @@ async function inspectSwarmProjectStatus(composeProjectName: string): Promise<Ru
             return runtimeError(stderr.trim());
         }
 
-        const services = (JSON.parse(stdout.trim()) as DockerInspectService[]).map((service) => parseRuntimeSwarmService(service, composeProjectName));
+        const inspectedServices = JSON.parse(stdout.trim()) as DockerInspectService[];
+        const taskCounts = await inspectSwarmServiceTasks(inspectedServices);
+        const services = inspectedServices.map((service) => parseRuntimeSwarmService(service, composeProjectName, taskCounts[service.ID ?? ""]));
 
         return {
             status: summarizeRuntimeStatus(services),
@@ -2455,11 +2457,49 @@ function parseRuntimeService(container: DockerInspectContainer, projectName = ""
     };
 }
 
-function parseRuntimeSwarmService(service: DockerInspectService, projectName: string): RuntimeServiceStatus {
+async function inspectSwarmServiceTasks(services: DockerInspectService[]) {
+    const result: Record<string, { running: number; desired: number; states: string[] }> = {};
+    await Promise.all(services.map(async (service) => {
+        const serviceId = service.ID;
+        if (!serviceId) {
+            return;
+        }
+
+        try {
+            const { stdout } = await execAsync(
+                `docker service ps ${shellQuote(serviceId)} --no-trunc --format '{{json .}}'`,
+                { maxBuffer: 1024 * 1024 }
+            );
+            const tasks = stdout
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line) => {
+                    try {
+                        return JSON.parse(line) as { CurrentState?: string; DesiredState?: string; Error?: string; Name?: string };
+                    } catch {
+                        return null;
+                    }
+                })
+                .filter((task): task is { CurrentState?: string; DesiredState?: string; Error?: string; Name?: string } => Boolean(task));
+            const activeTasks = tasks.filter((task) => !/shutdown/i.test(task.DesiredState ?? ""));
+            result[serviceId] = {
+                running: activeTasks.filter((task) => /^running/i.test(task.CurrentState ?? "")).length,
+                desired: activeTasks.length,
+                states: activeTasks.map((task) => task.CurrentState || task.DesiredState || task.Error || "unknown").filter(Boolean)
+            };
+        } catch {
+            result[serviceId] = { running: 0, desired: 0, states: [] };
+        }
+    }));
+    return result;
+}
+
+function parseRuntimeSwarmService(service: DockerInspectService, projectName: string, taskCounts?: { running: number; desired: number; states: string[] }): RuntimeServiceStatus {
     const serviceName = service.Spec?.Name ?? service.ID ?? "unknown";
     const shortName = serviceName.startsWith(`${projectName}_`) ? serviceName.slice(projectName.length + 1) : serviceName;
-    const desired = service.ServiceStatus?.DesiredTasks ?? service.Spec?.Mode?.Replicated?.Replicas ?? 0;
-    const running = service.ServiceStatus?.RunningTasks ?? 0;
+    const desired = service.ServiceStatus?.DesiredTasks ?? taskCounts?.desired ?? service.Spec?.Mode?.Replicated?.Replicas ?? 0;
+    const running = service.ServiceStatus?.RunningTasks ?? taskCounts?.running ?? 0;
     const state = desired > 0 && running === desired ? "running" : running > 0 ? "partial" : "stopped";
     const networks = unique([
         ...(service.Spec?.TaskTemplate?.Networks ?? []).map((network) => network.Target).filter(Boolean),
@@ -2470,7 +2510,7 @@ function parseRuntimeSwarmService(service: DockerInspectService, projectName: st
     return {
         service: shortName,
         ...(service.ID ? { containerId: service.ID.slice(0, 12) } : {}),
-        state,
+        state: taskCounts?.states.length ? `${state} (${running}/${desired}: ${taskCounts.states.join(", ")})` : state,
         ...(service.Spec?.TaskTemplate?.ContainerSpec?.Image ? { image: service.Spec.TaskTemplate.ContainerSpec.Image } : {}),
         ...(ports ? { ports } : {}),
         networkMode: "swarm",
@@ -2512,12 +2552,12 @@ function summarizeRuntimeStatus(services: RuntimeServiceStatus[]) {
         return "unknown";
     }
 
-    const running = services.filter((service) => service.state.toLowerCase() === "running").length;
+    const running = services.filter((service) => service.state.toLowerCase().startsWith("running")).length;
     if (running === services.length) {
         return "running";
     }
 
-    if (services.some((service) => service.state.toLowerCase() === "partial")) {
+    if (services.some((service) => service.state.toLowerCase().startsWith("partial"))) {
         return "partial";
     }
 
