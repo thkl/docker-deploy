@@ -146,6 +146,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly traefikEnabled = signal(false);
   protected readonly wildcardCertificate = signal(false);
   protected readonly deploymentStrategy = signal<DeploymentStrategy>('compose');
+  protected readonly registryDeployFromRegistry = signal(false);
   protected readonly isSwarmMode = computed(() => this.deploymentStrategy() === 'swarm');
   private readonly traefikFormRevision = signal(0);
   protected readonly selectedServerId = signal('local');
@@ -314,6 +315,9 @@ export class ProjectSettingsPage implements OnInit {
     });
     this.form.controls.deploymentStrategy.valueChanges.pipe(takeUntilDestroyed()).subscribe((strategy) => {
       this.deploymentStrategy.set(strategy === 'swarm' ? 'swarm' : 'compose');
+    });
+    this.form.controls.registryDeployFromRegistry.valueChanges.pipe(takeUntilDestroyed()).subscribe((enabled) => {
+      this.registryDeployFromRegistry.set(enabled);
     });
     for (const control of [
       this.form.controls.traefikHostname,
@@ -1177,6 +1181,7 @@ export class ProjectSettingsPage implements OnInit {
     this.traefikEnabled.set(Boolean(traefik.enabled));
     this.wildcardCertificate.set(Boolean(traefik.wildcardCertificate ?? payload.traefikWildcardCertificate));
     this.deploymentStrategy.set(deploymentStrategy === 'swarm' ? 'swarm' : 'compose');
+    this.registryDeployFromRegistry.set(Boolean(registry.deployFromRegistry));
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
     this.loadBuilderFromCompose(composeOverride);
@@ -1215,6 +1220,7 @@ export class ProjectSettingsPage implements OnInit {
       traefikRemovePublishedPorts: true,
     });
     this.deploymentStrategy.set('compose');
+    this.registryDeployFromRegistry.set(false);
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set([this.form.controls.serverId.value || 'local']);
     this.resetComposeBuilder();
@@ -1258,6 +1264,7 @@ export class ProjectSettingsPage implements OnInit {
       traefikRemovePublishedPorts: traefik.removePublishedPorts !== false,
     });
     this.deploymentStrategy.set(deploymentStrategy === 'swarm' ? 'swarm' : 'compose');
+    this.registryDeployFromRegistry.set(Boolean(registry.deployFromRegistry));
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
     this.loadBuilderFromCompose(composeSection?.override ?? project.composeOverride ?? '');
@@ -1475,7 +1482,7 @@ export class ProjectSettingsPage implements OnInit {
     for (const service of this.builderServices()) {
       const serviceName = service.name.trim() || 'Unnamed service';
       const swarmMode = this.form.controls.deploymentStrategy.value === 'swarm';
-      const registryImageFromBuild = this.form.controls.registryDeployFromRegistry.value && service.build.trim();
+      const registryImageFromBuild = this.registryDeployFromRegistry() && service.build.trim();
       if (swarmMode && !service.image.trim() && !registryImageFromBuild) {
         diagnostics.push(`${serviceName} needs an image for Swarm stack deployment.`);
       }
