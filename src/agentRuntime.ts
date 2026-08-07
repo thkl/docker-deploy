@@ -14,6 +14,8 @@ import { appVersion } from "./version.js";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
 
+const deployRecoveryCleanupDelayMs = 10 * 60 * 1000;
+
 interface AgentJobState {
     id: string;
     type: string;
@@ -469,7 +471,14 @@ export class AgentRuntime {
             await delay(8000);
             const status = await this.inspectRecoveredDeployment(payload);
             if (status === "running" || status === "partial") {
-                await this.cleanupRecoveredDeployment(payload, job.id);
+                if (Date.now() - Date.parse(job.startedAt) >= deployRecoveryCleanupDelayMs) {
+                    await this.cleanupRecoveredDeployment(payload, job.id);
+                } else {
+                    this.emitFrame(job.id, {
+                        stream: "stdout",
+                        chunk: "--> Recovery cleanup skipped because the deployment job is recent and may still be finishing build or push steps.\n"
+                    });
+                }
                 this.emitFrame(job.id, {
                     stream: "status",
                     chunk: `Agent recovered deployment after restart. Runtime status is ${status}.`,

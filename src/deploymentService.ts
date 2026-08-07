@@ -155,6 +155,7 @@ export class DeploymentService {
 
     private async cleanupCheckoutAfterDeploy(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
         await this.cleanupTempDeploymentCheckout(projectName, appSettings, globalSettings, deploymentId);
+        await this.cleanupReleaseDeploymentCheckout(projectName, appSettings, globalSettings, deploymentId);
     }
 
     private async cleanupTempDeploymentCheckout(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, deploymentId?: string) {
@@ -188,6 +189,33 @@ export class DeploymentService {
             this.logCleanupLine(projectName, deploymentId, "stdout", "--> Cleanup after deploy completed.");
         } catch (error) {
             this.logCleanupLine(projectName, deploymentId, "stderr", `--> Cleanup after deploy skipped: ${readErrorMessage(error)}`);
+        }
+    }
+
+    private async cleanupReleaseDeploymentCheckout(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, deploymentId?: string) {
+        if (!globalSettings.cleanupAfterDeploy) {
+            return;
+        }
+
+        const serverId = appSettings.serverId ?? "local";
+        const agent = this.agentManager.getClient(serverId);
+        this.logCleanupLine(projectName, deploymentId, "stdout", "--> Verifying stable release checkout bind mounts...");
+
+        try {
+            const releasePath = assertSafeDeletePath(releaseDeployPath(appSettings.path ?? defaultProjectPath(globalSettings, projectName)), globalSettings.dataRoot);
+            const bindMountInspection = await agent.inspectCheckoutBindMounts(releasePath);
+            if (bindMountInspection.references.length > 0) {
+                this.logCleanupLine(projectName, deploymentId, "stdout", `--> Release cleanup skipped: ${bindMountInspection.references.length} running bind mount(s) still reference the stable release checkout.`);
+                return;
+            }
+
+            const cleanup = await agent.deleteCheckout(releasePath);
+            for (const step of cleanup.steps) {
+                this.logCleanupLine(projectName, deploymentId, "stdout", `--> ${step}`);
+            }
+            this.logCleanupLine(projectName, deploymentId, "stdout", "--> Release checkout cleanup completed.");
+        } catch (error) {
+            this.logCleanupLine(projectName, deploymentId, "stderr", `--> Release cleanup skipped: ${readErrorMessage(error)}`);
         }
     }
 
@@ -316,7 +344,9 @@ export class DeploymentService {
             }
 
             for (const serverId of targetServerIds(appSettings)) {
-                await this.cleanupTempDeploymentCheckout(projectName, { ...appSettings, serverId }, globalSettings);
+                const targetSettings = { ...appSettings, serverId };
+                await this.cleanupTempDeploymentCheckout(projectName, targetSettings, globalSettings);
+                await this.cleanupReleaseDeploymentCheckout(projectName, targetSettings, globalSettings);
             }
         }
     }
@@ -485,4 +515,8 @@ function readErrorMessage(error: unknown) {
 
 function tempDeployPath(projectRoot: string) {
     return `${projectRoot.replace(/\/+$/, "")}/.updater/tmpdeploy`;
+}
+
+function releaseDeployPath(projectRoot: string) {
+    return `${projectRoot.replace(/\/+$/, "")}/.updater/release`;
 }
