@@ -32,7 +32,7 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
     const labels: Array<[string, string | number | boolean]> = [
         ["traefik.enable", "true"],
         ...(deploymentStrategy === "swarm"
-            ? [["traefik.swarm.network", network], ["traefik.docker.network", network]] as Array<[string, string]>
+            ? [["traefik.swarm.network", network]] as Array<[string, string]>
             : [["traefik.docker.network", network]] as Array<[string, string]>),
         [`traefik.http.routers.${routerName}.rule`, rule],
         [`traefik.http.routers.${routerName}.entrypoints`, traefik.entryPoints || globalSettings.defaultTraefikEntryPoints],

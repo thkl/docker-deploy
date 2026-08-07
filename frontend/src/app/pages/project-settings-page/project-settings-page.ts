@@ -1799,7 +1799,7 @@ function renderTraefikLabels(traefik: ComposeTraefikSettings, target: 'service' 
   const labels = [
     `traefik.enable=true`,
     ...(traefik.deploymentStrategy === 'swarm'
-      ? [`traefik.swarm.network=${traefik.network}`, `traefik.docker.network=${traefik.network}`]
+      ? [`traefik.swarm.network=${traefik.network}`]
       : [`traefik.docker.network=${traefik.network}`]),
     `traefik.http.routers.${routerName}.rule=Host(\`${traefik.hostname}\`)`,
     `traefik.http.routers.${routerName}.entrypoints=${traefik.entryPoints}`,
