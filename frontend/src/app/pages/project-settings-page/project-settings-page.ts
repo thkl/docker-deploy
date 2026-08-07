@@ -1084,7 +1084,8 @@ export class ProjectSettingsPage implements OnInit {
       this.builderServices(),
       this.builderNetworks(),
       this.builderVolumes(),
-      this.currentTraefikComposeSettings()
+      this.currentTraefikComposeSettings(),
+      { registryDeployFromRegistry: this.form.controls.registryDeployFromRegistry.value }
     ));
     this.composeMode.set('yaml');
     this.message.set('Compose override generated. Review it, then save the project.');
@@ -1300,8 +1301,8 @@ export class ProjectSettingsPage implements OnInit {
       return null;
     }
     const composeOverride = this.composeMode() === 'builder'
-      ? renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes(), traefikSettings)
-      : mergeTraefikIntoCompose(value.composeOverride.trim(), traefikSettings);
+      ? renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes(), traefikSettings, { registryDeployFromRegistry: value.registryDeployFromRegistry })
+      : mergeTraefikIntoCompose(value.composeOverride.trim(), traefikSettings, { registryDeployFromRegistry: value.registryDeployFromRegistry });
 
     if (composeOverride === null) {
       this.error.set('The current YAML uses Compose options the UI cannot safely update with Traefik settings. Load it into the builder or add the Traefik labels manually.');
@@ -1540,10 +1541,12 @@ function renderComposeBuilder(
   services: ComposeBuilderRenderableService[],
   networks: ComposeBuilderRenderableNetwork[],
   volumes: ComposeBuilderRenderableVolume[],
-  traefik?: ComposeTraefikSettings
+  traefik?: ComposeTraefikSettings,
+  options: { registryDeployFromRegistry?: boolean } = {}
 ) {
   const lines = ['services:'];
   const useSwarmStack = traefik?.deploymentStrategy === 'swarm';
+  const keepBuildForRegistryRewrite = useSwarmStack && Boolean(options.registryDeployFromRegistry);
   const prepared = prepareComposeBuilderForTraefik(services, networks, traefik);
   const validServices = prepared.services.filter((service) => service.name.trim());
 
@@ -1552,7 +1555,7 @@ function renderComposeBuilder(
     if (service.image.trim()) {
       lines.push(`    image: ${yamlScalar(service.image.trim())}`);
     }
-    if (!useSwarmStack && service.build.trim() && (service.dockerfile.trim() || service.buildTarget.trim())) {
+    if ((!useSwarmStack || keepBuildForRegistryRewrite) && service.build.trim() && (service.dockerfile.trim() || service.buildTarget.trim())) {
       lines.push('    build:');
       lines.push(`      context: ${yamlScalar(service.build.trim())}`);
       if (service.dockerfile.trim()) {
@@ -1561,7 +1564,7 @@ function renderComposeBuilder(
       if (service.buildTarget.trim()) {
         lines.push(`      target: ${yamlScalar(service.buildTarget.trim())}`);
       }
-    } else if (!useSwarmStack && service.build.trim()) {
+    } else if ((!useSwarmStack || keepBuildForRegistryRewrite) && service.build.trim()) {
       lines.push(`    build: ${yamlScalar(service.build.trim())}`);
     }
     if (!useSwarmStack && service.containerName.trim()) {
@@ -1715,7 +1718,7 @@ function recommendedDeploymentStrategy(server: ServerRecord | null, traefikEnabl
   return { strategy: 'compose', reason: dockerMode ? `${dockerMode.replace(/-/g, ' ')} with Docker-provider compatible networking.` : 'no Swarm-only topology was detected.' };
 }
 
-function mergeTraefikIntoCompose(compose: string, traefik: ComposeTraefikSettings) {
+function mergeTraefikIntoCompose(compose: string, traefik: ComposeTraefikSettings, options: { registryDeployFromRegistry?: boolean } = {}) {
   if (!compose || !traefik.enabled) {
     return compose;
   }
@@ -1725,7 +1728,7 @@ function mergeTraefikIntoCompose(compose: string, traefik: ComposeTraefikSetting
     return null;
   }
 
-  return renderComposeBuilder(parsed.services, parsed.networks, parsed.volumes, traefik);
+  return renderComposeBuilder(parsed.services, parsed.networks, parsed.volumes, traefik, options);
 }
 
 function prepareComposeBuilderForTraefik(
