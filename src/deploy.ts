@@ -174,10 +174,13 @@ ${secretOverlayScript}
 ${persistedEnvFileRewriteScript}
 ${persistedStorageRewriteScript}
 ${persistedStorageGuardScript}
-                if [ -d "$RELEASE_DEPLOY" ] && ! grep -F "$RELEASE_DEPLOY" "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" > /dev/null 2>&1; then
-                    echo "--> Removing unused stable release checkout."
-                    rm -rf "$RELEASE_DEPLOY"
-                fi
+                cleanup_release_if_unused() {
+                    if [ -d "$RELEASE_DEPLOY" ] && ! grep -F "$RELEASE_DEPLOY" "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" > /dev/null 2>&1; then
+                        echo "--> Removing unused stable release checkout."
+                        rm -rf "$RELEASE_DEPLOY"
+                    fi
+                }
+                cleanup_release_if_unused
                 COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
 
                 if [ "$REGISTRY_ENABLED" = "true" ]; then
@@ -223,6 +226,7 @@ ${registryRewriteScript}
                 if [ "$REGISTRY_DEPLOY_FROM_REGISTRY" = "true" ]; then
                     echo "--> Switching Compose deployment file to registry images only..."
 ${registryStripBuildScript}
+                    cleanup_release_if_unused
                 fi
 
                 if [ "$DEPLOYMENT_STRATEGY" = "swarm" ]; then

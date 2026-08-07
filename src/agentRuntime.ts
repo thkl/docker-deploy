@@ -511,6 +511,7 @@ export class AgentRuntime {
         try {
             const projectRoot = payload.appSettings.path ?? defaultProjectPath(payload.globalSettings, payload.projectName);
             const checkoutPath = assertSafeDeletePath(`${projectRoot.replace(/\/+$/, "")}/.updater/tmpdeploy`, payload.globalSettings.dataRoot);
+            const releasePath = assertSafeDeletePath(`${projectRoot.replace(/\/+$/, "")}/.updater/release`, payload.globalSettings.dataRoot);
             const inspection = await this.localAgent.inspectCheckoutBindMounts(checkoutPath);
             if (inspection.references.length > 0) {
                 this.emitFrame(jobId, {
@@ -523,6 +524,18 @@ export class AgentRuntime {
             const cleanup = await this.localAgent.deleteCheckout(checkoutPath);
             for (const step of cleanup.steps) {
                 this.emitFrame(jobId, { stream: "stdout", chunk: `--> ${step}\n` });
+            }
+            const releaseInspection = await this.localAgent.inspectCheckoutBindMounts(releasePath);
+            if (releaseInspection.references.length === 0) {
+                const releaseCleanup = await this.localAgent.deleteCheckout(releasePath);
+                for (const step of releaseCleanup.steps) {
+                    this.emitFrame(jobId, { stream: "stdout", chunk: `--> ${step}\n` });
+                }
+            } else {
+                this.emitFrame(jobId, {
+                    stream: "stdout",
+                    chunk: `--> Release cleanup skipped: ${releaseInspection.references.length} running bind mount(s) still reference the stable release checkout.\n`
+                });
             }
             this.emitFrame(jobId, { stream: "stdout", chunk: "--> Cleanup after deploy completed.\n" });
         } catch (error) {
