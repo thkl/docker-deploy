@@ -1761,7 +1761,10 @@ function prepareComposeBuilderForTraefik(
     return { services, networks };
   }
 
-  const labels = renderTraefikLabels({ ...traefik, service: targetServiceName });
+  const labels = renderTraefikLabels({ ...traefik, service: targetServiceName }, traefik.deploymentStrategy === 'swarm' ? 'deploy' : 'service');
+  const serviceLabels = traefik.deploymentStrategy === 'swarm'
+    ? renderTraefikLabels({ ...traefik, service: targetServiceName }, 'service')
+    : labels;
   const preparedServices = services.map((service) => {
     if (service.name.trim() !== targetServiceName) {
       return service;
@@ -1776,7 +1779,7 @@ function prepareComposeBuilderForTraefik(
       ports: traefik.removePublishedPorts ? '' : service.ports,
       networks: serviceNetworks,
       deployLabels: traefik.deploymentStrategy === 'swarm' ? labels : service.deployLabels,
-      extra: replaceGeneratedTraefikBlock(service.extra, labels),
+      extra: replaceGeneratedTraefikBlock(service.extra, serviceLabels),
     };
   });
 
@@ -1788,7 +1791,7 @@ function prepareComposeBuilderForTraefik(
   return { services: preparedServices, networks: preparedNetworks };
 }
 
-function renderTraefikLabels(traefik: ComposeTraefikSettings) {
+function renderTraefikLabels(traefik: ComposeTraefikSettings, target: 'service' | 'deploy' = 'service') {
   const routerName = traefikRouterName(traefik.projectName || traefik.service);
   const labels = [
     `traefik.enable=true`,
@@ -1813,7 +1816,7 @@ function renderTraefikLabels(traefik: ComposeTraefikSettings) {
     labels.push(`traefik.http.routers.${routerName}.middlewares=${routerName}-websocket`);
   }
 
-  return traefik.deploymentStrategy === 'swarm'
+  return target === 'deploy'
     ? labels.join('\n')
     : [
         'labels:',
