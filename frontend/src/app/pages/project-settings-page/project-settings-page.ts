@@ -1559,8 +1559,13 @@ function renderComposeBuilder(
 
   for (const service of validServices) {
     lines.push(`  ${yamlKey(service.name)}:`);
+    const registryPlaceholderImage = keepBuildForRegistryRewrite && !service.image.trim() && service.build.trim()
+      ? `deploy-registry-placeholder/${yamlImageName(service.name)}:pending`
+      : '';
     if (service.image.trim()) {
       lines.push(`    image: ${yamlScalar(service.image.trim())}`);
+    } else if (registryPlaceholderImage) {
+      lines.push(`    image: ${yamlScalar(registryPlaceholderImage)}`);
     }
     if ((!useSwarmStack || keepBuildForRegistryRewrite) && service.build.trim() && (service.dockerfile.trim() || service.buildTarget.trim())) {
       lines.push('    build:');
@@ -2185,6 +2190,10 @@ function yamlScalar(value: string) {
   }
 
   return JSON.stringify(value);
+}
+
+function yamlImageName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'service';
 }
 
 function isPlainYamlScalar(value: string) {
