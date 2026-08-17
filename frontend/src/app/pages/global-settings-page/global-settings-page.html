@@ -133,35 +133,41 @@
           </div>
 
           @if (backupPathBrowser(); as browser) {
-            <div class="path-browser">
-              <div class="path-browser-head">
-                <div>
-                  <span>Current folder</span>
-                  <strong>{{ browser.path }}</strong>
+            <div class="path-browser-backdrop" (click)="toggleBackupPathBrowser()">
+              <div class="path-browser" role="dialog" aria-modal="true" aria-label="Browse controller backup path" (click)="$event.stopPropagation()">
+                <div class="path-browser-head">
+                  <div>
+                    <h4>Browse controller backup path</h4>
+                    <span>Current folder</span>
+                    <strong>{{ browser.path }}</strong>
+                  </div>
+                  <div class="path-browser-actions">
+                    <button type="button" class="secondary compact" (click)="selectBackupPath(browser.path)">Use this folder</button>
+                    <button type="button" class="secondary compact" (click)="toggleBackupPathBrowser()">Close</button>
+                  </div>
                 </div>
-                <button type="button" class="secondary compact" (click)="selectBackupPath(browser.path)">Use</button>
-              </div>
 
-              <div class="path-tree">
-                @if (browser.parent) {
-                  <button type="button" class="path-entry parent-entry" (click)="browseBackupPath(browser.parent)">
-                    <span class="path-entry-marker"></span>
-                    <span class="path-entry-name">..</span>
-                    <small>Parent</small>
-                  </button>
-                }
-
-                @for (entry of browser.entries; track entry.path) {
-                  @if (entry.type === 'directory') {
-                    <button type="button" class="path-entry directory-entry" (click)="browseBackupPath(entry.path)">
+                <div class="path-tree">
+                  @if (browser.parent) {
+                    <button type="button" class="path-entry parent-entry" (click)="browseBackupPath(browser.parent)">
                       <span class="path-entry-marker"></span>
-                      <span class="path-entry-name">{{ entry.name }}</span>
-                      <small>{{ entry.writable ? 'Writable' : 'Read only' }}</small>
+                      <span class="path-entry-name">..</span>
+                      <small>Parent</small>
                     </button>
                   }
-                } @empty {
-                  <p class="muted-copy">No folders found here.</p>
-                }
+
+                  @for (entry of browser.entries; track entry.path) {
+                    @if (entry.type === 'directory') {
+                      <button type="button" class="path-entry directory-entry" (click)="browseBackupPath(entry.path)">
+                        <span class="path-entry-marker"></span>
+                        <span class="path-entry-name">{{ entry.name }}</span>
+                        <small>{{ entry.writable ? 'Writable' : 'Read only' }}</small>
+                      </button>
+                    }
+                  } @empty {
+                    <p class="muted-copy">No folders found here.</p>
+                  }
+                </div>
               </div>
             </div>
           }
