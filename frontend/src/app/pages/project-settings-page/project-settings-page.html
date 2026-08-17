@@ -542,41 +542,6 @@
                     placeholder="ro" />
                   <button type="button" class="secondary compact"
                     (click)="removeBuilderVolumeMountEntry(service.id, $index)">Remove</button>
-                  @if (hostPathBrowserFor(service.id, $index); as browser) {
-                  <div class="path-browser-backdrop" (click)="closeHostPathBrowserFromBackdrop($event, service.id, $index, mount.source)">
-                    <div class="path-browser" role="dialog" aria-modal="true" aria-label="Browse host bind path" (click)="$event.stopPropagation()">
-                      <div class="path-browser-head">
-                        <div>
-                          <h4>Browse host bind path</h4>
-                          <span>Host folder</span>
-                          <strong>{{ browser.path }}</strong>
-                        </div>
-                        <div class="path-browser-actions">
-                          <button type="button" class="secondary compact" (click)="selectHostPath(service.id, $index, browser.path)">Use this folder</button>
-                          <button type="button" class="secondary compact" (click)="toggleHostPathBrowser(service.id, $index, mount.source)">Close</button>
-                        </div>
-                      </div>
-                      <div class="path-tree">
-                        @if (browser.parent) {
-                        <button type="button" class="path-entry parent-entry" (click)="$event.stopPropagation(); browseHostPath(service.id, $index, browser.parent)">
-                          <span class="path-entry-marker"></span>
-                          <span class="path-entry-name">..</span>
-                          <small>Parent</small>
-                        </button>
-                        }
-                        @for (entry of browser.entries; track entry.path) {
-                        <button type="button" class="path-entry" [class.directory-entry]="entry.type === 'directory'" [class.file-entry]="entry.type === 'file'" (click)="$event.stopPropagation(); entry.type === 'directory' ? browseHostPath(service.id, $index, entry.path) : selectHostPath(service.id, $index, entry.path)">
-                          <span class="path-entry-marker"></span>
-                          <span class="path-entry-name">{{ entry.name }}</span>
-                          <small>{{ entry.type }}{{ entry.writable ? ' · writable' : '' }}</small>
-                        </button>
-                        } @empty {
-                        <small>No entries found here.</small>
-                        }
-                      </div>
-                    </div>
-                  </div>
-                  }
                 </div>
                 } @empty {
                 <small>Use a named volume for Docker-managed storage or a bind mount for a host path.</small>
@@ -941,6 +906,42 @@
     </div>
     }
   </section>
+
+  @if (hostPathBrowser(); as browserState) {
+  <div class="path-browser-backdrop" (click)="closeHostPathBrowserFromBackdrop($event)">
+    <div class="path-browser" role="dialog" aria-modal="true" aria-label="Browse host bind path" (click)="$event.stopPropagation()">
+      <div class="path-browser-head">
+        <div>
+          <h4>Browse host bind path</h4>
+          <span>Host folder</span>
+          <strong>{{ browserState.result.path }}</strong>
+        </div>
+        <div class="path-browser-actions">
+          <button type="button" class="secondary compact" (click)="selectHostPath(browserState.serviceId, browserState.index, browserState.result.path)">Use this folder</button>
+          <button type="button" class="secondary compact" (click)="closeHostPathBrowser()">Close</button>
+        </div>
+      </div>
+      <div class="path-tree">
+        @if (browserState.result.parent) {
+        <button type="button" class="path-entry parent-entry" (click)="$event.stopPropagation(); browseHostPath(browserState.serviceId, browserState.index, browserState.result.parent)">
+          <span class="path-entry-marker"></span>
+          <span class="path-entry-name">..</span>
+          <small>Parent</small>
+        </button>
+        }
+        @for (entry of browserState.result.entries; track entry.path) {
+        <button type="button" class="path-entry" [class.directory-entry]="entry.type === 'directory'" [class.file-entry]="entry.type === 'file'" (click)="$event.stopPropagation(); entry.type === 'directory' ? browseHostPath(browserState.serviceId, browserState.index, entry.path) : selectHostPath(browserState.serviceId, browserState.index, entry.path)">
+          <span class="path-entry-marker"></span>
+          <span class="path-entry-name">{{ entry.name }}</span>
+          <small>{{ entry.type }}{{ entry.writable ? ' · writable' : '' }}</small>
+        </button>
+        } @empty {
+        <small>No entries found here.</small>
+        }
+      </div>
+    </div>
+  </div>
+  }
 
   <footer class="form-actions">
     <button type="button" class="secondary" (click)="cancel()" [disabled]="saving() !== ''">Cancel</button>

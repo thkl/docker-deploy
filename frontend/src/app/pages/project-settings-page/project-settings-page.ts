@@ -793,20 +793,24 @@ export class ProjectSettingsPage implements OnInit {
   protected toggleHostPathBrowser(serviceId: number, index: number, source: string) {
     const current = this.hostPathBrowser();
     if (current?.serviceId === serviceId && current.index === index) {
-      this.hostPathBrowser.set(null);
-      this.hostPathBrowserError.set('');
+      this.closeHostPathBrowser();
       return;
     }
 
     this.browseHostPath(serviceId, index, normalizeHostBrowseStart(source));
   }
 
-  protected closeHostPathBrowserFromBackdrop(event: MouseEvent, serviceId: number, index: number, source: string) {
+  protected closeHostPathBrowser() {
+    this.hostPathBrowser.set(null);
+    this.hostPathBrowserError.set('');
+  }
+
+  protected closeHostPathBrowserFromBackdrop(event: MouseEvent) {
     if (event.target !== event.currentTarget) {
       return;
     }
 
-    this.toggleHostPathBrowser(serviceId, index, source);
+    this.closeHostPathBrowser();
   }
 
   protected browseHostPath(serviceId: number, index: number, path: string) {

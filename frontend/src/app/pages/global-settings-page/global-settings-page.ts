@@ -120,12 +120,16 @@ export class GlobalSettingsPage implements OnInit {
 
   protected toggleBackupPathBrowser() {
     if (this.backupPathBrowser()) {
-      this.backupPathBrowser.set(null);
-      this.backupPathBrowserError.set('');
+      this.closeBackupPathBrowser();
       return;
     }
 
     this.browseBackupPath(this.form.controls.autoBackupPath.value || '/');
+  }
+
+  protected closeBackupPathBrowser() {
+    this.backupPathBrowser.set(null);
+    this.backupPathBrowserError.set('');
   }
 
   protected closeBackupPathBrowserFromBackdrop(event: MouseEvent) {
@@ -133,7 +137,7 @@ export class GlobalSettingsPage implements OnInit {
       return;
     }
 
-    this.toggleBackupPathBrowser();
+    this.closeBackupPathBrowser();
   }
 
   protected browseBackupPath(path: string) {
