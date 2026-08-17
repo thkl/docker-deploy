@@ -545,19 +545,24 @@
                   @if (hostPathBrowserFor(service.id, $index); as browser) {
                   <div class="path-browser">
                     <div class="path-browser-head">
-                      <strong>{{ browser.path }}</strong>
+                      <div>
+                        <span>Host folder</span>
+                        <strong>{{ browser.path }}</strong>
+                      </div>
                       <button type="button" class="secondary compact" (click)="selectHostPath(service.id, $index, browser.path)">Use</button>
                     </div>
-                    @if (browser.parent) {
-                    <button type="button" class="path-entry parent-entry" (click)="browseHostPath(service.id, $index, browser.parent)">
-                      <span>..</span>
-                      <small>Parent folder</small>
-                    </button>
-                    }
-                    <div class="path-entry-list">
+                    <div class="path-tree">
+                      @if (browser.parent) {
+                      <button type="button" class="path-entry parent-entry" (click)="browseHostPath(service.id, $index, browser.parent)">
+                        <span class="path-entry-marker"></span>
+                        <span class="path-entry-name">..</span>
+                        <small>Parent</small>
+                      </button>
+                      }
                       @for (entry of browser.entries; track entry.path) {
-                      <button type="button" class="path-entry" (click)="entry.type === 'directory' ? browseHostPath(service.id, $index, entry.path) : selectHostPath(service.id, $index, entry.path)">
-                        <span>{{ entry.name }}</span>
+                      <button type="button" class="path-entry" [class.directory-entry]="entry.type === 'directory'" [class.file-entry]="entry.type === 'file'" (click)="entry.type === 'directory' ? browseHostPath(service.id, $index, entry.path) : selectHostPath(service.id, $index, entry.path)">
+                        <span class="path-entry-marker"></span>
+                        <span class="path-entry-name">{{ entry.name }}</span>
                         <small>{{ entry.type }}{{ entry.writable ? ' · writable' : '' }}</small>
                       </button>
                       } @empty {

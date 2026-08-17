@@ -134,11 +134,11 @@ button.secondary:hover,
   border: 1px solid var(--line);
   border-radius: 7px;
   display: grid;
-  gap: 0.55rem;
-  margin-top: 0.85rem;
-  max-height: 310px;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  max-height: 280px;
   overflow: auto;
-  padding: 0.65rem;
+  padding: 0.55rem;
 }
 
 .path-browser-head {
@@ -146,29 +146,44 @@ button.secondary:hover,
   display: flex;
   gap: 0.65rem;
   justify-content: space-between;
+  padding: 0.2rem 0.25rem 0.45rem;
+}
+
+.path-browser-head div {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.path-browser-head span,
+.path-entry small,
+.field-error {
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .path-browser-head strong {
-  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.path-entry-list {
+.path-tree {
+  border-top: 1px solid var(--line);
   display: grid;
-  gap: 0.35rem;
+  padding-top: 0.35rem;
+  position: relative;
 }
 
 .path-entry {
   align-items: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--ink);
   display: grid;
-  gap: 0.25rem;
-  justify-items: start;
-  min-height: 42px;
-  padding: 0.45rem 0.55rem;
+  gap: 0.5rem;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  min-height: 34px;
+  padding: 0.34rem 0.45rem;
   text-align: left;
 }
 
@@ -177,10 +192,42 @@ button.secondary:hover,
   border-color: var(--line);
 }
 
-.path-entry small,
-.field-error {
-  color: var(--muted);
-  font-size: 0.78rem;
+.path-entry-marker {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  height: 14px;
+  position: relative;
+  width: 14px;
+}
+
+.directory-entry .path-entry-marker::after {
+  border-color: var(--muted);
+  border-style: solid;
+  border-width: 1px 1px 0 0;
+  content: "";
+  height: 5px;
+  left: 4px;
+  position: absolute;
+  top: 3px;
+  transform: rotate(45deg);
+  width: 5px;
+}
+
+.parent-entry .path-entry-marker::after {
+  background: var(--muted);
+  content: "";
+  height: 1px;
+  left: 3px;
+  position: absolute;
+  top: 6px;
+  width: 6px;
+}
+
+.path-entry-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field-error {
