@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, WebhookEventRecord } from '../models/project';
+import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, PathBrowseResult, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, WebhookEventRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -101,6 +101,15 @@ export class ProjectApi {
     return this.http.post<{ restored: boolean }>('/api/settings/backup/restore', backup);
   }
 
+  testBackup(payload: GlobalSettings): Observable<{ ok: boolean; path: string; createdAt: string }> {
+    return this.http.post<{ ok: boolean; path: string; createdAt: string }>('/api/settings/backup/test', payload);
+  }
+
+  browseControllerPath(path: string): Observable<PathBrowseResult> {
+    const params = new URLSearchParams({ path });
+    return this.http.get<PathBrowseResult>(`/api/settings/paths/browse?${params.toString()}`);
+  }
+
   listServers(): Observable<ServerRecord[]> {
     return this.http.get<ServerRecord[]>('/api/servers');
   }
@@ -111,6 +120,11 @@ export class ProjectApi {
 
   refreshServerHealth(serverId: string): Observable<ServerRecord> {
     return this.http.post<ServerRecord>(`/api/servers/${encodeURIComponent(serverId)}/health`, {});
+  }
+
+  browseServerPath(serverId: string, path: string): Observable<PathBrowseResult> {
+    const params = new URLSearchParams({ path });
+    return this.http.get<PathBrowseResult>(`/api/servers/${encodeURIComponent(serverId)}/paths/browse?${params.toString()}`);
   }
 
   backupTraefik(serverId: string): Observable<TraefikConfigBackup> {

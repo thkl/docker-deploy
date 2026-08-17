@@ -172,6 +172,20 @@ export interface GlobalSettings {
   registryPassword?: string;
 }
 
+export interface PathBrowseEntry {
+  name: string;
+  path: string;
+  type: 'directory' | 'file';
+  writable?: boolean;
+  size?: number;
+}
+
+export interface PathBrowseResult {
+  path: string;
+  parent: string;
+  entries: PathBrowseEntry[];
+}
+
 export interface ProjectRegistrySettings {
   publish: boolean;
   deployFromRegistry: boolean;

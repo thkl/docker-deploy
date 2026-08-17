@@ -123,6 +123,71 @@ button.secondary:hover,
   margin-top: 0.9rem;
 }
 
+.path-field {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.path-browser {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+  max-height: 310px;
+  overflow: auto;
+  padding: 0.65rem;
+}
+
+.path-browser-head {
+  align-items: center;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+}
+
+.path-browser-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.path-entry-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.path-entry {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink);
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+  min-height: 42px;
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+
+.path-entry:hover {
+  background: var(--button-subtle);
+  border-color: var(--line);
+}
+
+.path-entry small,
+.field-error {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.field-error {
+  color: var(--danger);
+  margin-top: 0.55rem;
+}
+
 .file-action {
   align-items: center;
   background: transparent;
@@ -210,4 +275,7 @@ button.danger-action:hover {
     flex-direction: column;
   }
 
+  .path-field {
+    grid-template-columns: 1fr;
+  }
 }

@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowsePathJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -111,6 +111,17 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["inspectDocker"]>> }>({
             jobType: "inspectDocker",
             payload: { serverId: this.server.id, globalSettings: defaultGlobalSettingsForRemoteJobs() } satisfies DetectTraefikJobPayload
+        });
+        return accepted.result;
+    }
+
+    /**
+     * Lists paths on a remote target server host.
+     */
+    async browsePath(path: string) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["browsePath"]>> }>({
+            jobType: "browsePath",
+            payload: { path } satisfies BrowsePathJobPayload
         });
         return accepted.result;
     }

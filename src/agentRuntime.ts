@@ -280,6 +280,11 @@ export class AgentRuntime {
             return { result: await this.localAgent.inspectDocker() };
         }
 
+        if (request.jobType === "browsePath") {
+            const payload = request.payload as { path: string };
+            return { result: await this.localAgent.browsePath(payload.path) };
+        }
+
         if (request.jobType === "detectTraefik") {
             const payload = request.payload as DetectTraefikJobPayload;
             return { result: await this.localAgent.detectTraefik(payload.globalSettings) };

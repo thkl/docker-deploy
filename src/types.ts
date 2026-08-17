@@ -93,6 +93,20 @@ export interface TraefikDefaultsPayload {
     applyToServer?: boolean;
 }
 
+export interface PathBrowseEntry {
+    name: string;
+    path: string;
+    type: "directory" | "file";
+    writable?: boolean;
+    size?: number;
+}
+
+export interface PathBrowseResult {
+    path: string;
+    parent: string;
+    entries: PathBrowseEntry[];
+}
+
 export interface ProjectPayload {
     name?: string;
     serverId?: string;

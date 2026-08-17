@@ -457,7 +457,72 @@ fieldset small {
 
 .volume-mount-row {
   display: grid;
-  grid-template-columns: minmax(86px, 0.6fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(60px, 0.45fr) auto;
+  grid-template-columns: minmax(86px, 0.6fr) minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(60px, 0.45fr) auto;
+}
+
+.path-field {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+.path-browser {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.5rem;
+  grid-column: 1 / -1;
+  max-height: 260px;
+  overflow: auto;
+  padding: 0.6rem;
+}
+
+.path-browser-head {
+  align-items: center;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+}
+
+.path-browser-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.path-entry-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.path-entry {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink);
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+  min-height: 40px;
+  padding: 0.42rem 0.55rem;
+  text-align: left;
+}
+
+.path-entry:hover {
+  background: var(--button-subtle);
+  border-color: var(--line);
+}
+
+.path-entry small,
+.field-error {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.field-error {
+  color: var(--danger);
 }
 
 .inline-list-editor {

@@ -125,11 +125,53 @@
 
         <label>
           <span>Backup path</span>
-          <input formControlName="autoBackupPath" placeholder="/root/docker-apps/.updater/backups" />
+          <div class="path-field">
+            <input formControlName="autoBackupPath" placeholder="/root/docker-apps/.updater/backups" />
+            <button type="button" class="secondary" (click)="toggleBackupPathBrowser()" [disabled]="browsingBackupPath()">
+              {{ browsingBackupPath() ? 'Loading...' : backupPathBrowser() ? 'Close' : 'Browse' }}
+            </button>
+          </div>
         </label>
       </div>
 
+      @if (backupPathBrowser(); as browser) {
+        <div class="path-browser">
+          <div class="path-browser-head">
+            <strong>{{ browser.path }}</strong>
+            <button type="button" class="secondary compact" (click)="selectBackupPath(browser.path)">Use this path</button>
+          </div>
+
+          @if (browser.parent) {
+            <button type="button" class="path-entry parent-entry" (click)="browseBackupPath(browser.parent)">
+              <span>..</span>
+              <small>Parent folder</small>
+            </button>
+          }
+
+          <div class="path-entry-list">
+            @for (entry of browser.entries; track entry.path) {
+              @if (entry.type === 'directory') {
+                <button type="button" class="path-entry" (click)="browseBackupPath(entry.path)">
+                  <span>{{ entry.name }}</span>
+                  <small>{{ entry.writable ? 'writable' : 'read only' }}</small>
+                </button>
+              }
+            } @empty {
+              <p class="muted-copy">No folders found here.</p>
+            }
+          </div>
+        </div>
+      }
+
+      @if (backupPathBrowserError()) {
+        <p class="field-error">{{ backupPathBrowserError() }}</p>
+      }
+
       <div class="backup-actions">
+        <button type="button" class="secondary" (click)="testBackup()" [disabled]="testingBackup() || exportingBackup() || restoringBackup()">
+          {{ testingBackup() ? 'Testing...' : 'Test backup' }}
+        </button>
+
         <button type="button" class="secondary" (click)="exportBackup()" [disabled]="exportingBackup() || restoringBackup()">
           {{ exportingBackup() ? 'Exporting...' : 'Export backup' }}
         </button>

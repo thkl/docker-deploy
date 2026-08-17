@@ -3,6 +3,7 @@ import { inspectCompose } from "./composeInspection.js";
 import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
 import { applyTraefikDefaults, backupTraefikConfig, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectDockerTopology, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { browseDockerHostPath } from "./pathBrowser.js";
 import { GlobalSettings, ProjectSettings, RuntimeServiceAction, TraefikDefaultsPayload } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
@@ -68,6 +69,13 @@ export class LocalAgent implements AgentClient {
      */
     inspectDocker() {
         return inspectDockerTopology();
+    }
+
+    /**
+     * Lists paths on the Docker host backing this target server.
+     */
+    browsePath(path: string) {
+        return browseDockerHostPath(path);
     }
 
     /**

@@ -1,6 +1,6 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { AppDatabase } from "./database.js";
+import { AppDatabase, ControllerStateBackup } from "./database.js";
 import type { GlobalSettingsStore } from "./globalSettingsStore.js";
 
 const minuteMs = 60_000;
@@ -53,18 +53,22 @@ export class ConfigAutoBackupService {
 
         this.lastRunKey = runKey;
         try {
-            const backup = this.database.exportBackup();
-            const createdAt = backup.createdAt.replace(/[:.]/g, "-");
-            const backupPath = join(settings.autoBackupPath, `deploy-backup-${createdAt}.json`);
-            const temporaryPath = `${backupPath}.tmp`;
-            mkdirSync(dirname(backupPath), { recursive: true });
-            writeFileSync(temporaryPath, `${JSON.stringify(backup, null, 2)}\n`, { mode: 0o600 });
-            renameSync(temporaryPath, backupPath);
-            console.log(`Auto config backup written to ${backupPath}`);
+            const result = writeControllerBackup(this.database.exportBackup(), settings.autoBackupPath);
+            console.log(`Auto config backup written to ${result.path}`);
         } catch (error) {
             console.error(`Auto config backup failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
+}
+
+export function writeControllerBackup(backup: ControllerStateBackup, directory: string) {
+    const createdAt = backup.createdAt.replace(/[:.]/g, "-");
+    const backupPath = join(directory, `deploy-backup-${createdAt}.json`);
+    const temporaryPath = `${backupPath}.tmp`;
+    mkdirSync(dirname(backupPath), { recursive: true });
+    writeFileSync(temporaryPath, `${JSON.stringify(backup, null, 2)}\n`, { mode: 0o600 });
+    renameSync(temporaryPath, backupPath);
+    return { path: backupPath, createdAt: backup.createdAt };
 }
 
 export function cronMatches(expression: string, date: Date) {

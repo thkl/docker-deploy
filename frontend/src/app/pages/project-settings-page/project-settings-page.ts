@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, PathBrowseResult, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -138,6 +138,9 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly traefikDiagnostics = signal<TraefikDiagnostics | null>(null);
   protected readonly composeMode = signal<'builder' | 'yaml'>('builder');
   protected readonly builderSection = signal<'services' | 'networks' | 'volumes' | 'traefik'>('services');
+  protected readonly browsingHostPath = signal(false);
+  protected readonly hostPathBrowserError = signal('');
+  protected readonly hostPathBrowser = signal<{ serviceId: number; index: number; result: PathBrowseResult } | null>(null);
   protected readonly builderServices = signal<ComposeBuilderService[]>([]);
   protected readonly builderNetworks = signal<ComposeBuilderNetwork[]>([]);
   protected readonly builderVolumes = signal<ComposeBuilderVolume[]>([]);
@@ -784,6 +787,48 @@ export class ProjectSettingsPage implements OnInit {
 
   protected updateBuilderVolumeMountEntry(id: number, index: number, field: keyof ComposeVolumeMountEntry, event: Event) {
     const target = event.target as HTMLInputElement | HTMLSelectElement;
+    this.updateBuilderVolumeMountEntryValue(id, index, field, target.value);
+  }
+
+  protected toggleHostPathBrowser(serviceId: number, index: number, source: string) {
+    const current = this.hostPathBrowser();
+    if (current?.serviceId === serviceId && current.index === index) {
+      this.hostPathBrowser.set(null);
+      this.hostPathBrowserError.set('');
+      return;
+    }
+
+    this.browseHostPath(serviceId, index, normalizeHostBrowseStart(source));
+  }
+
+  protected browseHostPath(serviceId: number, index: number, path: string) {
+    const serverId = this.form.controls.serverId.value || 'local';
+    this.hostPathBrowserError.set('');
+    this.browsingHostPath.set(true);
+    this.api.browseServerPath(serverId, path || '/').subscribe({
+      next: (result) => {
+        this.hostPathBrowser.set({ serviceId, index, result });
+        this.browsingHostPath.set(false);
+      },
+      error: (error) => {
+        this.hostPathBrowserError.set(error?.error?.error || 'Could not browse this host path.');
+        this.browsingHostPath.set(false);
+      },
+    });
+  }
+
+  protected hostPathBrowserFor(serviceId: number, index: number) {
+    const browser = this.hostPathBrowser();
+    return browser?.serviceId === serviceId && browser.index === index ? browser.result : null;
+  }
+
+  protected selectHostPath(serviceId: number, index: number, path: string) {
+    this.updateBuilderVolumeMountEntryValue(serviceId, index, 'source', path);
+    this.hostPathBrowser.set(null);
+    this.hostPathBrowserError.set('');
+  }
+
+  private updateBuilderVolumeMountEntryValue(id: number, index: number, field: keyof ComposeVolumeMountEntry, value: string) {
     this.builderServices.update((services) => services.map((service) => {
       if (service.id !== id) {
         return service;
@@ -791,9 +836,9 @@ export class ProjectSettingsPage implements OnInit {
 
       const entries = parseVolumeMountEntries(service.volumes, this.builderVolumes().map((volume) => volume.name.trim()).filter(Boolean));
       const current = entries[index] ?? { kind: 'bind' as const, source: '', target: '', mode: '' };
-      const next = { ...current, [field]: target.value };
+      const next = { ...current, [field]: value };
       if (field === 'kind') {
-        next.source = target.value === 'volume'
+        next.source = value === 'volume'
           ? this.builderVolumes().find((volume) => volume.name.trim())?.name.trim() || ''
           : './data';
       }
@@ -2112,6 +2157,14 @@ function appendDuplicateNameDiagnostics(diagnostics: string[], label: string, na
 
 function volumeMountSource(mount: string) {
   return parseVolumeMountSourceTarget(mount).source;
+}
+
+function normalizeHostBrowseStart(source: string) {
+  const trimmed = source.trim();
+  if (!trimmed || !trimmed.startsWith('/')) {
+    return '/';
+  }
+  return trimmed.replace(/\/+$/, '') || '/';
 }
 
 function parseVolumeMountEntries(value: string, namedVolumes: string[]): ComposeVolumeMountEntry[] {

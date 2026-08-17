@@ -7,13 +7,15 @@ import { sealEnvelope } from "./agentCrypto.js";
 import { AdminAuth } from "./auth.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
 import { countBindMountsInsidePath, hasUnsafeRelativeBindMounts } from "./composeInspection.js";
+import { writeControllerBackup } from "./configAutoBackup.js";
 import { ConfigStore, maskSecretValue, maskToken } from "./configStore.js";
 import { DeploymentStore } from "./deploymentStore.js";
 import { DeploymentService } from "./deploymentService.js";
 import { EventBus } from "./eventBus.js";
-import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
+import { defaultProjectPath, GlobalSettingsStore, normalizeGlobalSettings } from "./globalSettingsStore.js";
 import { ControllerKeyState } from "./keyStore.js";
 import { AppDatabase, ControllerStateBackup } from "./database.js";
+import { browseContainerPath } from "./pathBrowser.js";
 import { parseProjectComposeImport, renderProjectComposeExport } from "./projectComposeTransfer.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
@@ -110,6 +112,25 @@ function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependenci
         }
     });
 
+    app.post("/api/settings/backup/test", (req: Request, res: Response) => {
+        try {
+            const settings = normalizeGlobalSettings({ ...globalSettingsStore.readSettings(), ...(req.body as GlobalSettingsPayload) });
+            const result = writeControllerBackup(database.exportBackup(), settings.autoBackupPath);
+            res.json({ ok: true, ...result });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not write test backup." });
+        }
+    });
+
+    app.get("/api/settings/paths/browse", (req: Request, res: Response) => {
+        try {
+            const path = typeof req.query.path === "string" ? req.query.path : "/";
+            res.json(browseContainerPath(path));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not browse path." });
+        }
+    });
+
     app.post("/api/settings/backup/restore", (req: Request, res: Response) => {
         try {
             database.restoreBackup(req.body as ControllerStateBackup);
@@ -157,6 +178,22 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             res.json(capabilities);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not inspect server capabilities." });
+        }
+    });
+
+    app.get("/api/servers/:id/paths/browse", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            const server = serverStore.get(serverId);
+            if (!server) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+
+            const path = typeof req.query.path === "string" ? req.query.path : "/";
+            res.json(await agentManager.getClient(serverId).browsePath(path));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not browse host path." });
         }
     });
 
