@@ -543,7 +543,7 @@
                   <button type="button" class="secondary compact"
                     (click)="removeBuilderVolumeMountEntry(service.id, $index)">Remove</button>
                   @if (hostPathBrowserFor(service.id, $index); as browser) {
-                  <div class="path-browser-backdrop" (click)="toggleHostPathBrowser(service.id, $index, mount.source)">
+                  <div class="path-browser-backdrop" (click)="closeHostPathBrowserFromBackdrop($event, service.id, $index, mount.source)">
                     <div class="path-browser" role="dialog" aria-modal="true" aria-label="Browse host bind path" (click)="$event.stopPropagation()">
                       <div class="path-browser-head">
                         <div>
@@ -558,14 +558,14 @@
                       </div>
                       <div class="path-tree">
                         @if (browser.parent) {
-                        <button type="button" class="path-entry parent-entry" (click)="browseHostPath(service.id, $index, browser.parent)">
+                        <button type="button" class="path-entry parent-entry" (click)="$event.stopPropagation(); browseHostPath(service.id, $index, browser.parent)">
                           <span class="path-entry-marker"></span>
                           <span class="path-entry-name">..</span>
                           <small>Parent</small>
                         </button>
                         }
                         @for (entry of browser.entries; track entry.path) {
-                        <button type="button" class="path-entry" [class.directory-entry]="entry.type === 'directory'" [class.file-entry]="entry.type === 'file'" (click)="entry.type === 'directory' ? browseHostPath(service.id, $index, entry.path) : selectHostPath(service.id, $index, entry.path)">
+                        <button type="button" class="path-entry" [class.directory-entry]="entry.type === 'directory'" [class.file-entry]="entry.type === 'file'" (click)="$event.stopPropagation(); entry.type === 'directory' ? browseHostPath(service.id, $index, entry.path) : selectHostPath(service.id, $index, entry.path)">
                           <span class="path-entry-marker"></span>
                           <span class="path-entry-name">{{ entry.name }}</span>
                           <small>{{ entry.type }}{{ entry.writable ? ' · writable' : '' }}</small>

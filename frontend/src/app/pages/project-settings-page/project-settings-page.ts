@@ -801,6 +801,14 @@ export class ProjectSettingsPage implements OnInit {
     this.browseHostPath(serviceId, index, normalizeHostBrowseStart(source));
   }
 
+  protected closeHostPathBrowserFromBackdrop(event: MouseEvent, serviceId: number, index: number, source: string) {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    this.toggleHostPathBrowser(serviceId, index, source);
+  }
+
   protected browseHostPath(serviceId: number, index: number, path: string) {
     const serverId = this.form.controls.serverId.value || 'local';
     this.hostPathBrowserError.set('');

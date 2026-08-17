@@ -128,6 +128,14 @@ export class GlobalSettingsPage implements OnInit {
     this.browseBackupPath(this.form.controls.autoBackupPath.value || '/');
   }
 
+  protected closeBackupPathBrowserFromBackdrop(event: MouseEvent) {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    this.toggleBackupPathBrowser();
+  }
+
   protected browseBackupPath(path: string) {
     this.backupPathBrowserError.set('');
     this.browsingBackupPath.set(true);

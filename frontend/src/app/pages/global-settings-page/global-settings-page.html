@@ -133,7 +133,7 @@
           </div>
 
           @if (backupPathBrowser(); as browser) {
-            <div class="path-browser-backdrop" (click)="toggleBackupPathBrowser()">
+            <div class="path-browser-backdrop" (click)="closeBackupPathBrowserFromBackdrop($event)">
               <div class="path-browser" role="dialog" aria-modal="true" aria-label="Browse controller backup path" (click)="$event.stopPropagation()">
                 <div class="path-browser-head">
                   <div>
@@ -149,7 +149,7 @@
 
                 <div class="path-tree">
                   @if (browser.parent) {
-                    <button type="button" class="path-entry parent-entry" (click)="browseBackupPath(browser.parent)">
+                  <button type="button" class="path-entry parent-entry" (click)="$event.stopPropagation(); browseBackupPath(browser.parent)">
                       <span class="path-entry-marker"></span>
                       <span class="path-entry-name">..</span>
                       <small>Parent</small>
@@ -158,7 +158,7 @@
 
                   @for (entry of browser.entries; track entry.path) {
                     @if (entry.type === 'directory') {
-                      <button type="button" class="path-entry directory-entry" (click)="browseBackupPath(entry.path)">
+                      <button type="button" class="path-entry directory-entry" (click)="$event.stopPropagation(); browseBackupPath(entry.path)">
                         <span class="path-entry-marker"></span>
                         <span class="path-entry-name">{{ entry.name }}</span>
                         <small>{{ entry.writable ? 'Writable' : 'Read only' }}</small>
