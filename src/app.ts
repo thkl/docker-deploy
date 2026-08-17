@@ -5,6 +5,7 @@ import { AgentHealthService } from "./agentHealth.js";
 import { AgentRuntime } from "./agentRuntime.js";
 import { apiEnvelopeMiddleware, apiError } from "./apiEnvelope.js";
 import { AdminAuth } from "./auth.js";
+import { ConfigAutoBackupService } from "./configAutoBackup.js";
 import { AppDatabase } from "./database.js";
 import { ConfigStore } from "./configStore.js";
 import { DeploymentService } from "./deploymentService.js";
@@ -44,6 +45,7 @@ class App {
     private readonly controllerKeys = ensureControllerKeys();
     private readonly localAgent = new LocalAgent();
     private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
+    private readonly configAutoBackup = new ConfigAutoBackupService(this.database, this.globalSettingsStore);
     private readonly eventBus = new EventBus(this.adminAuth, () => this.buildEventSnapshot());
     private readonly agentHealth = new AgentHealthService(
         this.serverStore,
@@ -135,6 +137,7 @@ class App {
         this.eventBus.register(server);
         server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
         this.agentHealth.startHeartbeat();
+        this.configAutoBackup.start();
     }
 
     /**

@@ -53,6 +53,9 @@ export interface GlobalSettings {
     defaultTraefikCertResolver: string;
     sshKeyPath: string;
     cleanupAfterDeploy: boolean;
+    autoBackupEnabled: boolean;
+    autoBackupCron: string;
+    autoBackupPath: string;
     registryAddress: string;
     registryUsername: string;
     registryPassword?: string;
@@ -65,6 +68,9 @@ export interface GlobalSettingsPayload {
     defaultTraefikCertResolver?: string;
     sshKeyPath?: string;
     cleanupAfterDeploy?: boolean;
+    autoBackupEnabled?: boolean;
+    autoBackupCron?: string;
+    autoBackupPath?: string;
     registryAddress?: string;
     registryUsername?: string;
     registryPassword?: string;

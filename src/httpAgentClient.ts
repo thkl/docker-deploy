@@ -507,6 +507,9 @@ function defaultGlobalSettingsForRemoteJobs(): GlobalSettings {
         defaultTraefikCertResolver: "letsencrypt",
         sshKeyPath: "~/.ssh",
         cleanupAfterDeploy: false,
+        autoBackupEnabled: false,
+        autoBackupCron: "0 3 * * *",
+        autoBackupPath: "/root/docker-apps/.updater/backups",
         registryAddress: "",
         registryUsername: "",
         registryPassword: ""

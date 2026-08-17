@@ -105,12 +105,29 @@
     <section class="settings-panel">
       <div class="panel-head">
         <h3>Backup and recovery</h3>
-        <span>Projects, servers, settings, and controller keys</span>
+        <span>Manual and scheduled controller-state exports</span>
       </div>
 
       <p class="muted-copy">
         Backup files contain controller key material and encrypted secrets. Store them like passwords. Deployment logs and runtime history are not included.
       </p>
+
+      <label class="check-row">
+        <input type="checkbox" formControlName="autoBackupEnabled" />
+        <span>Automatically save config backups</span>
+      </label>
+
+      <div class="field-grid">
+        <label>
+          <span>Cron schedule</span>
+          <input formControlName="autoBackupCron" placeholder="0 3 * * *" />
+        </label>
+
+        <label>
+          <span>Backup path</span>
+          <input formControlName="autoBackupPath" placeholder="/root/docker-apps/.updater/backups" />
+        </label>
+      </div>
 
       <div class="backup-actions">
         <button type="button" class="secondary" (click)="exportBackup()" [disabled]="exportingBackup() || restoringBackup()">

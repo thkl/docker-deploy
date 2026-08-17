@@ -1,4 +1,5 @@
 import { AppDatabase, runDatabaseTransaction } from "./database.js";
+import { isValidCronExpression } from "./configAutoBackup.js";
 import { decryptSecret, encryptSecret } from "./secretStore.js";
 import { GlobalSettings, GlobalSettingsPayload } from "./types.js";
 
@@ -9,6 +10,9 @@ export const defaultGlobalSettings: GlobalSettings = {
     defaultTraefikCertResolver: "letsencrypt",
     sshKeyPath: "~/.ssh",
     cleanupAfterDeploy: false,
+    autoBackupEnabled: false,
+    autoBackupCron: "0 3 * * *",
+    autoBackupPath: "/root/docker-apps/.updater/backups",
     registryAddress: "",
     registryUsername: "",
     registryPassword: ""
@@ -65,12 +69,18 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
     const defaultTraefikNetwork = normalizeName(payload.defaultTraefikNetwork, "Default Traefik network") || defaultGlobalSettings.defaultTraefikNetwork;
     const defaultTraefikEntryPoints = normalizeCsvNames(payload.defaultTraefikEntryPoints, "Default Traefik entry points") || defaultGlobalSettings.defaultTraefikEntryPoints;
     const defaultTraefikCertResolver = normalizeName(payload.defaultTraefikCertResolver, "Default Traefik cert resolver") || defaultGlobalSettings.defaultTraefikCertResolver;
+    const autoBackupCron = payload.autoBackupCron?.trim() || defaultGlobalSettings.autoBackupCron;
+    const autoBackupPath = normalizeAbsolutePath(payload.autoBackupPath, "Auto backup path") || defaultGlobalSettings.autoBackupPath;
     const registryAddress = normalizeRegistryAddress(payload.registryAddress);
     const registryUsername = payload.registryUsername?.trim() ?? "";
     const registryPassword = shouldKeepExistingSecret(payload.registryPassword) ? "" : payload.registryPassword?.trim() ?? "";
 
     if (!sshKeyPath.startsWith("/") && !sshKeyPath.startsWith("~/")) {
         throw new Error("SSH key path must be an absolute path or start with ~/.");
+    }
+
+    if (!isValidCronExpression(autoBackupCron)) {
+        throw new Error("Auto backup cron must be a five-field cron expression.");
     }
 
     return {
@@ -80,6 +90,9 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
         defaultTraefikCertResolver,
         sshKeyPath,
         cleanupAfterDeploy: Boolean(payload.cleanupAfterDeploy),
+        autoBackupEnabled: Boolean(payload.autoBackupEnabled),
+        autoBackupCron,
+        autoBackupPath,
         registryAddress,
         registryUsername,
         registryPassword

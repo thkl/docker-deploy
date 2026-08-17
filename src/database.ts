@@ -14,6 +14,9 @@ const legacyDefaultGlobalSettings: GlobalSettings = {
     defaultTraefikCertResolver: "letsencrypt",
     sshKeyPath: "~/.ssh",
     cleanupAfterDeploy: false,
+    autoBackupEnabled: false,
+    autoBackupCron: "0 3 * * *",
+    autoBackupPath: "/root/docker-apps/.updater/backups",
     registryAddress: "",
     registryUsername: "",
     registryPassword: ""
@@ -1021,6 +1024,9 @@ function normalizeLegacyGlobalSettings(payload: GlobalSettingsPayload): GlobalSe
         defaultTraefikCertResolver: payload.defaultTraefikCertResolver?.trim() || legacyDefaultGlobalSettings.defaultTraefikCertResolver,
         sshKeyPath: payload.sshKeyPath?.trim() || legacyDefaultGlobalSettings.sshKeyPath,
         cleanupAfterDeploy: Boolean(payload.cleanupAfterDeploy),
+        autoBackupEnabled: Boolean(payload.autoBackupEnabled),
+        autoBackupCron: payload.autoBackupCron?.trim() || legacyDefaultGlobalSettings.autoBackupCron,
+        autoBackupPath: payload.autoBackupPath?.trim() || legacyDefaultGlobalSettings.autoBackupPath,
         registryAddress: payload.registryAddress?.trim() || "",
         registryUsername: payload.registryUsername?.trim() || "",
         registryPassword: payload.registryPassword?.trim() || ""
