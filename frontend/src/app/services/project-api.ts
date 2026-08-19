@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, PathBrowseResult, ProjectPayload, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, WebhookEventRecord } from '../models/project';
+import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, PathBrowseResult, ProjectPayload, ProjectReleaseSnapshot, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, WebhookEventRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -37,6 +37,14 @@ export class ProjectApi {
 
   cancelDeployment(projectRef: string): Observable<DeploymentRecord | null> {
     return this.http.post<DeploymentRecord | null>(`/api/projects/${encodeURIComponent(projectRef)}/deployments/cancel`, {});
+  }
+
+  listReleases(projectRef: string): Observable<ProjectReleaseSnapshot[]> {
+    return this.http.get<ProjectReleaseSnapshot[]>(`/api/projects/${encodeURIComponent(projectRef)}/releases`);
+  }
+
+  rollbackRelease(projectRef: string, releaseId: string): Observable<{ status: string; deploymentId: string; deploymentIds?: string[] }> {
+    return this.http.post<{ status: string; deploymentId: string; deploymentIds?: string[] }>(`/api/projects/${encodeURIComponent(projectRef)}/releases/${encodeURIComponent(releaseId)}/rollback`, {});
   }
 
   importCompose(projectRef: string): Observable<{ composeFile: string; compose: string }> {

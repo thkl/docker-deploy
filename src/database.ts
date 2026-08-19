@@ -6,7 +6,7 @@ import { GlobalSettings, GlobalSettingsPayload, ProjectConfig, ProjectSettings, 
 import type { DeploymentRecord } from "./deploymentStore.js";
 import { encryptSecret, isEncryptedSecret } from "./secretStore.js";
 
-const schemaVersion = 4;
+const schemaVersion = 5;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     defaultTraefikNetwork: "proxy",
@@ -202,6 +202,22 @@ export class AppDatabase {
                 deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
                 received_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS release_snapshots (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                deployment_id TEXT NOT NULL,
+                run_id TEXT,
+                server_id TEXT NOT NULL REFERENCES servers(id),
+                compose_project_name TEXT NOT NULL,
+                project_path TEXT NOT NULL,
+                deployment_strategy TEXT NOT NULL,
+                compose_yaml TEXT NOT NULL,
+                git_sha TEXT,
+                images_json TEXT NOT NULL,
+                build_services_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
         `);
 
         this.ensureColumn("servers", "base_url", "TEXT");
@@ -228,6 +244,7 @@ export class AppDatabase {
         this.ensureColumn("deployments", "phase", "TEXT NOT NULL DEFAULT 'running'");
         this.ensureColumn("deployments", "agent_job_id", "TEXT");
         this.ensureColumn("deployments", "agent_stream_token", "TEXT");
+        this.recreateReleaseSnapshotsWithoutDeploymentForeignKey();
         this.migrateProjectsToStableIds();
         this.backfillDeploymentRuns();
         this.normalizeDeploymentPhases();
@@ -242,6 +259,41 @@ export class AppDatabase {
         if (!columns.some((column) => column.name === columnName)) {
             this.connection.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`);
         }
+    }
+
+    private recreateReleaseSnapshotsWithoutDeploymentForeignKey() {
+        const foreignKeys = this.connection.prepare("PRAGMA foreign_key_list(release_snapshots)").all() as unknown as Array<{ table: string }>;
+        if (!foreignKeys.some((key) => key.table === "deployments")) {
+            return;
+        }
+
+        runDatabaseTransaction(this.connection, () => {
+            this.connection.exec(`
+                CREATE TABLE release_snapshots_next (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    deployment_id TEXT NOT NULL,
+                    run_id TEXT,
+                    server_id TEXT NOT NULL REFERENCES servers(id),
+                    compose_project_name TEXT NOT NULL,
+                    project_path TEXT NOT NULL,
+                    deployment_strategy TEXT NOT NULL,
+                    compose_yaml TEXT NOT NULL,
+                    git_sha TEXT,
+                    images_json TEXT NOT NULL,
+                    build_services_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                INSERT INTO release_snapshots_next
+                    (id, project_id, deployment_id, run_id, server_id, compose_project_name, project_path, deployment_strategy, compose_yaml, git_sha, images_json, build_services_json, created_at)
+                SELECT id, project_id, deployment_id, run_id, server_id, compose_project_name, project_path, deployment_strategy, compose_yaml, git_sha, images_json, build_services_json, created_at
+                FROM release_snapshots;
+
+                DROP TABLE release_snapshots;
+                ALTER TABLE release_snapshots_next RENAME TO release_snapshots;
+            `);
+        });
     }
 
     /**

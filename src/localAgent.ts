@@ -2,9 +2,9 @@ import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js"
 import { inspectCompose } from "./composeInspection.js";
 import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { applyTraefikDefaults, backupTraefikConfig, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectDockerTopology, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { applyTraefikDefaults, backupTraefikConfig, captureProjectReleaseSnapshot, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, dispatchReleaseRollbackWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectDockerTopology, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { browseDockerHostPath } from "./pathBrowser.js";
-import { GlobalSettings, ProjectSettings, RuntimeServiceAction, TraefikDefaultsPayload } from "./types.js";
+import { GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, TraefikDefaultsPayload } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
 /**
@@ -20,6 +20,20 @@ export class LocalAgent implements AgentClient {
      */
     deployProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
         return dispatchBuildWorker(projectName, appSettings, globalSettings, hooks);
+    }
+
+    /**
+     * Redeploys a captured release snapshot on the local target server.
+     */
+    deployReleaseSnapshot(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
+        return dispatchReleaseRollbackWorker(release, globalSettings, hooks);
+    }
+
+    /**
+     * Captures the currently persisted deployment artifact on the target server.
+     */
+    captureReleaseSnapshot(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        return captureProjectReleaseSnapshot(projectName, appSettings, globalSettings);
     }
 
     /**

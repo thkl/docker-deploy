@@ -1,11 +1,11 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowsePathJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowsePathJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
 import { ControllerKeyState } from "./keyStore.js";
-import { GlobalSettings, ProjectSettings, RuntimeServiceAction, ServerRecord, TraefikDefaultsPayload } from "./types.js";
+import { GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerRecord, TraefikDefaultsPayload } from "./types.js";
 
 /**
  * Controller-side client for a remote Deploy agent.
@@ -28,6 +28,29 @@ export class HttpAgentClient implements AgentClient {
         });
         hooks.onAccepted?.({ jobId: accepted.jobId, streamToken: accepted.streamToken });
         return this.connectLogStream(accepted, hooks);
+    }
+
+    /**
+     * Redeploys a captured release snapshot on a remote agent.
+     */
+    async deployReleaseSnapshot(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
+        const accepted = await this.postJob({
+            jobType: "deployReleaseSnapshot",
+            payload: { release, globalSettings } satisfies ReleaseSnapshotJobPayload
+        });
+        hooks.onAccepted?.({ jobId: accepted.jobId, streamToken: accepted.streamToken });
+        return this.connectLogStream(accepted, hooks);
+    }
+
+    /**
+     * Captures the currently persisted deployment artifact on a remote agent.
+     */
+    async captureReleaseSnapshot(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["captureReleaseSnapshot"]>> }>({
+            jobType: "captureReleaseSnapshot",
+            payload: { projectName, appSettings, globalSettings } satisfies DeployJobPayload
+        });
+        return accepted.result;
     }
 
     /**

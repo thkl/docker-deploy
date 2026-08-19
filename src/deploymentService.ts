@@ -4,6 +4,7 @@ import { AgentManager } from "./agentManager.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
 import { RuntimeLogStream } from "./deploy.js";
+import { ReleaseStore } from "./releaseStore.js";
 
 /**
  * Coordinates deployment lifecycle state with the worker execution layer.
@@ -18,6 +19,7 @@ export class DeploymentService {
 
     constructor(
         private readonly deploymentStore: DeploymentStore,
+        private readonly releaseStore: ReleaseStore,
         private readonly globalSettingsStore: GlobalSettingsStore,
         private readonly agentManager: AgentManager,
         private readonly broadcastDeployment: (projectName: string) => void,
@@ -36,6 +38,27 @@ export class DeploymentService {
         this.broadcastDeploymentUpdate(projectName, run);
         for (const target of run.targets ?? []) {
             this.startDeploymentTarget(projectName, appSettings, target, target.serverId);
+        }
+        return run;
+    }
+
+    /**
+     * Starts a rollback deployment from a captured release snapshot.
+     */
+    rollbackRelease(projectName: string, appSettings: ProjectSettings, releaseId: string) {
+        const release = this.releaseStore.get(appSettings.id ?? projectName, releaseId);
+        if (!release) {
+            throw new Error("Release snapshot does not exist.");
+        }
+        if (!release.rollbackAvailable) {
+            throw new Error(release.rollbackUnavailableReason || "This release snapshot cannot be rolled back safely.");
+        }
+
+        const run = this.deploymentStore.startRun(projectName, "rollback", [release.serverId]);
+        this.broadcastDeploymentUpdate(projectName, run);
+        const target = run.targets?.[0];
+        if (target) {
+            this.startRollbackTarget(projectName, appSettings, release, target, release.serverId);
         }
         return run;
     }
@@ -138,6 +161,84 @@ export class DeploymentService {
         return;
     }
 
+    private startRollbackTarget(projectName: string, appSettings: ProjectSettings, release: NonNullable<ReturnType<ReleaseStore["get"]>>, deployment: DeploymentRecord, serverId: string) {
+        const previous = this.serverQueues.get(serverId) ?? Promise.resolve();
+        const queued = previous
+            .catch(() => undefined)
+            .then(() => this.dispatchRollbackTarget(projectName, appSettings, release, deployment, serverId));
+        this.serverQueues.set(serverId, queued.finally(() => {
+            if (this.serverQueues.get(serverId) === queued) {
+                this.serverQueues.delete(serverId);
+            }
+        }));
+    }
+
+    private async dispatchRollbackTarget(projectName: string, appSettings: ProjectSettings, release: NonNullable<ReturnType<ReleaseStore["get"]>>, deployment: DeploymentRecord, serverId: string) {
+        const current = this.deploymentStore.get(deployment.id);
+        if (current?.status !== "running") {
+            return;
+        }
+
+        const targetSettings = { ...appSettings, serverId };
+        const globalSettings = this.globalSettingsStore.readSettings();
+        this.deploymentStore.setPhase(projectName, deployment.id, "dispatching");
+        this.deploymentStore.append(projectName, deployment.id, "stdout", `--> Rolling back to release ${release.id} from ${release.createdAt}.\n`);
+        this.broadcastDeploymentUpdate(projectName);
+        await this.refreshServerHealth(serverId);
+
+        const agent = this.agentManager.getClient(serverId);
+        const deploymentRun = agent.deployReleaseSnapshot(release, globalSettings, {
+            onAccepted: (job) => {
+                this.deploymentStore.setAgentJob(projectName, deployment.id, job);
+                this.deploymentStore.setPhase(projectName, deployment.id, "running");
+                this.broadcastDeploymentUpdate(projectName);
+            },
+            onOutput: (stream, chunk) => {
+                this.deploymentStore.setPhase(projectName, deployment.id, "running");
+                this.deploymentStore.append(projectName, deployment.id, stream, chunk);
+                this.broadcastDeployment(projectName);
+                this.publishDeployment(projectName, this.deploymentStore.latest(projectName));
+            },
+            onSuccess: () => {
+                void this.finishSuccessfulDeployment(projectName, deployment.id, targetSettings, globalSettings);
+            },
+            onFailure: (error) => {
+                const current = this.deploymentStore.get(deployment.id);
+                if (current?.status !== "running") {
+                    return;
+                }
+                this.activeDeployments.delete(deployment.id);
+                this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                    error: error.message,
+                    exitCode: error.code,
+                    phase: "failed"
+                });
+                this.broadcastDeploymentUpdate(projectName);
+                void this.refreshServerHealth(serverId);
+            }
+        });
+
+        if (isRuntimeLogStream(deploymentRun)) {
+            this.activeDeployments.set(deployment.id, deploymentRun);
+        }
+
+        Promise.resolve(deploymentRun).then((stream) => {
+            const current = this.deploymentStore.get(deployment.id);
+            if (stream && current?.status === "running") {
+                this.activeDeployments.set(deployment.id, stream);
+            }
+        }).catch((error) => {
+            this.activeDeployments.delete(deployment.id);
+            this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                error: error instanceof Error ? error.message : "Could not dispatch rollback.",
+                exitCode: "dispatch",
+                phase: "failed"
+            });
+            this.broadcastDeploymentUpdate(projectName);
+            void this.refreshServerHealth(serverId);
+        });
+    }
+
     private async finishSuccessfulDeployment(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
         const current = this.deploymentStore.get(deploymentId);
         if (current?.status !== "running") {
@@ -146,11 +247,30 @@ export class DeploymentService {
 
         this.activeDeployments.delete(deploymentId);
         this.deploymentStore.setPhase(projectName, deploymentId, "cleanup");
+        await this.captureReleaseSnapshot(projectName, deploymentId, appSettings, globalSettings);
         await this.cleanupCheckoutAfterDeploy(projectName, deploymentId, appSettings, globalSettings);
         this.deploymentStore.finish(projectName, deploymentId, "succeeded", { phase: "succeeded" });
         this.broadcastDeploymentUpdate(projectName);
         void this.refreshServerHealth(appSettings.serverId ?? "local");
         void this.refreshRuntimeStatus(projectName);
+    }
+
+    private async captureReleaseSnapshot(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        const deployment = this.deploymentStore.get(deploymentId);
+        if (!deployment) {
+            return;
+        }
+
+        try {
+            const agent = this.agentManager.getClient(appSettings.serverId ?? "local");
+            const snapshot = await agent.captureReleaseSnapshot(projectName, appSettings, globalSettings);
+            const release = this.releaseStore.save(projectName, deployment, snapshot);
+            this.appendDeploymentLine(projectName, deploymentId, "stdout", release.rollbackAvailable
+                ? `--> Release snapshot saved: ${release.id}.`
+                : `--> Release snapshot saved: ${release.id}. Rollback unavailable because ${release.rollbackUnavailableReason}`);
+        } catch (error) {
+            this.appendDeploymentLine(projectName, deploymentId, "stderr", `--> Release snapshot skipped: ${readErrorMessage(error)}`);
+        }
     }
 
     private async cleanupCheckoutAfterDeploy(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {

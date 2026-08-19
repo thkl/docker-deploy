@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AppDatabase, runDatabaseTransaction } from "./database.js";
 
 export type DeploymentStatus = "running" | "succeeded" | "failed";
-export type DeploymentTrigger = "webhook" | "ci" | "manual";
+export type DeploymentTrigger = "webhook" | "ci" | "manual" | "rollback";
 export type DeploymentStream = "stdout" | "stderr";
 export type DeploymentPhase = "queued" | "dispatching" | "running" | "reconnecting" | "reconciling" | "cleanup" | "succeeded" | "failed" | "canceled";
 

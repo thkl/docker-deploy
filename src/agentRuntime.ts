@@ -256,6 +256,25 @@ export class AgentRuntime {
             return { result: await this.localAgent.importCompose(payload.projectName, payload.appSettings, payload.globalSettings) };
         }
 
+        if (request.jobType === "captureReleaseSnapshot") {
+            const payload = request.payload as DeployJobPayload;
+            return { result: await this.localAgent.captureReleaseSnapshot(payload.projectName, payload.appSettings, payload.globalSettings) };
+        }
+
+        if (request.jobType === "deployReleaseSnapshot") {
+            const payload = request.payload as { release: Parameters<LocalAgent["deployReleaseSnapshot"]>[0]; globalSettings: Parameters<LocalAgent["deployReleaseSnapshot"]>[1] };
+            const stream = this.localAgent.deployReleaseSnapshot(payload.release, payload.globalSettings, {
+                onOutput: (stream, chunk) => this.emitFrame(accepted.jobId, { stream, chunk }),
+                onSuccess: () => this.emitFrame(accepted.jobId, { stream: "status", chunk: "Release rollback completed.", done: true, success: true }),
+                onFailure: (error) => this.emitFrame(accepted.jobId, { stream: "status", chunk: error.message, done: true, success: false, error: error.message })
+            }) as RuntimeLogStream;
+            const job = this.jobs.get(accepted.jobId);
+            if (job) {
+                job.cancel = () => stream.stop();
+            }
+            return {};
+        }
+
         if (request.jobType === "inspectCompose") {
             const payload = request.payload as InspectComposeJobPayload;
             return { result: await this.localAgent.inspectCompose(payload.projectName, payload.appSettings, payload.globalSettings) };

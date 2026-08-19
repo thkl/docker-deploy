@@ -1,7 +1,7 @@
 import { Component, computed, effect, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord, DeploymentStrategy, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerRecord, WebhookEventRecord } from '../../models/project';
+import { DeploymentRecord, DeploymentStrategy, ProjectReleaseSnapshot, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerRecord, WebhookEventRecord } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
@@ -25,15 +25,19 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeLogs = signal<RuntimeLogs | null>(null);
   protected readonly runtimeOperations = signal<RuntimeOperationRecord[]>([]);
   protected readonly latestWebhook = signal<WebhookEventRecord | null>(null);
+  protected readonly releaseSnapshots = signal<ProjectReleaseSnapshot[]>([]);
   protected readonly loadingDeployment = signal(false);
   protected readonly loadingRuntimeStatus = signal(false);
   protected readonly loadingRuntimeLogs = signal(false);
   protected readonly loadingRuntimeOperations = signal(false);
   protected readonly loadingWebhook = signal(false);
+  protected readonly loadingReleases = signal(false);
   protected readonly deploying = signal(false);
   protected readonly cancelingDeployment = signal(false);
+  protected readonly rollingBackReleaseId = signal('');
   protected readonly deployMessage = signal('');
   protected readonly deployError = signal('');
+  protected readonly releaseError = signal('');
   protected readonly runtimeStatusError = signal('');
   protected readonly runtimeLogsError = signal('');
   protected readonly runtimeOperationsError = signal('');
@@ -60,6 +64,19 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly deleteDeploymentHistory = signal(true);
   protected readonly selectedServer = computed(() => this.store.selectedProjectServer());
   protected readonly isSwarmProject = computed(() => this.store.selectedProject()?.deploymentStrategy === 'swarm');
+  protected readonly rollbackCandidate = computed(() => {
+    const releases = this.releaseSnapshots().filter((release) => release.rollbackAvailable);
+    if (!releases.length) {
+      return null;
+    }
+
+    const latest = this.latestDeployment();
+    if (!latest || latest.status === 'failed') {
+      return releases[0];
+    }
+
+    return releases.find((release) => release.deploymentId !== latest.id && release.runId !== latest.runId) ?? releases[1] ?? releases[0];
+  });
   protected readonly strategySummary = computed(() => {
     const project = this.store.selectedProject();
     if (!project) {
@@ -136,6 +153,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.loadRuntimeStatus(projectRef);
         this.loadRuntimeOperations(projectRef);
         this.loadLatestWebhook(projectRef);
+        this.loadReleases(projectRef);
       }
     });
   }
@@ -165,6 +183,47 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
       error: () => {
         this.deploying.set(false);
         this.deployError.set(`Could not start deployment for ${projectName}.`);
+      },
+    });
+  }
+
+  protected rollbackRelease(projectRef: string, release: ProjectReleaseSnapshot) {
+    if (!release.rollbackAvailable || this.rollingBackReleaseId()) {
+      return;
+    }
+
+    const project = this.projectByRef(projectRef);
+    const projectName = project?.name ?? release.projectName;
+    const label = this.shortReleaseLabel(release);
+    if (!window.confirm(`Rollback ${projectName} to ${label}?`)) {
+      return;
+    }
+
+    this.rollingBackReleaseId.set(release.id);
+    this.deployMessage.set(`Starting rollback for ${projectName} to ${label}...`);
+    this.deployError.set('');
+    this.releaseError.set('');
+    this.selectedLogView.set('deployment');
+
+    this.api.rollbackRelease(project?.id ?? projectRef, release.id).subscribe({
+      next: () => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.rollingBackReleaseId.set('');
+        this.deployMessage.set(`Rollback started for ${projectName}.`);
+        this.store.loadProjects();
+        this.loadLatestDeployment(project?.id ?? projectRef, projectName);
+      },
+      error: (error) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.rollingBackReleaseId.set('');
+        this.deployMessage.set('');
+        this.deployError.set(error?.error?.error || `Could not start rollback for ${projectName}.`);
       },
     });
   }
@@ -204,6 +263,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.loadRuntimeStatus(project?.id ?? projectRef);
     this.loadRuntimeOperations(project?.id ?? projectRef);
     this.loadLatestWebhook(project?.id ?? projectRef);
+    this.loadReleases(project?.id ?? projectRef);
   }
 
   protected openDelete(project: ProjectSummary) {
@@ -593,6 +653,29 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     return ansiLogToHtml(value || fallback);
   }
 
+  protected shortSha(value?: string) {
+    return value ? value.slice(0, 8) : 'unknown';
+  }
+
+  protected shortReleaseLabel(release: ProjectReleaseSnapshot) {
+    const sha = release.gitSha ? ` @ ${this.shortSha(release.gitSha)}` : '';
+    return `${this.formatDate(release.createdAt)}${sha}`;
+  }
+
+  protected releaseImageLabel(release: ProjectReleaseSnapshot) {
+    if (!release.images.length) {
+      return 'No image metadata';
+    }
+
+    const first = release.images[0];
+    const rest = release.images.length > 1 ? ` +${release.images.length - 1}` : '';
+    return `${first.service}: ${first.image}${rest}`;
+  }
+
+  protected releaseStatusLabel(release: ProjectReleaseSnapshot) {
+    return release.rollbackAvailable ? 'Image snapshot' : 'Stored only';
+  }
+
   private loadLatestDeployment(projectRef: string, projectName = projectRef) {
     this.loadingDeployment.set(true);
 
@@ -693,6 +776,31 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     });
   }
 
+  protected loadReleases(projectRef: string) {
+    this.loadingReleases.set(true);
+    this.releaseError.set('');
+
+    this.api.listReleases(projectRef).subscribe({
+      next: (releases) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.releaseSnapshots.set(releases);
+        this.loadingReleases.set(false);
+      },
+      error: (error) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.releaseSnapshots.set([]);
+        this.loadingReleases.set(false);
+        this.releaseError.set(error?.error?.error || 'Could not load release snapshots.');
+      },
+    });
+  }
+
   private connectDeploymentStream(projectRef: string) {
     this.disconnectDeploymentStream();
     this.loadingDeployment.set(true);
@@ -711,6 +819,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         if (deployment?.status !== 'running') {
           this.store.loadProjects();
           this.loadRuntimeStatus(projectRef);
+          this.loadReleases(projectRef);
         }
       },
       error: () => {
@@ -831,9 +940,11 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeLogs.set(null);
     this.runtimeOperations.set([]);
     this.latestWebhook.set(null);
+    this.releaseSnapshots.set([]);
     this.runtimeStatusError.set('');
     this.runtimeLogsError.set('');
     this.runtimeOperationsError.set('');
+    this.releaseError.set('');
     this.runtimeActionMessage.set('');
     this.runtimeActionError.set('');
     this.runtimeActionKey.set('');
@@ -851,6 +962,8 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.loadingRuntimeOperations.set(false);
     this.loadingWebhook.set(false);
     this.cancelingDeployment.set(false);
+    this.rollingBackReleaseId.set('');
+    this.loadingReleases.set(false);
 
     const cachedStatus = this.store.runtimeStatusFor(projectRef);
     if (cachedStatus) {

@@ -13,7 +13,7 @@ export interface TraefikSettings {
 }
 
 export type DeploymentStatus = 'running' | 'succeeded' | 'failed';
-export type DeploymentTrigger = 'webhook' | 'ci' | 'manual';
+export type DeploymentTrigger = 'webhook' | 'ci' | 'manual' | 'rollback';
 export type DeploymentPhase = 'queued' | 'dispatching' | 'running' | 'reconnecting' | 'reconciling' | 'cleanup' | 'succeeded' | 'failed' | 'canceled';
 export type DeploymentStrategy = 'compose' | 'swarm';
 
@@ -32,6 +32,29 @@ export interface DeploymentRecord {
   error?: string;
   log: string;
   targets?: DeploymentRecord[];
+}
+
+export interface ReleaseSnapshotImage {
+  service: string;
+  image: string;
+}
+
+export interface ProjectReleaseSnapshot {
+  id: string;
+  projectId?: string;
+  projectName: string;
+  deploymentId: string;
+  runId?: string;
+  serverId: string;
+  composeProjectName: string;
+  projectPath: string;
+  deploymentStrategy: DeploymentStrategy;
+  gitSha?: string;
+  images: ReleaseSnapshotImage[];
+  buildServices: string[];
+  createdAt: string;
+  rollbackAvailable: boolean;
+  rollbackUnavailableReason?: string;
 }
 
 export interface ProjectSummary {

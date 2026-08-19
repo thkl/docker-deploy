@@ -482,6 +482,37 @@
   background: color-mix(in srgb, var(--danger), transparent 95%);
 }
 
+.release-list {
+  display: grid;
+}
+
+.release-row {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: auto minmax(220px, 1fr) minmax(92px, auto) minmax(72px, auto) minmax(70px, auto) auto;
+  padding: 0.72rem 0.9rem;
+}
+
+.release-row.unavailable {
+  background: color-mix(in srgb, var(--warning), transparent 96%);
+}
+
+.release-row > span:not(.status-chip),
+.release-row small {
+  color: var(--muted);
+}
+
+.release-main {
+  min-width: 0;
+}
+
+.release-main strong,
+.release-main small {
+  overflow-wrap: anywhere;
+}
+
 .operation-row > span:not(.status-chip),
 .operation-row small {
   color: var(--muted);
@@ -617,6 +648,11 @@
   }
 
   .operation-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .release-row {
     align-items: stretch;
     grid-template-columns: 1fr;
   }

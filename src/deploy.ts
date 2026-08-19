@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CheckoutBindMountInspection, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
+import { CapturedReleaseSnapshot, CheckoutBindMountInspection, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -30,6 +30,9 @@ export interface RuntimeLogHooks {
 export interface RuntimeLogStream {
     stop(): void;
 }
+
+const snapshotBeginMarker = "__DEPLOY_RELEASE_SNAPSHOT_BEGIN__";
+const snapshotEndMarker = "__DEPLOY_RELEASE_SNAPSHOT_END__";
 
 export async function inspectDockerTopology(): Promise<DockerTopology> {
     const checkedAt = new Date().toISOString();
@@ -471,6 +474,217 @@ DEPLOY_SWARM_VALIDATE_JS
     };
 }
 
+/**
+ * Reads the persisted effective deployment file from the target host after a
+ * successful deploy. This is intentionally captured through the agent/worker
+ * boundary because project paths belong to the target server.
+ */
+export async function captureProjectReleaseSnapshot(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<CapturedReleaseSnapshot> {
+    const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
+    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const deploymentStrategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
+    const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${shellQuote(`${hostAppsPath}:${hostAppsPath}`)} \
+            node:24.16.0-alpine sh << 'EOF'
+                apk add --no-cache docker-cli docker-cli-compose git > /dev/null 2>&1
+                PROJECT_ROOT=${shellQuote(hostAppsPath)}
+                PROJECT_ROOT="\${PROJECT_ROOT%/}"
+                PROJECT_NAME=${shellQuote(composeProjectName)}
+                DEPLOYMENT_STRATEGY=${shellQuote(deploymentStrategy)}
+                DEPLOY_FILE="$PROJECT_ROOT/.updater/compose/docker-compose.deploy.yml"
+                RELEASE_DEPLOY="$PROJECT_ROOT/.updater/release"
+
+                if [ ! -f "$DEPLOY_FILE" ]; then
+                    echo "--> CRITICAL: No persisted deployment Compose file exists at $DEPLOY_FILE." >&2
+                    exit 1
+                fi
+
+                docker compose -p "$PROJECT_NAME" -f "$DEPLOY_FILE" config --format json > /tmp/deploy-release-compose.json
+                if [ $? -ne 0 ]; then
+                    echo "--> CRITICAL: Could not inspect persisted deployment Compose file." >&2
+                    exit 1
+                fi
+
+                GIT_SHA=""
+                if [ -d "$RELEASE_DEPLOY/.git" ]; then
+                    GIT_SHA="$(git -C "$RELEASE_DEPLOY" rev-parse HEAD 2>/dev/null || true)"
+                elif [ -d "$PROJECT_ROOT/.git" ]; then
+                    GIT_SHA="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)"
+                fi
+
+                echo "${snapshotBeginMarker}"
+                node - "$DEPLOY_FILE" /tmp/deploy-release-compose.json "$PROJECT_NAME" "$PROJECT_ROOT" "$DEPLOYMENT_STRATEGY" "$GIT_SHA" << 'DEPLOY_RELEASE_SNAPSHOT_JS'
+const fs = require("node:fs");
+const deployFile = process.argv[2];
+const composeJsonFile = process.argv[3];
+const composeProjectName = process.argv[4];
+const projectPath = process.argv[5];
+const deploymentStrategy = process.argv[6] === "swarm" ? "swarm" : "compose";
+const gitSha = process.argv[7] || "";
+const composeYaml = fs.readFileSync(deployFile, "utf8");
+const compose = JSON.parse(fs.readFileSync(composeJsonFile, "utf8") || "{}");
+const services = compose && typeof compose === "object" && compose.services && typeof compose.services === "object" ? compose.services : {};
+const images = [];
+const buildServices = [];
+for (const [serviceName, service] of Object.entries(services)) {
+  if (!service || typeof service !== "object") {
+    continue;
+  }
+  if (service.image) {
+    images.push({ service: serviceName, image: String(service.image) });
+  }
+  if (service.build != null) {
+    buildServices.push(serviceName);
+  }
+}
+process.stdout.write(JSON.stringify({
+  serverId: "",
+  composeProjectName,
+  projectPath,
+  deploymentStrategy,
+  composeYaml,
+  gitSha,
+  images,
+  buildServices
+}, null, 2) + "\\n");
+DEPLOY_RELEASE_SNAPSHOT_JS
+                echo "${snapshotEndMarker}"
+EOF`;
+
+    const { stdout } = await execAsync(dockerRunCommand, { maxBuffer: 16 * 1024 * 1024 });
+    const parsed = parseMarkedJson(stdout, snapshotBeginMarker, snapshotEndMarker) as CapturedReleaseSnapshot;
+    if (!parsed.composeYaml?.trim()) {
+        throw new Error("Release snapshot did not contain Compose YAML.");
+    }
+
+    return {
+        ...parsed,
+        serverId: appSettings.serverId ?? "local",
+        gitSha: parsed.gitSha?.trim() || undefined,
+        images: Array.isArray(parsed.images) ? parsed.images : [],
+        buildServices: Array.isArray(parsed.buildServices) ? parsed.buildServices : []
+    };
+}
+
+/**
+ * Redeploys one previously captured image-based release snapshot.
+ */
+export function dispatchReleaseRollbackWorker(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}): RuntimeLogStream {
+    const hostAppsPath = release.projectPath;
+    const composeProjectName = release.composeProjectName;
+    const deploymentStrategy = release.deploymentStrategy === "swarm" ? "swarm" : "compose";
+    const registryAddress = globalSettings.registryAddress.trim();
+    const registryUsername = globalSettings.registryUsername.trim();
+    const registryPassword = globalSettings.registryPassword?.trim() ?? "";
+    const composeDelimiter = uniqueHereDocDelimiter("DEPLOY_ROLLBACK_COMPOSE_EOF", release.composeYaml);
+
+    const workerScript = `
+                apk add --no-cache docker-cli docker-cli-compose > /dev/null 2>&1
+
+                PROJECT_ROOT=${shellQuote(hostAppsPath)}
+                PROJECT_ROOT="\${PROJECT_ROOT%/}"
+                PROJECT_NAME=${shellQuote(composeProjectName)}
+                DEPLOYMENT_STRATEGY=${shellQuote(deploymentStrategy)}
+                REGISTRY_ADDRESS=${shellQuote(registryAddress)}
+                REGISTRY_USERNAME=${shellQuote(registryUsername)}
+                REGISTRY_PASSWORD=${shellQuote(registryPassword)}
+                ROLLBACK_WORKSPACE="$PROJECT_ROOT/.updater/rollback"
+                COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
+                ROLLBACK_FILE="$ROLLBACK_WORKSPACE/${release.id}.yml"
+                PERSISTED_FILE="$COMPOSE_WORKSPACE/docker-compose.deploy.yml"
+                mkdir -p "$ROLLBACK_WORKSPACE" "$COMPOSE_WORKSPACE"
+
+                cat > "$ROLLBACK_FILE" << '${composeDelimiter}'
+${release.composeYaml}
+${composeDelimiter}
+
+                if [ -n "$REGISTRY_USERNAME" ]; then
+                    if [ -z "$REGISTRY_PASSWORD" ]; then
+                        echo "--> CRITICAL: Registry username is configured, but the registry password is empty."
+                        exit 1
+                    fi
+                    if [ -n "$REGISTRY_ADDRESS" ]; then
+                        echo "--> Logging in to Docker registry $REGISTRY_ADDRESS..."
+                        printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_ADDRESS" --username "$REGISTRY_USERNAME" --password-stdin >/dev/null
+                    fi
+                fi
+
+                echo "--> Redeploying release snapshot ${release.id}..."
+                if [ "$DEPLOYMENT_STRATEGY" = "swarm" ]; then
+                    if [ "$(docker info --format '{{.Swarm.ControlAvailable}}' 2>/dev/null || echo false)" != "true" ]; then
+                        echo "--> CRITICAL: Swarm rollback must run on a Docker Swarm manager agent."
+                        exit 1
+                    fi
+                    if [ -n "$REGISTRY_USERNAME" ]; then
+                        docker stack deploy --with-registry-auth -c "$ROLLBACK_FILE" "$PROJECT_NAME"
+                    else
+                        docker stack deploy -c "$ROLLBACK_FILE" "$PROJECT_NAME"
+                    fi
+                    if [ $? -ne 0 ]; then
+                        echo "--> CRITICAL: Swarm rollback deploy failed."
+                        exit 1
+                    fi
+                else
+                    echo "--> Pulling release images when available..."
+                    docker compose -p "$PROJECT_NAME" -f "$ROLLBACK_FILE" pull || echo "--> Image pull failed or was partially unavailable; continuing with local image cache."
+                    echo "--> Recreating services from release snapshot..."
+                    docker compose -p "$PROJECT_NAME" -f "$ROLLBACK_FILE" up -d --no-build --remove-orphans
+                    if [ $? -ne 0 ]; then
+                        echo "--> CRITICAL: Compose rollback failed."
+                        exit 1
+                    fi
+                fi
+
+                cp "$ROLLBACK_FILE" "$PERSISTED_FILE"
+                echo "--> Rollback deployment successful."`;
+
+    const worker = spawn("docker", [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock",
+        "-v",
+        `${hostAppsPath}:${hostAppsPath}`,
+        "node:24.16.0-alpine",
+        "sh"
+    ], { stdio: ["pipe", "pipe", "pipe"] });
+    let failed = false;
+
+    worker.on("error", (error) => {
+        failed = true;
+        hooks.onFailure?.(error);
+    });
+
+    worker.on("close", (code, signal) => {
+        if (failed) {
+            return;
+        }
+        if (code === 0) {
+            hooks.onSuccess?.();
+            return;
+        }
+
+        const error = new Error(signal ? `Rollback worker stopped by ${signal}.` : `Rollback worker exited with code ${code ?? "unknown"}.`) as Error & { code?: number | string };
+        error.code = code ?? signal ?? "unknown";
+        hooks.onFailure?.(error);
+    });
+
+    worker.stdout?.on("data", (chunk: Buffer | string) => hooks.onOutput?.("stdout", redactDeploymentOutput(String(chunk), [], globalSettings)));
+    worker.stderr?.on("data", (chunk: Buffer | string) => hooks.onOutput?.("stderr", redactDeploymentOutput(String(chunk), [], globalSettings)));
+    worker.stdin?.end(workerScript);
+
+    return {
+        stop() {
+            if (!worker.killed) {
+                worker.kill("SIGTERM");
+                windowedKill(worker);
+            }
+        }
+    };
+}
+
 function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | undefined) {
     const validSecrets = (secrets ?? [])
         .map((secret) => ({
@@ -628,6 +842,24 @@ function yamlKey(value: string) {
 function yamlScalar(value: string) {
     const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     return `"${escaped}"`;
+}
+
+function parseMarkedJson(output: string, beginMarker: string, endMarker: string) {
+    const begin = output.indexOf(beginMarker);
+    const end = begin >= 0 ? output.indexOf(endMarker, begin + beginMarker.length) : -1;
+    if (begin < 0 || end < 0 || end <= begin) {
+        throw new Error("Release snapshot output did not contain marked JSON.");
+    }
+    return JSON.parse(output.slice(begin + beginMarker.length, end).trim());
+}
+
+function uniqueHereDocDelimiter(base: string, value: string) {
+    let delimiter = base;
+    let index = 1;
+    while (value.includes(delimiter)) {
+        delimiter = `${base}_${index++}`;
+    }
+    return delimiter;
 }
 
 function redactProjectSecrets(error: Error & { code?: number | string }, secrets: ProjectEnvironmentSecret[] | undefined, globalSettings?: GlobalSettings) {

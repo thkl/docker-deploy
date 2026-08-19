@@ -20,9 +20,10 @@ import { parseProjectComposeImport, renderProjectComposeExport } from "./project
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
+import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
-import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectSettings, RuntimeServiceAction, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload } from "./types.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject, webhookProjectCandidates } from "./webhookResolver.js";
 import { WebhookStore } from "./webhookStore.js";
@@ -36,6 +37,7 @@ export interface RouteDependencies {
     configStore: ConfigStore;
     deploymentService: DeploymentService;
     deploymentStore: DeploymentStore;
+    releaseStore: ReleaseStore;
     webhookStore: WebhookStore;
     runtimeOperationStore: RuntimeOperationStore;
     globalSettingsStore: GlobalSettingsStore;
@@ -51,7 +53,7 @@ export interface RouteDependencies {
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, database, configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
+    const { adminAuth, database, configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -77,7 +79,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
 
     registerSettingsRoutes(app, { database, globalSettingsStore, eventBus });
     registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus });
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus });
     registerWebhookRoute(app, { configStore, deploymentService, webhookStore });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
@@ -624,8 +626,8 @@ async function readResponseError(response: globalThis.Response) {
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "runtimeStatusStreams" | "eventBus">) {
-    const { configStore, deploymentService, deploymentStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "releaseStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "runtimeStatusStreams" | "eventBus">) {
+    const { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus } = dependencies;
 
     app.get("/api/projects", async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -909,6 +911,68 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             res.json(deploymentService.cancelDeployment(projectName, appSettings));
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not cancel deployment." });
+        }
+    });
+
+    app.get("/api/projects/:name/releases", (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+
+            if (!project) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            res.json(releaseStore.list(project.settings.id ?? project.name).map(stripReleaseSnapshot));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not load release snapshots." });
+        }
+    });
+
+    app.get("/api/projects/:name/releases/:releaseId", (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const releaseId = String(req.params.releaseId || "");
+            const project = configStore.resolveProject(projectRef);
+
+            if (!project) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            const release = releaseStore.get(project.settings.id ?? project.name, releaseId);
+            if (!release) {
+                res.status(404).json({ error: "Release snapshot does not exist." });
+                return;
+            }
+
+            res.json(stripReleaseSnapshot(release));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not load release snapshot." });
+        }
+    });
+
+    app.post("/api/projects/:name/releases/:releaseId/rollback", (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const releaseId = String(req.params.releaseId || "");
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            const deployment = deploymentService.rollbackRelease(projectName, appSettings, releaseId);
+            res.status(200).json({ status: "Rollback worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not start rollback." });
         }
     });
 
@@ -1419,6 +1483,12 @@ function stripInternalDeploymentFields<T extends { agentJobId?: string; agentStr
         agentStreamToken: undefined,
         ...(deployment.targets ? { targets: deployment.targets.map((target) => stripInternalDeploymentFields(target)) } : {})
     };
+}
+
+function stripReleaseSnapshot(snapshot: ProjectReleaseSnapshot) {
+    const { composeYaml, ...publicSnapshot } = snapshot;
+    void composeYaml;
+    return publicSnapshot;
 }
 
 function targetServerIds(settings: ProjectSettings) {

@@ -797,7 +797,25 @@ export class ProjectSettingsPage implements OnInit {
       return;
     }
 
-    this.browseHostPath(serviceId, index, normalizeHostBrowseStart(source));
+    this.browseHostPath(serviceId, index, this.hostBrowseStartPath(source));
+  }
+
+  private hostBrowseStartPath(source: string) {
+    return normalizeHostBrowseStart(source, this.projectRootPath());
+  }
+
+  private projectRootPath() {
+    const configuredPath = this.form.controls.path.value.trim();
+    if (configuredPath) {
+      return configuredPath;
+    }
+
+    const projectName = this.form.controls.name.value.trim() || this.currentName().trim();
+    if (!projectName) {
+      return this.globalDefaults().dataRoot;
+    }
+
+    return `${this.globalDefaults().dataRoot.replace(/\/+$/, '')}/${projectName}`;
   }
 
   protected closeHostPathBrowser() {
@@ -2171,12 +2189,38 @@ function volumeMountSource(mount: string) {
   return parseVolumeMountSourceTarget(mount).source;
 }
 
-function normalizeHostBrowseStart(source: string) {
+function normalizeHostBrowseStart(source: string, projectRoot: string) {
   const trimmed = source.trim();
-  if (!trimmed || !trimmed.startsWith('/')) {
-    return '/';
+  if (!trimmed) {
+    return normalizeAbsolutePath(projectRoot);
   }
-  return trimmed.replace(/\/+$/, '') || '/';
+
+  if (trimmed.startsWith('/')) {
+    return normalizeAbsolutePath(trimmed);
+  }
+
+  return normalizeAbsolutePath(joinAbsolutePath(projectRoot, trimmed));
+}
+
+function normalizeAbsolutePath(path: string) {
+  const normalized = path.trim().replace(/\/+$/, '') || '/';
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
+}
+
+function joinAbsolutePath(root: string, relativePath: string) {
+  const parts: string[] = [];
+  const rootPath = normalizeAbsolutePath(root);
+  for (const part of `${rootPath}/${relativePath}`.split('/')) {
+    if (!part || part === '.') {
+      continue;
+    }
+    if (part === '..') {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return `/${parts.join('/')}`;
 }
 
 function parseVolumeMountEntries(value: string, namedVolumes: string[]): ComposeVolumeMountEntry[] {

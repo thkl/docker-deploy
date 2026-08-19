@@ -16,6 +16,7 @@ import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ensureControllerKeys } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
 import { registerRoutes } from "./routes.js";
+import { ReleaseStore } from "./releaseStore.js";
 import { RuntimeLogStreamHub } from "./runtimeLogStreams.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
@@ -38,6 +39,7 @@ class App {
     private readonly adminAuth = new AdminAuth();
     private readonly configStore = new ConfigStore(this.database.connection);
     private readonly deploymentStore = new DeploymentStore(this.database.connection);
+    private readonly releaseStore = new ReleaseStore(this.database.connection);
     private readonly webhookStore = new WebhookStore(this.database.connection);
     private readonly runtimeOperationStore = new RuntimeOperationStore(this.database.connection);
     private readonly globalSettingsStore = new GlobalSettingsStore(this.database.connection);
@@ -79,6 +81,7 @@ class App {
     );
     private readonly deploymentService = new DeploymentService(
         this.deploymentStore,
+        this.releaseStore,
         this.globalSettingsStore,
         this.agentManager,
         (projectName) => this.deploymentStreams.broadcast(projectName),
@@ -117,6 +120,7 @@ class App {
             configStore: this.configStore,
             deploymentService: this.deploymentService,
             deploymentStore: this.deploymentStore,
+            releaseStore: this.releaseStore,
             webhookStore: this.webhookStore,
             runtimeOperationStore: this.runtimeOperationStore,
             globalSettingsStore: this.globalSettingsStore,

@@ -32,9 +32,14 @@
 
   <section class="command-bar">
     <div class="command-group primary-actions">
-      <button type="button" (click)="deploy(project.id)" [disabled]="deploying()">
+      <button type="button" (click)="deploy(project.id)" [disabled]="deploying() || rollingBackReleaseId() !== ''">
         {{ deploying() ? 'Starting...' : 'Deploy now' }}
       </button>
+      @if (rollbackCandidate(); as release) {
+        <button type="button" class="secondary" (click)="rollbackRelease(project.id, release)" [disabled]="deploying() || rollingBackReleaseId() !== '' || latestDeployment()?.status === 'running'">
+          {{ rollingBackReleaseId() === release.id ? 'Rolling back...' : 'Rollback' }}
+        </button>
+      }
       @if (latestDeployment()?.status === 'running') {
         <button type="button" class="danger-action" (click)="cancelDeployment(project.id)" [disabled]="cancelingDeployment()">
           {{ cancelingDeployment() ? 'Canceling...' : 'Cancel deploy' }}
@@ -262,6 +267,51 @@
   }
 
   @if (projectSection() === 'deployments') {
+    <section class="deploy-panel release-panel">
+      <div class="deploy-head">
+        <div>
+          <h2>Release snapshots</h2>
+          <p>Successful deploy artifacts that can be redeployed as rollback targets.</p>
+        </div>
+        <button type="button" class="secondary" (click)="loadReleases(project.id)" [disabled]="loadingReleases()">
+          {{ loadingReleases() ? 'Refreshing...' : 'Refresh releases' }}
+        </button>
+      </div>
+
+      @if (releaseError()) {
+        <p class="notice error inline-notice">{{ releaseError() }}</p>
+      }
+
+      @if (loadingReleases()) {
+        <div class="empty-log">Loading release snapshots...</div>
+      } @else if (releaseSnapshots().length > 0) {
+        <div class="release-list">
+          @for (release of releaseSnapshots(); track release.id) {
+            <div class="release-row" [class.unavailable]="!release.rollbackAvailable">
+              <span class="status-chip" [class.running]="!release.rollbackAvailable">
+                {{ releaseStatusLabel(release) }}
+              </span>
+              <div class="service-item release-main">
+                <strong>{{ shortReleaseLabel(release) }}</strong>
+                <small>{{ releaseImageLabel(release) }}</small>
+                @if (release.rollbackUnavailableReason) {
+                  <small class="error-text">{{ release.rollbackUnavailableReason }}</small>
+                }
+              </div>
+              <span>{{ release.deploymentStrategy === 'swarm' ? 'Swarm stack' : 'Compose' }}</span>
+              <span>{{ release.serverId }}</span>
+              <span>{{ release.images.length }} image{{ release.images.length === 1 ? '' : 's' }}</span>
+              <button type="button" class="secondary compact" (click)="rollbackRelease(project.id, release)" [disabled]="!release.rollbackAvailable || rollingBackReleaseId() !== '' || deploying() || latestDeployment()?.status === 'running'" [attr.title]="release.rollbackUnavailableReason || 'Redeploy this release snapshot'">
+                {{ rollingBackReleaseId() === release.id ? 'Rolling back...' : 'Redeploy' }}
+              </button>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="empty-log">No release snapshots have been captured yet. The next successful deployment will create one.</div>
+      }
+    </section>
+
     <section class="deploy-panel">
       <div class="deploy-head">
         <div>

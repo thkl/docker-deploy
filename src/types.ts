@@ -83,6 +83,41 @@ export interface ProjectRegistrySettings {
     imageTag?: string;
 }
 
+export interface ReleaseSnapshotImage {
+    service: string;
+    image: string;
+}
+
+export interface ProjectReleaseSnapshot {
+    id: string;
+    projectId?: string;
+    projectName: string;
+    deploymentId: string;
+    runId?: string;
+    serverId: string;
+    composeProjectName: string;
+    projectPath: string;
+    deploymentStrategy: DeploymentStrategy;
+    composeYaml: string;
+    gitSha?: string;
+    images: ReleaseSnapshotImage[];
+    buildServices: string[];
+    createdAt: string;
+    rollbackAvailable: boolean;
+    rollbackUnavailableReason?: string;
+}
+
+export interface CapturedReleaseSnapshot {
+    serverId: string;
+    composeProjectName: string;
+    projectPath: string;
+    deploymentStrategy: DeploymentStrategy;
+    composeYaml: string;
+    gitSha?: string;
+    images: ReleaseSnapshotImage[];
+    buildServices: string[];
+}
+
 export interface TraefikDefaultsPayload {
     network?: string;
     entryPoints?: string;
