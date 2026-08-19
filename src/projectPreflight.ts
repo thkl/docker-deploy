@@ -1,5 +1,5 @@
 import { AgentManager } from "./agentManager.js";
-import { ComposeInspection, ComposeValidation, DockerTopology, GlobalSettings, ProjectPreflightCheck, ProjectPreflightResult, ProjectPreflightStatus, ProjectPreflightTarget, ProjectSettings, TraefikDiagnostics } from "./types.js";
+import { ComposeInspection, ComposeValidation, DockerTopology, GlobalSettings, ProjectPreflightCheck, ProjectPreflightResult, ProjectPreflightStatus, ProjectPreflightTarget, ProjectSettings, ServerCapabilities } from "./types.js";
 
 /**
  * Runs non-mutating deployment readiness checks against the same target agent
@@ -78,10 +78,10 @@ async function runTargetPreflight(projectName: string, appSettings: ProjectSetti
 
     if (appSettings.traefik?.enabled) {
         try {
-            const diagnostics = await agent.diagnoseTraefik(projectName, appSettings, globalSettings);
-            checks.push(...traefikChecks(serverId, diagnostics));
+            const traefik = await agent.detectTraefik(globalSettings);
+            checks.push(...traefikPreflightChecks(serverId, projectName, appSettings, globalSettings, inspection, traefik));
         } catch (error) {
-            checks.push(fail("traefik.diagnostics", "Traefik", `Could not diagnose Traefik routing: ${readErrorMessage(error)}`, serverId));
+            checks.push(fail("traefik.detect", "Traefik", `Could not inspect Traefik readiness: ${readErrorMessage(error)}`, serverId));
         }
     } else {
         checks.push(pass("traefik.disabled", "Traefik", "Traefik is disabled for this project.", serverId));
@@ -183,28 +183,88 @@ function bindMountCheck(serverId: string, inspection: ComposeInspection): Projec
     );
 }
 
-function traefikChecks(serverId: string, diagnostics: TraefikDiagnostics): ProjectPreflightCheck[] {
-    if (diagnostics.error) {
-        return [fail("traefik.diagnostics", "Traefik", diagnostics.error, serverId)];
+function traefikPreflightChecks(
+    serverId: string,
+    projectName: string,
+    appSettings: ProjectSettings,
+    globalSettings: GlobalSettings,
+    inspection: ComposeInspection | null,
+    traefikInventory: ServerCapabilities["traefik"]
+): ProjectPreflightCheck[] {
+    const traefik = appSettings.traefik;
+    if (!traefik?.enabled) {
+        return [pass("traefik.disabled", "Traefik", "Traefik is disabled for this project.", serverId)];
     }
 
-    const summary: ProjectPreflightCheck = {
-        key: "traefik.summary",
-        label: "Traefik",
-        status: diagnostics.status,
-        detail: `Traefik diagnostics finished with ${diagnostics.status}.`,
-        target: serverId
-    };
-    return [
-        summary,
-        ...diagnostics.checks.map((check) => ({
-            key: `traefik.${check.key}`,
-            label: check.label,
-            status: check.status,
-            detail: check.detail,
-            target: serverId
-        }))
+    const serviceName = traefik.service || projectName;
+    const network = traefik.network || globalSettings.defaultTraefikNetwork || "proxy";
+    const strategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
+    const checks: ProjectPreflightCheck[] = [
+        traefikInventory.available
+            ? pass("traefik.available", "Traefik workload", `Traefik was detected on ${serverId}.`, serverId)
+            : warn("traefik.available", "Traefik workload", "No local Traefik workload was detected. This can be normal when Traefik runs on another Swarm node, but routing cannot be fully verified from this target.", serverId),
+        traefikProviderModeCheck(serverId, strategy, traefikInventory.providerMode),
+        traefikServiceCheck(serverId, serviceName, inspection),
+        pass("traefik.network-attachment", "Target network attachment", `Deploy will attach ${serviceName} to ${network} through the generated Traefik compose override.`, serverId)
     ];
+
+    const networkDetail = traefikInventory.networkDetails?.find((candidate) => candidate.name === network);
+    if (networkDetail) {
+        checks.push(pass("traefik.network", "Traefik network", `${network} exists (${[networkDetail.driver, networkDetail.scope].filter(Boolean).join(", ") || "driver unknown"}, attachable=${String(networkDetail.attachable ?? "unknown")}).`, serverId));
+        if (strategy === "compose" && networkDetail.driver === "overlay" && networkDetail.attachable === false) {
+            checks.push(fail("traefik.network.attachable", "Compose network attach", `${network} is a non-attachable overlay network. Compose containers cannot join it reliably; use Swarm stack deployment or recreate the overlay as attachable.`, serverId));
+        }
+    } else if (traefikInventory.networks?.includes(network) || (network === globalSettings.defaultTraefikNetwork && traefikInventory.networkPresent)) {
+        checks.push(pass("traefik.network", "Traefik network", `${network} was detected in the Traefik inventory.`, serverId));
+    } else {
+        checks.push(warn("traefik.network", "Traefik network", `${network} was not found in the Traefik inventory. Compose validation also reports missing external networks separately.`, serverId));
+    }
+
+    if (traefik.entryPoints && traefikInventory.entryPoints?.length && !csvIncludes(traefikInventory.entryPoints, traefik.entryPoints)) {
+        checks.push(warn("traefik.entrypoints", "Traefik entrypoints", `${traefik.entryPoints} is configured for this project, but detected entrypoints are ${traefikInventory.entryPoints.join(", ")}.`, serverId));
+    } else {
+        checks.push(pass("traefik.entrypoints", "Traefik entrypoints", traefik.entryPoints ? `${traefik.entryPoints} is configured.` : "Default entrypoints will be used.", serverId));
+    }
+
+    if (traefik.certResolver && traefikInventory.certResolvers?.length && !traefikInventory.certResolvers.includes(traefik.certResolver)) {
+        checks.push(warn("traefik.certresolver", "Traefik cert resolver", `${traefik.certResolver} is configured for this project, but detected resolvers are ${traefikInventory.certResolvers.join(", ")}.`, serverId));
+    } else {
+        checks.push(pass("traefik.certresolver", "Traefik cert resolver", traefik.certResolver ? `${traefik.certResolver} is configured.` : "Default cert resolver will be used.", serverId));
+    }
+
+    return checks;
+}
+
+function traefikProviderModeCheck(serverId: string, strategy: "compose" | "swarm", providerMode: ServerCapabilities["traefik"]["providerMode"]): ProjectPreflightCheck {
+    if (!providerMode || providerMode === "unknown") {
+        return warn("traefik.provider", "Traefik provider", "Traefik provider mode could not be detected.", serverId);
+    }
+    if (providerMode === "mixed") {
+        return pass("traefik.provider", "Traefik provider", "Traefik has Docker and Swarm provider signals.", serverId);
+    }
+    if (strategy === "swarm" && providerMode === "docker") {
+        return fail("traefik.provider", "Traefik provider", "Swarm stack labels require Traefik's Swarm provider, but only Docker provider signals were detected.", serverId);
+    }
+    if (strategy === "compose" && providerMode === "swarm") {
+        return fail("traefik.provider", "Traefik provider", "Compose container labels require Traefik's Docker provider, but only Swarm provider signals were detected.", serverId);
+    }
+    return pass("traefik.provider", "Traefik provider", `Traefik provider mode ${providerMode} matches ${strategy} deployment.`, serverId);
+}
+
+function traefikServiceCheck(serverId: string, serviceName: string, inspection: ComposeInspection | null): ProjectPreflightCheck {
+    if (!inspection) {
+        return warn("traefik.service", "Target service", "Service existence could not be verified because compose inspection did not finish.", serverId);
+    }
+
+    const service = inspection.services.find((candidate) => candidate.name === serviceName);
+    return service
+        ? pass("traefik.service", "Target service", `${serviceName} exists in the Compose model.`, serverId)
+        : fail("traefik.service", "Target service", `${serviceName} is not defined in the Compose model. Set the Traefik service to one of: ${inspection.services.map((candidate) => candidate.name).join(", ") || "none"}.`, serverId);
+}
+
+function csvIncludes(values: string[], csvValue: string) {
+    const requested = csvValue.split(",").map((value) => value.trim()).filter(Boolean);
+    return requested.every((value) => values.includes(value));
 }
 
 function registryEnabled(appSettings: ProjectSettings) {
