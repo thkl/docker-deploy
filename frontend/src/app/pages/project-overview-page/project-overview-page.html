@@ -145,7 +145,15 @@
               <strong>{{ check.label }}</strong>
               <small>{{ check.target || 'project' }}</small>
             </div>
-            <span>{{ check.detail }}</span>
+            <div class="preflight-detail">
+              <span>{{ check.detail }}</span>
+              @if (check.description) {
+                <small>{{ check.description }}</small>
+              }
+              @if (check.recommendation) {
+                <small><strong>Next:</strong> {{ check.recommendation }}</small>
+              }
+            </div>
           </div>
         }
       </div>

@@ -125,6 +125,8 @@ export interface ProjectPreflightCheck {
     label: string;
     status: ProjectPreflightStatus;
     detail: string;
+    description?: string;
+    recommendation?: string;
     target?: string;
 }
 

@@ -407,6 +407,24 @@
   overflow-wrap: anywhere;
 }
 
+.preflight-detail {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.preflight-detail span {
+  color: var(--ink);
+}
+
+.preflight-detail small {
+  line-height: 1.45;
+}
+
+.preflight-detail strong {
+  color: var(--ink);
+}
+
 .compose-grid {
   display: grid;
   gap: 0.65rem;

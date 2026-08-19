@@ -1,6 +1,6 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
-import { ProjectSummary, RuntimeStatus, ServerRecord } from '../models/project';
+import { ProjectPreflightResult, ProjectSummary, RuntimeStatus, ServerRecord } from '../models/project';
 import { readMigratedLocalStorageKey, removeLocalStorageKeys } from '../services/browser-storage';
 import { ControllerEvent, EventBusService } from '../services/event-bus';
 import { ProjectApi } from '../services/project-api';
@@ -18,6 +18,7 @@ export class ProjectStore {
   readonly projects = signal<ProjectSummary[]>([]);
   readonly servers = signal<ServerRecord[]>([]);
   readonly runtimeStatuses = signal<Record<string, RuntimeStatus>>({});
+  readonly preflightResults = signal<Record<string, ProjectPreflightResult>>({});
   readonly runtimeStatusLoading = signal<Record<string, boolean>>({});
   readonly loading = signal(false);
   readonly error = signal('');
@@ -117,6 +118,16 @@ export class ProjectStore {
   setRuntimeStatus(projectRef: string, status: RuntimeStatus) {
     const project = this.projects().find((candidate) => candidate.id === projectRef || candidate.name === projectRef);
     this.runtimeStatuses.update((statuses) => ({ ...statuses, [project?.id ?? projectRef]: status }));
+  }
+
+  preflightFor(projectRef: string) {
+    const project = this.projects().find((candidate) => candidate.id === projectRef || candidate.name === projectRef);
+    return this.preflightResults()[project?.id ?? projectRef] ?? null;
+  }
+
+  setPreflight(projectRef: string, result: ProjectPreflightResult) {
+    const project = this.projects().find((candidate) => candidate.id === projectRef || candidate.name === projectRef);
+    this.preflightResults.update((results) => ({ ...results, [project?.id ?? result.projectId ?? projectRef]: result }));
   }
 
   private loadRuntimeStatuses(projects: ProjectSummary[]) {

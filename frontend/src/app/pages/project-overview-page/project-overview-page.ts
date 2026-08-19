@@ -209,6 +209,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         }
 
         this.preflightResult.set(result);
+        this.store.setPreflight(requestRef, result);
         this.runningPreflight.set(false);
         this.deployMessage.set(result.status === 'pass'
           ? `Preflight passed for ${projectName}.`
@@ -1013,7 +1014,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeOperations.set([]);
     this.latestWebhook.set(null);
     this.releaseSnapshots.set([]);
-    this.preflightResult.set(null);
+    this.preflightResult.set(this.store.preflightFor(projectRef));
     this.runtimeStatusError.set('');
     this.runtimeLogsError.set('');
     this.runtimeOperationsError.set('');
