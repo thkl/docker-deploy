@@ -1,8 +1,9 @@
 import { ChildProcess, exec, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CapturedReleaseSnapshot, CheckoutBindMountInspection, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
+import { CapturedReleaseSnapshot, CheckoutBindMountInspection, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -99,7 +100,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
-    const secretOverlayScript = renderSecretComposeOverlayScript(appSettings.envSecrets);
+    const secretOverlayScript = renderSecretComposeOverlayScript(appSettings.envSecrets, deploymentStrategy, composeProjectName);
     const projectRootEnvFileScript = renderProjectRootEnvFileScript();
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
@@ -377,6 +378,20 @@ DEPLOY_SWARM_VALIDATE_JS
                     fi
                     if [ $? -eq 0 ]; then
                         echo "--> Swarm stack deployment successful."
+                        if [ -f /tmp/deploy-current-secret-bases ] && [ -f /tmp/deploy-current-secret-names ]; then
+                            echo "--> Cleaning up old Docker secrets no longer referenced by this stack."
+                            sort -u /tmp/deploy-current-secret-bases | while IFS= read -r SECRET_BASE; do
+                                if [ -z "$SECRET_BASE" ]; then
+                                    continue
+                                fi
+                                docker secret ls -q --filter "label=deploy.project=$PROJECT_NAME" --filter "label=deploy.secret-base=$SECRET_BASE" | while IFS= read -r SECRET_ID; do
+                                    SECRET_NAME="$(docker secret inspect --format '{{.Spec.Name}}' "$SECRET_ID" 2>/dev/null || true)"
+                                    if [ -n "$SECRET_NAME" ] && ! grep -Fx "$SECRET_NAME" /tmp/deploy-current-secret-names >/dev/null 2>&1; then
+                                        docker secret rm "$SECRET_NAME" >/dev/null 2>&1 || true
+                                    fi
+                                done
+                            done
+                        fi
                     else
                         echo "--> CRITICAL: Swarm stack deploy failed."
                         exit 1
@@ -755,7 +770,7 @@ EOF`;
     }
 }
 
-function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | undefined) {
+function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | undefined, deploymentStrategy: DeploymentStrategy, projectName: string) {
     const validSecrets = (secrets ?? [])
         .map((secret) => ({
             service: secret.service.trim(),
@@ -769,34 +784,56 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
         return "";
     }
 
+    const useSwarmSecrets = deploymentStrategy === "swarm";
     const secretDir = "$COMPOSE_WORKSPACE/secrets";
+    const dockerSecrets = validSecrets.filter((secret) => secret.mode === "docker_secret");
+    const fileBackedDockerSecrets = useSwarmSecrets ? [] : dockerSecrets;
     const lines = [
         "",
         "                echo \"--> Preparing sensitive environment values.\"",
-        `                mkdir -p "${secretDir}"`,
-        "                chmod 700 \"$COMPOSE_WORKSPACE/secrets\"",
-        "                cat > \"$COMPOSE_WORKSPACE/docker-compose.secrets.yml\" << 'DEPLOY_SECRETS_EOF'",
-        "services:"
     ];
+
+    if (fileBackedDockerSecrets.length) {
+        lines.push(`                mkdir -p "${secretDir}"`);
+        lines.push("                chmod 700 \"$COMPOSE_WORKSPACE/secrets\"");
+    }
+
+    if (useSwarmSecrets && dockerSecrets.length) {
+        lines.push("                if [ \"$(docker info --format '{{.Swarm.ControlAvailable}}' 2>/dev/null || echo false)\" != \"true\" ]; then");
+        lines.push("                    echo \"--> CRITICAL: Docker secrets require deployment through a Swarm manager agent.\"");
+        lines.push("                    exit 1");
+        lines.push("                fi");
+        lines.push("                echo \"--> Ensuring Docker Swarm secrets exist.\"");
+        for (const secret of dockerSecrets) {
+            lines.push(...renderDockerSecretCreateLines(projectName, secret));
+        }
+    }
+
+    lines.push("                cat > \"$COMPOSE_WORKSPACE/docker-compose.secrets.yml\" << 'DEPLOY_SECRETS_EOF'");
+    lines.push("services:");
     const services = [...new Set(validSecrets.map((secret) => secret.service))];
-    const dockerSecrets = validSecrets.filter((secret) => secret.mode === "docker_secret");
 
     for (const service of services) {
         const serviceSecrets = validSecrets.filter((secret) => secret.service === service);
         lines.push(`  ${yamlKey(service)}:`);
         lines.push("    environment:");
         for (const secret of serviceSecrets) {
-            const secretName = composeSecretName(service, secret.key);
             if (secret.mode === "env") {
                 lines.push(`      ${yamlKey(secret.key)}: ${yamlScalar(secret.value)}`);
             } else {
-                lines.push(`      ${yamlKey(`${secret.key}_FILE`)}: ${yamlScalar(`/run/secrets/${secretName}`)}`);
+                const targetName = composeSecretMountTarget(service, secret.key);
+                lines.push(`      ${yamlKey(`${secret.key}_FILE`)}: ${yamlScalar(`/run/secrets/${targetName}`)}`);
             }
         }
         if (serviceSecrets.some((secret) => secret.mode === "docker_secret")) {
             lines.push("    secrets:");
             for (const secret of serviceSecrets.filter((entry) => entry.mode === "docker_secret")) {
-                lines.push(`      - ${yamlKey(composeSecretName(service, secret.key))}`);
+                if (useSwarmSecrets) {
+                    lines.push(`      - source: ${yamlKey(dockerSecretName(projectName, secret))}`);
+                    lines.push(`        target: ${yamlKey(composeSecretMountTarget(service, secret.key))}`);
+                } else {
+                    lines.push(`      - ${yamlKey(composeSecretMountTarget(service, secret.key))}`);
+                }
             }
         }
     }
@@ -804,16 +841,20 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
     if (dockerSecrets.length) {
         lines.push("secrets:");
         for (const secret of dockerSecrets) {
-            const secretName = composeSecretName(secret.service, secret.key);
+            const secretName = useSwarmSecrets ? dockerSecretName(projectName, secret) : composeSecretMountTarget(secret.service, secret.key);
             lines.push(`  ${yamlKey(secretName)}:`);
-            lines.push(`    file: ${yamlScalar(`${secretDir}/${secretName}`)}`);
+            if (useSwarmSecrets) {
+                lines.push("    external: true");
+            } else {
+                lines.push(`    file: ${yamlScalar(`${secretDir}/${secretName}`)}`);
+            }
         }
     }
 
     lines.push("DEPLOY_SECRETS_EOF");
 
-    for (const secret of dockerSecrets) {
-        const secretName = composeSecretName(secret.service, secret.key);
+    for (const secret of fileBackedDockerSecrets) {
+        const secretName = composeSecretMountTarget(secret.service, secret.key);
         lines.push(`                cat > "$COMPOSE_WORKSPACE/secrets/${secretName}" << 'DEPLOY_SECRET_VALUE_EOF'`);
         lines.push(secret.value);
         lines.push("DEPLOY_SECRET_VALUE_EOF");
@@ -822,6 +863,37 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
 
     lines.push("                COMPOSE_FILES=\"$COMPOSE_FILES -f $COMPOSE_WORKSPACE/docker-compose.secrets.yml\"");
     return lines.join("\n");
+}
+
+function renderDockerSecretCreateLines(projectName: string, secret: ProjectEnvironmentSecret) {
+    const secretName = dockerSecretName(projectName, secret);
+    const secretBase = dockerSecretBaseName(projectName, secret);
+    const encodedValue = Buffer.from(secret.value, "utf8").toString("base64");
+    const labels = [
+        `--label ${shellQuote(`deploy.project=${projectName}`)}`,
+        `--label ${shellQuote(`deploy.secret-base=${secretBase}`)}`,
+        `--label ${shellQuote(`deploy.service=${secret.service}`)}`,
+        `--label ${shellQuote(`deploy.key=${secret.key}`)}`
+    ].join(" ");
+
+    return [
+        `                if docker secret inspect ${shellQuote(secretName)} >/dev/null 2>&1; then`,
+        `                    echo "--> Docker secret ${secretName} already exists."`,
+        "                else",
+        "                    SECRET_TMP=\"$(mktemp)\"",
+        `                    printf '%s' ${shellQuote(encodedValue)} | base64 -d > "$SECRET_TMP"`,
+        `                    docker secret create ${labels} ${shellQuote(secretName)} "$SECRET_TMP" >/dev/null`,
+        "                    SECRET_STATUS=$?",
+        "                    rm -f \"$SECRET_TMP\"",
+        "                    if [ \"$SECRET_STATUS\" -ne 0 ]; then",
+        `                        echo "--> CRITICAL: Could not create Docker secret ${secretName}."`,
+        "                        exit 1",
+        "                    fi",
+        `                    echo "--> Docker secret ${secretName} created."`,
+        "                fi",
+        `                printf '%s\\n' ${shellQuote(secretName)} >> /tmp/deploy-current-secret-names`,
+        `                printf '%s\\n' ${shellQuote(secretBase)} >> /tmp/deploy-current-secret-bases`
+    ];
 }
 
 function renderRegistryComposeRewriteScript() {
@@ -901,8 +973,22 @@ fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
 DEPLOY_REGISTRY_PULL_JS`;
 }
 
-function composeSecretName(service: string, key: string) {
-    return `${service}_${key}`.toLowerCase().replace(/[^a-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "") || "deploy_secret";
+function composeSecretMountTarget(service: string, key: string) {
+    return normalizeDockerSecretName([service, key].join("_")) || "deploy_secret";
+}
+
+function dockerSecretName(projectName: string, secret: ProjectEnvironmentSecret) {
+    const suffix = `_${createHash("sha256").update(secret.value).digest("hex").slice(0, 12)}`;
+    const base = dockerSecretBaseName(projectName, secret);
+    return `${base.slice(0, Math.max(1, 63 - suffix.length)).replace(/[_.-]+$/g, "")}${suffix}`;
+}
+
+function dockerSecretBaseName(projectName: string, secret: Pick<ProjectEnvironmentSecret, "service" | "key">) {
+    return normalizeDockerSecretName([projectName, secret.service, secret.key].join("_")) || "deploy_secret";
+}
+
+function normalizeDockerSecretName(value: string) {
+    return value.toLowerCase().replace(/[^a-z0-9_.-]+/g, "_").replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "");
 }
 
 function yamlKey(value: string) {

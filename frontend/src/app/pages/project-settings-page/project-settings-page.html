@@ -476,6 +476,7 @@
 
               <fieldset>
                 <legend>Sensitive environment</legend>
+                <small>Docker secret uses Swarm secrets for stack deployments and file-backed compose secrets for Compose deployments.</small>
                 <div class="list-editor-head">
                   <button type="button" class="secondary compact"
                     (click)="addBuilderSecretEnvironmentEntry(service.id)">Add</button>
@@ -490,8 +491,8 @@
                     placeholder="secret value" />
                   <select [value]="entry.mode"
                     (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'mode', $event)">
-                    <option value="docker_secret">Docker secret file</option>
-                    <option value="env">Runtime env</option>
+                    <option value="docker_secret">Docker secret</option>
+                    <option value="env">Runtime env value</option>
                   </select>
                   <button type="button" class="secondary compact"
                     (click)="removeBuilderSecretEnvironmentEntry(service.id, $index)">Remove</button>
