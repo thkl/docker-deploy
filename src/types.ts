@@ -118,6 +118,38 @@ export interface CapturedReleaseSnapshot {
     buildServices: string[];
 }
 
+export type ProjectPreflightStatus = "pass" | "warn" | "fail";
+
+export interface ProjectPreflightCheck {
+    key: string;
+    label: string;
+    status: ProjectPreflightStatus;
+    detail: string;
+    target?: string;
+}
+
+export interface ProjectPreflightTarget {
+    serverId: string;
+    status: ProjectPreflightStatus;
+    checks: ProjectPreflightCheck[];
+}
+
+export interface ProjectPreflightResult {
+    projectId?: string;
+    projectName: string;
+    checkedAt: string;
+    status: ProjectPreflightStatus;
+    checks: ProjectPreflightCheck[];
+    targets: ProjectPreflightTarget[];
+}
+
+export interface RegistryLoginCheck {
+    checkedAt: string;
+    ok: boolean;
+    skipped: boolean;
+    detail: string;
+}
+
 export interface TraefikDefaultsPayload {
     network?: string;
     entryPoints?: string;

@@ -1,9 +1,9 @@
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
-import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ComposeInspection, ComposeValidation, DockerTopology, GlobalSettings, PathBrowseResult, ProjectReleaseSnapshot, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics } from "./types.js";
+import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ComposeInspection, ComposeValidation, DockerTopology, GlobalSettings, PathBrowseResult, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics } from "./types.js";
 
-export type AgentJobType = "deploy" | "deployReleaseSnapshot" | "captureReleaseSnapshot" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "inspectCheckoutBindMounts" | "inspectDocker" | "browsePath" | "detectTraefik" | "backupTraefik" | "validateTraefik" | "applyTraefikDefaults" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow" | "runtimeAction" | "runtimeActionFollow";
+export type AgentJobType = "deploy" | "deployReleaseSnapshot" | "captureReleaseSnapshot" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "inspectCheckoutBindMounts" | "inspectDocker" | "testRegistry" | "browsePath" | "detectTraefik" | "backupTraefik" | "validateTraefik" | "applyTraefikDefaults" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow" | "runtimeAction" | "runtimeActionFollow";
 
 export interface DeployJobPayload {
     projectName: string;
@@ -53,6 +53,10 @@ export interface DetectTraefikJobPayload {
     globalSettings: GlobalSettings;
 }
 
+export interface TestRegistryJobPayload {
+    globalSettings: GlobalSettings;
+}
+
 export interface ApplyTraefikDefaultsJobPayload extends DetectTraefikJobPayload {
     defaults: TraefikDefaultsPayload;
 }
@@ -61,7 +65,7 @@ export interface DiagnoseTraefikJobPayload extends DeployJobPayload {}
 
 export interface AgentJobRequest {
     jobType: AgentJobType;
-    payload: DeployJobPayload | ReleaseSnapshotJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | ValidateComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | RuntimeActionJobPayload | DeleteCheckoutJobPayload | InspectCheckoutBindMountsJobPayload | BrowsePathJobPayload | DetectTraefikJobPayload | ApplyTraefikDefaultsJobPayload | DiagnoseTraefikJobPayload;
+    payload: DeployJobPayload | ReleaseSnapshotJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | ValidateComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | RuntimeActionJobPayload | DeleteCheckoutJobPayload | InspectCheckoutBindMountsJobPayload | BrowsePathJobPayload | DetectTraefikJobPayload | TestRegistryJobPayload | ApplyTraefikDefaultsJobPayload | DiagnoseTraefikJobPayload;
 }
 
 export interface AgentJobAccepted {
@@ -90,6 +94,7 @@ export interface AgentClient {
     deleteCheckout(checkoutPath: string): Promise<CheckoutCleanupResult>;
     inspectCheckoutBindMounts(checkoutPath: string): Promise<CheckoutBindMountInspection>;
     inspectDocker(): Promise<DockerTopology>;
+    testRegistry(globalSettings: GlobalSettings): Promise<RegistryLoginCheck>;
     browsePath(path: string): Promise<PathBrowseResult>;
     detectTraefik(globalSettings: GlobalSettings): Promise<ServerCapabilities["traefik"]>;
     backupTraefik(serverId: string, globalSettings: GlobalSettings): Promise<TraefikConfigBackup>;

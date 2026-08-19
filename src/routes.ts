@@ -16,6 +16,7 @@ import { defaultProjectPath, GlobalSettingsStore, normalizeGlobalSettings } from
 import { ControllerKeyState } from "./keyStore.js";
 import { AppDatabase, ControllerStateBackup } from "./database.js";
 import { browseContainerPath } from "./pathBrowser.js";
+import { runProjectPreflight } from "./projectPreflight.js";
 import { parseProjectComposeImport, renderProjectComposeExport } from "./projectComposeTransfer.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
@@ -840,6 +841,25 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
         const deployment = deploymentService.startDeployment(projectName, appSettings, "manual");
         res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
+    });
+
+    app.post("/api/projects/:name/preflight", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            const projectName = project?.name ?? projectRef;
+            const appSettings = project?.settings;
+
+            if (!appSettings) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            res.json(await runProjectPreflight(projectName, appSettings, globalSettingsStore.readSettings(), agentManager));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not run deployment preflight." });
+        }
     });
 
     app.get("/api/projects/:name/export", async (req: Request, res: Response) => {

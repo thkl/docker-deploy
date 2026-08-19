@@ -2,7 +2,7 @@ import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js"
 import { inspectCompose } from "./composeInspection.js";
 import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { applyTraefikDefaults, backupTraefikConfig, captureProjectReleaseSnapshot, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, dispatchReleaseRollbackWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectDockerTopology, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { applyTraefikDefaults, backupTraefikConfig, captureProjectReleaseSnapshot, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, dispatchReleaseRollbackWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectDockerTopology, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, testRegistryLogin, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { browseDockerHostPath } from "./pathBrowser.js";
 import { GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, TraefikDefaultsPayload } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
@@ -83,6 +83,13 @@ export class LocalAgent implements AgentClient {
      */
     inspectDocker() {
         return inspectDockerTopology();
+    }
+
+    /**
+     * Tests Docker registry credentials from the target server.
+     */
+    testRegistry(globalSettings: GlobalSettings) {
+        return testRegistryLogin(globalSettings);
     }
 
     /**

@@ -35,6 +35,9 @@
       <button type="button" (click)="deploy(project.id)" [disabled]="deploying() || rollingBackReleaseId() !== ''">
         {{ deploying() ? 'Starting...' : 'Deploy now' }}
       </button>
+      <button type="button" class="secondary" (click)="runPreflight(project.id)" [disabled]="runningPreflight() || deploying() || rollingBackReleaseId() !== ''">
+        {{ runningPreflight() ? 'Checking...' : 'Preflight' }}
+      </button>
       @if (rollbackCandidate(); as release) {
         <button type="button" class="secondary" (click)="rollbackRelease(project.id, release)" [disabled]="deploying() || rollingBackReleaseId() !== '' || latestDeployment()?.status === 'running'">
           {{ rollingBackReleaseId() === release.id ? 'Rolling back...' : 'Rollback' }}
@@ -98,6 +101,55 @@
 
   @if (deployError()) {
     <p class="notice error">{{ deployError() }}</p>
+  }
+
+  @if (preflightError()) {
+    <p class="notice error">{{ preflightError() }}</p>
+  }
+
+  @if (preflightResult(); as preflight) {
+    <section class="deploy-panel preflight-panel">
+      <div class="deploy-head">
+        <div>
+          <h2>Deployment preflight</h2>
+          <p>Checked {{ formatDate(preflight.checkedAt) }} across {{ preflight.targets.length }} target{{ preflight.targets.length === 1 ? '' : 's' }}.</p>
+        </div>
+        <div class="deploy-head-actions">
+          <span class="status-chip" [class.running]="preflight.status === 'warn'" [class.failed]="preflight.status === 'fail'">
+            {{ preflightStatusLabel(preflight.status) }}
+          </span>
+          <button type="button" class="secondary compact" (click)="showAllPreflightChecks.set(!showAllPreflightChecks())">
+            {{ showAllPreflightChecks() ? 'Show attention only' : 'Show all checks' }}
+          </button>
+        </div>
+      </div>
+      @if (preflightCounts(preflight); as counts) {
+        <div class="deploy-meta">
+          <span>{{ counts.fail }} failed</span>
+          <span>{{ counts.warn }} warnings</span>
+          <span>{{ counts.pass }} passed</span>
+        </div>
+      }
+      <div class="preflight-targets">
+        @for (target of preflight.targets; track target.serverId) {
+          <span class="target-chip" [class.running]="target.status === 'warn'" [class.failed]="target.status === 'fail'">
+            {{ target.serverId }} · {{ preflightStatusLabel(target.status) }}
+          </span>
+        }
+      </div>
+      <div class="preflight-list">
+        @for (check of preflightChecksToShow(preflight); track preflightCheckTrack($index, check)) {
+          <div class="preflight-row" [class.warn]="check.status === 'warn'" [class.failed]="check.status === 'fail'">
+            <span class="status-chip" [class.running]="check.status === 'warn'" [class.failed]="check.status === 'fail'">{{ check.status }}</span>
+            <div class="service-item">
+              <strong>{{ check.label }}</strong>
+              <small>{{ check.target || 'project' }}</small>
+            </div>
+            <span>{{ check.detail }}</span>
+          </div>
+        }
+      </div>
+    </section>
   }
 
   @if (projectSection() === 'overview') {

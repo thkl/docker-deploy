@@ -57,6 +57,31 @@ export interface ProjectReleaseSnapshot {
   rollbackUnavailableReason?: string;
 }
 
+export type ProjectPreflightStatus = 'pass' | 'warn' | 'fail';
+
+export interface ProjectPreflightCheck {
+  key: string;
+  label: string;
+  status: ProjectPreflightStatus;
+  detail: string;
+  target?: string;
+}
+
+export interface ProjectPreflightTarget {
+  serverId: string;
+  status: ProjectPreflightStatus;
+  checks: ProjectPreflightCheck[];
+}
+
+export interface ProjectPreflightResult {
+  projectId?: string;
+  projectName: string;
+  checkedAt: string;
+  status: ProjectPreflightStatus;
+  checks: ProjectPreflightCheck[];
+  targets: ProjectPreflightTarget[];
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;

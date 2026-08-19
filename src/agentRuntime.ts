@@ -299,6 +299,11 @@ export class AgentRuntime {
             return { result: await this.localAgent.inspectDocker() };
         }
 
+        if (request.jobType === "testRegistry") {
+            const payload = request.payload as { globalSettings: Parameters<LocalAgent["testRegistry"]>[0] };
+            return { result: await this.localAgent.testRegistry(payload.globalSettings) };
+        }
+
         if (request.jobType === "browsePath") {
             const payload = request.payload as { path: string };
             return { result: await this.localAgent.browsePath(payload.path) };

@@ -2,7 +2,7 @@ import { ChildProcess, exec, spawn } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CapturedReleaseSnapshot, CheckoutBindMountInspection, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
+import { CapturedReleaseSnapshot, CheckoutBindMountInspection, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -683,6 +683,76 @@ ${composeDelimiter}
             }
         }
     };
+}
+
+/**
+ * Tests Docker registry credentials from the target server's Docker runtime.
+ */
+export async function testRegistryLogin(globalSettings: GlobalSettings): Promise<RegistryLoginCheck> {
+    const checkedAt = new Date().toISOString();
+    const registryAddress = globalSettings.registryAddress.trim();
+    const registryUsername = globalSettings.registryUsername.trim();
+    const registryPassword = globalSettings.registryPassword?.trim() ?? "";
+
+    if (!registryAddress) {
+        return {
+            checkedAt,
+            ok: false,
+            skipped: true,
+            detail: "No registry address is configured."
+        };
+    }
+
+    if (!registryUsername) {
+        return {
+            checkedAt,
+            ok: true,
+            skipped: true,
+            detail: "No registry username is configured; anonymous registry access was not verified."
+        };
+    }
+
+    if (!registryPassword) {
+        return {
+            checkedAt,
+            ok: false,
+            skipped: false,
+            detail: "Registry username is configured, but the password is empty."
+        };
+    }
+
+    const dockerRunCommand = `docker run -i --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            alpine:latest sh << 'EOF'
+                apk add --no-cache docker-cli > /dev/null 2>&1
+                REGISTRY_ADDRESS=${shellQuote(registryAddress)}
+                REGISTRY_USERNAME=${shellQuote(registryUsername)}
+                REGISTRY_PASSWORD=${shellQuote(registryPassword)}
+                if printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_ADDRESS" --username "$REGISTRY_USERNAME" --password-stdin >/tmp/deploy-registry-login.txt 2>&1; then
+                    exit 0
+                fi
+                cat /tmp/deploy-registry-login.txt >&2
+                exit 1
+EOF`;
+
+    try {
+        await execAsync(dockerRunCommand, { maxBuffer: 1024 * 1024 });
+        return {
+            checkedAt,
+            ok: true,
+            skipped: false,
+            detail: `Registry login succeeded for ${registryAddress}.`
+        };
+    } catch (error) {
+        const failure = error as { stdout?: string; stderr?: string; message?: string };
+        const detail = redactDeploymentOutput(`${failure.stdout || ""}${failure.stderr ? `\n${failure.stderr}` : ""}`.trim() || failure.message || "Registry login failed.", [], globalSettings);
+        return {
+            checkedAt,
+            ok: false,
+            skipped: false,
+            detail
+        };
+    }
 }
 
 function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | undefined) {

@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowsePathJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowsePathJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, TestRegistryJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -134,6 +134,14 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["inspectDocker"]>> }>({
             jobType: "inspectDocker",
             payload: { serverId: this.server.id, globalSettings: defaultGlobalSettingsForRemoteJobs() } satisfies DetectTraefikJobPayload
+        });
+        return accepted.result;
+    }
+
+    async testRegistry(globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: Awaited<ReturnType<AgentClient["testRegistry"]>> }>({
+            jobType: "testRegistry",
+            payload: { globalSettings } satisfies TestRegistryJobPayload
         });
         return accepted.result;
     }

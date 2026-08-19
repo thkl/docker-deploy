@@ -1,7 +1,7 @@
 import { Component, computed, effect, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord, DeploymentStrategy, ProjectReleaseSnapshot, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerRecord, WebhookEventRecord } from '../../models/project';
+import { DeploymentRecord, DeploymentStrategy, ProjectPreflightCheck, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerRecord, WebhookEventRecord } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
@@ -26,18 +26,22 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeOperations = signal<RuntimeOperationRecord[]>([]);
   protected readonly latestWebhook = signal<WebhookEventRecord | null>(null);
   protected readonly releaseSnapshots = signal<ProjectReleaseSnapshot[]>([]);
+  protected readonly preflightResult = signal<ProjectPreflightResult | null>(null);
   protected readonly loadingDeployment = signal(false);
   protected readonly loadingRuntimeStatus = signal(false);
   protected readonly loadingRuntimeLogs = signal(false);
   protected readonly loadingRuntimeOperations = signal(false);
   protected readonly loadingWebhook = signal(false);
   protected readonly loadingReleases = signal(false);
+  protected readonly runningPreflight = signal(false);
   protected readonly deploying = signal(false);
   protected readonly cancelingDeployment = signal(false);
   protected readonly rollingBackReleaseId = signal('');
   protected readonly deployMessage = signal('');
   protected readonly deployError = signal('');
   protected readonly releaseError = signal('');
+  protected readonly preflightError = signal('');
+  protected readonly showAllPreflightChecks = signal(false);
   protected readonly runtimeStatusError = signal('');
   protected readonly runtimeLogsError = signal('');
   protected readonly runtimeOperationsError = signal('');
@@ -183,6 +187,43 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
       error: () => {
         this.deploying.set(false);
         this.deployError.set(`Could not start deployment for ${projectName}.`);
+      },
+    });
+  }
+
+  protected runPreflight(projectRef: string) {
+    const project = this.projectByRef(projectRef);
+    const projectName = project?.name ?? projectRef;
+    const requestRef = project?.id ?? projectRef;
+
+    this.runningPreflight.set(true);
+    this.preflightError.set('');
+    this.deployMessage.set(`Running deployment preflight for ${projectName}...`);
+    this.deployError.set('');
+    this.showAllPreflightChecks.set(false);
+
+    this.api.runPreflight(requestRef).subscribe({
+      next: (result) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.preflightResult.set(result);
+        this.runningPreflight.set(false);
+        this.deployMessage.set(result.status === 'pass'
+          ? `Preflight passed for ${projectName}.`
+          : result.status === 'warn'
+            ? `Preflight finished with warnings for ${projectName}.`
+            : `Preflight found blockers for ${projectName}.`);
+      },
+      error: (error) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        this.runningPreflight.set(false);
+        this.deployMessage.set('');
+        this.preflightError.set(error?.error?.error || `Could not run preflight for ${projectName}.`);
       },
     });
   }
@@ -676,6 +717,37 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     return release.rollbackAvailable ? 'Image snapshot' : 'Stored only';
   }
 
+  protected preflightStatusLabel(status: ProjectPreflightResult['status']) {
+    return status === 'pass' ? 'Ready' : status === 'warn' ? 'Warnings' : 'Blocked';
+  }
+
+  protected preflightChecksToShow(result: ProjectPreflightResult) {
+    const checks = [
+      ...result.checks,
+      ...result.targets.flatMap((target) => target.checks)
+    ];
+    return this.showAllPreflightChecks() || result.status === 'pass'
+      ? checks
+      : checks.filter((check) => check.status !== 'pass');
+  }
+
+  protected preflightCounts(result: ProjectPreflightResult) {
+    const checks = [
+      ...result.checks,
+      ...result.targets.flatMap((target) => target.checks)
+    ];
+    return {
+      pass: checks.filter((check) => check.status === 'pass').length,
+      warn: checks.filter((check) => check.status === 'warn').length,
+      fail: checks.filter((check) => check.status === 'fail').length,
+      total: checks.length
+    };
+  }
+
+  protected preflightCheckTrack(index: number, check: ProjectPreflightCheck) {
+    return `${check.target || 'project'}:${check.key}:${index}`;
+  }
+
   private loadLatestDeployment(projectRef: string, projectName = projectRef) {
     this.loadingDeployment.set(true);
 
@@ -941,10 +1013,13 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.runtimeOperations.set([]);
     this.latestWebhook.set(null);
     this.releaseSnapshots.set([]);
+    this.preflightResult.set(null);
     this.runtimeStatusError.set('');
     this.runtimeLogsError.set('');
     this.runtimeOperationsError.set('');
     this.releaseError.set('');
+    this.preflightError.set('');
+    this.showAllPreflightChecks.set(false);
     this.runtimeActionMessage.set('');
     this.runtimeActionError.set('');
     this.runtimeActionKey.set('');
@@ -964,6 +1039,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.cancelingDeployment.set(false);
     this.rollingBackReleaseId.set('');
     this.loadingReleases.set(false);
+    this.runningPreflight.set(false);
 
     const cachedStatus = this.store.runtimeStatusFor(projectRef);
     if (cachedStatus) {
