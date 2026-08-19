@@ -1348,7 +1348,10 @@ async function buildTraefikInventory(inspectedContainers: DockerInspectContainer
     const networkDetails = await inspectDockerNetworks(unique(containers.flatMap((container) => container.networks)));
     const configArgs = containers.flatMap((container) => container.configArgs);
     const mountedTargets = containers.flatMap((container) => container.mounts.map((mount) => mount.target));
-    const staticConfig = await readTraefikStaticConfigInventory(inspectedContainers);
+    const staticConfig = mergeTraefikStaticConfigInventories(
+        await readTraefikStaticConfigInventory(inspectedContainers),
+        await readTraefikServiceStaticConfigInventory(inspectedServices)
+    );
     const entryPoints = unique([...extractTraefikKeys(configArgs, /^--entrypoints\.([^.=\s]+)\./), ...staticConfig.entryPoints]);
     const certResolvers = unique([...extractTraefikKeys(configArgs, /^--certificatesresolvers\.([^.=\s]+)\./), ...staticConfig.certResolvers]);
     const dockerProviderNetwork = extractTraefikValue(configArgs, "--providers.docker.network=") || staticConfig.dockerProviderNetwork || inferTraefikDockerNetwork(containers, networkName);
@@ -1447,6 +1450,10 @@ function parseTraefikServiceInventory(service: DockerInspectService): TraefikCon
         ...(service.Endpoint?.VirtualIPs ?? []).map((network) => network.NetworkID).filter(Boolean)
     ]);
     const ports = formatServicePorts(service.Endpoint?.Ports);
+    const configMounts = (containerSpec?.Configs ?? []).map((config) => ({
+        source: config.ConfigName || config.ConfigID || "",
+        target: config.File?.Name || ""
+    })).filter((mount) => mount.source || mount.target);
     return {
         kind: "service",
         ...(service.ID ? { id: service.ID.slice(0, 12) } : {}),
@@ -1460,7 +1467,10 @@ function parseTraefikServiceInventory(service: DockerInspectService): TraefikCon
             : service.Spec?.Mode?.Global ? { replicas: "global" } : {}),
         ...(ports ? { ports } : {}),
         networks,
-        mounts: (containerSpec?.Mounts ?? []).map((mount) => ({ source: mount.Source, target: mount.Target })),
+        mounts: [
+            ...(containerSpec?.Mounts ?? []).map((mount) => ({ source: mount.Source, target: mount.Target })),
+            ...configMounts
+        ],
         configArgs: args
     };
 }
@@ -1476,15 +1486,7 @@ function inferTraefikDockerNetwork(containers: TraefikContainerInventory[], pref
 }
 
 async function readTraefikStaticConfigInventory(containers: DockerInspectContainerWithMounts[]) {
-    const inventory = {
-        entryPoints: [] as string[],
-        certResolvers: [] as string[],
-        dockerProviderNetwork: "",
-        swarmProviderNetwork: "",
-        dockerProviderEnabled: false,
-        swarmProviderEnabled: false,
-        acmeStorage: ""
-    };
+    const inventory = createEmptyTraefikStaticConfigInventory();
 
     for (const container of containers) {
         if (!container.Id) {
@@ -1494,17 +1496,76 @@ async function readTraefikStaticConfigInventory(containers: DockerInspectContain
         const staticPaths = unique((container.Mounts ?? []).map((mount) => mount.Destination).filter(isLikelyTraefikStaticConfigPath));
         for (const staticPath of staticPaths) {
             const content = await readContainerFile(container.Id, staticPath);
-            const parsed = parseTraefikStaticConfig(content);
-            inventory.entryPoints.push(...parsed.entryPoints);
-            inventory.certResolvers.push(...parsed.certResolvers);
-            inventory.dockerProviderNetwork ||= parsed.dockerProviderNetwork;
-            inventory.swarmProviderNetwork ||= parsed.swarmProviderNetwork;
-            inventory.dockerProviderEnabled ||= parsed.dockerProviderEnabled;
-            inventory.swarmProviderEnabled ||= parsed.swarmProviderEnabled;
-            inventory.acmeStorage ||= parsed.acmeStorage;
+            mergeTraefikStaticConfigInto(inventory, parseTraefikStaticConfig(content));
         }
     }
 
+    return finalizeTraefikStaticConfigInventory(inventory);
+}
+
+async function readTraefikServiceStaticConfigInventory(services: DockerInspectService[]) {
+    const inventory = createEmptyTraefikStaticConfigInventory();
+
+    for (const service of services) {
+        const containerSpec = service.Spec?.TaskTemplate?.ContainerSpec;
+
+        const configs = containerSpec?.Configs ?? [];
+        for (const config of configs) {
+            const target = config.File?.Name || config.ConfigName || "";
+            if (!isLikelyTraefikStaticConfigPath(target) && !isLikelyTraefikStaticConfigPath(config.ConfigName || "")) {
+                continue;
+            }
+
+            const content = await readDockerConfigContent(config.ConfigID || config.ConfigName || "");
+            mergeTraefikStaticConfigInto(inventory, parseTraefikStaticConfig(content));
+        }
+
+        const bindMounts = (containerSpec?.Mounts ?? []).filter((mount) =>
+            mount.Type === "bind" && mount.Source && mount.Target && isLikelyTraefikStaticConfigPath(mount.Target)
+        );
+        for (const mount of bindMounts) {
+            const content = await readHostBindFile(mount.Source);
+            mergeTraefikStaticConfigInto(inventory, parseTraefikStaticConfig(content));
+        }
+    }
+
+    return finalizeTraefikStaticConfigInventory(inventory);
+}
+
+function createEmptyTraefikStaticConfigInventory() {
+    return {
+        entryPoints: [] as string[],
+        certResolvers: [] as string[],
+        dockerProviderNetwork: "",
+        swarmProviderNetwork: "",
+        dockerProviderEnabled: false,
+        swarmProviderEnabled: false,
+        acmeStorage: ""
+    };
+}
+
+type TraefikStaticConfigInventory = ReturnType<typeof createEmptyTraefikStaticConfigInventory>;
+
+function mergeTraefikStaticConfigInventories(...inventories: TraefikStaticConfigInventory[]) {
+    const merged = createEmptyTraefikStaticConfigInventory();
+    for (const inventory of inventories) {
+        mergeTraefikStaticConfigInto(merged, inventory);
+    }
+
+    return finalizeTraefikStaticConfigInventory(merged);
+}
+
+function mergeTraefikStaticConfigInto(target: TraefikStaticConfigInventory, source: TraefikStaticConfigInventory) {
+    target.entryPoints.push(...source.entryPoints);
+    target.certResolvers.push(...source.certResolvers);
+    target.dockerProviderNetwork ||= source.dockerProviderNetwork;
+    target.swarmProviderNetwork ||= source.swarmProviderNetwork;
+    target.dockerProviderEnabled ||= source.dockerProviderEnabled;
+    target.swarmProviderEnabled ||= source.swarmProviderEnabled;
+    target.acmeStorage ||= source.acmeStorage;
+}
+
+function finalizeTraefikStaticConfigInventory(inventory: TraefikStaticConfigInventory) {
     return {
         entryPoints: unique(inventory.entryPoints),
         certResolvers: unique(inventory.certResolvers),
@@ -1692,6 +1753,33 @@ async function readContainerFile(containerId: string, path: string) {
     try {
         const { stdout } = await execAsync(
             `docker run --rm --volumes-from ${shellQuote(`${containerId}:ro`)} alpine:latest sh -c 'cat "$1" 2>/dev/null || true' sh ${shellQuote(path)}`,
+            { maxBuffer: 256 * 1024 }
+        );
+        return stdout;
+    } catch {
+        return "";
+    }
+}
+
+async function readDockerConfigContent(configRef: string) {
+    if (!configRef) {
+        return "";
+    }
+
+    try {
+        const { stdout } = await execAsync(`docker config inspect ${shellQuote(configRef)}`, { maxBuffer: 512 * 1024 });
+        const inspected = JSON.parse(stdout.trim() || "[]") as Array<{ Spec?: { Data?: string } }>;
+        const encoded = inspected[0]?.Spec?.Data;
+        return encoded ? Buffer.from(encoded, "base64").toString("utf8") : "";
+    } catch {
+        return "";
+    }
+}
+
+async function readHostBindFile(path: string) {
+    try {
+        const { stdout } = await execAsync(
+            `docker run --rm -v ${shellQuote(`${path}:${path}:ro`)} alpine:latest sh -c 'cat "$1" 2>/dev/null || true' sh ${shellQuote(path)}`,
             { maxBuffer: 256 * 1024 }
         );
         return stdout;
@@ -2731,6 +2819,13 @@ interface DockerInspectService {
                 Image?: string;
                 Args?: string[];
                 Command?: string[];
+                Configs?: Array<{
+                    ConfigID?: string;
+                    ConfigName?: string;
+                    File?: {
+                        Name?: string;
+                    };
+                }>;
                 Mounts?: Array<{
                     Type?: string;
                     Source: string;
