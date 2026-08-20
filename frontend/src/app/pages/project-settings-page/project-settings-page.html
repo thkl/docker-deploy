@@ -504,11 +504,15 @@
                       (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'value', $event)"
                       placeholder="secret value" />
                   }
-                  <select [value]="entry.mode"
-                    (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'mode', $event)">
-                    <option value="docker_secret">Docker secret</option>
-                    <option value="env">Runtime env value</option>
-                  </select>
+                  @if ((entry.source || 'inline') === 'vault') {
+                    <span class="secret-mode-fixed">Docker secret</span>
+                  } @else {
+                    <select [value]="entry.mode"
+                      (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'mode', $event)">
+                      <option value="docker_secret">Docker secret</option>
+                      <option value="env">Runtime env value</option>
+                    </select>
+                  }
                   <button type="button" class="secondary compact"
                     (click)="removeBuilderSecretEnvironmentEntry(service.id, $index)">Remove</button>
                 </div>

@@ -1599,6 +1599,7 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
             const source = secret.source === "vault" ? "vault" as const : "inline" as const;
             const vaultSecretId = String(secret.vaultSecretId ?? "").trim();
             const value = source === "vault" ? "" : String(secret.value ?? "").trim();
+            const mode = source === "vault" ? "docker_secret" as const : secret.mode === "env" ? "env" as const : "docker_secret" as const;
             const existingSecret = existing.find((candidate) =>
                 candidate.service === service &&
                 candidate.key === key &&
@@ -1608,7 +1609,7 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
                 service,
                 key,
                 value: source === "vault" ? "" : isMaskedSecretValue(value) ? existingSecret?.value ?? "" : value,
-                mode: secret.mode === "env" ? "env" as const : "docker_secret" as const,
+                mode,
                 source,
                 ...(source === "vault" ? { vaultSecretId } : {})
             };

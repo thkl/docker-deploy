@@ -997,7 +997,24 @@ export class ProjectSettingsPage implements OnInit {
       }
 
       const entries = [...service.secretEnvironment];
-      entries[index] = { ...(entries[index] ?? { key: '', value: '', mode: 'docker_secret', source: 'inline', vaultSecretId: '' }), [field]: target.value };
+      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '' };
+      const next = { ...current, [field]: target.value };
+      if (field === 'source' && target.value === 'vault') {
+        next.source = 'vault';
+        next.mode = 'docker_secret';
+        next.value = '';
+        next.vaultSecretId = next.vaultSecretId || this.vaultSecrets()[0]?.id || '';
+      }
+      if (field === 'source' && target.value === 'inline') {
+        next.source = 'inline';
+        next.vaultSecretId = '';
+      }
+      if (field === 'vaultSecretId') {
+        next.source = 'vault';
+        next.mode = 'docker_secret';
+        next.value = '';
+      }
+      entries[index] = next;
       return { ...service, secretEnvironment: entries };
     }));
   }
@@ -1375,7 +1392,7 @@ export class ProjectSettingsPage implements OnInit {
         .map((secret) => ({
           key: secret.key,
           value: secret.value ?? '',
-          mode: secret.mode,
+          mode: secret.source === 'vault' ? 'docker_secret' : secret.mode,
           source: secret.source === 'vault' ? 'vault' : 'inline',
           vaultSecretId: secret.vaultSecretId ?? ''
         }))
@@ -1624,6 +1641,9 @@ export class ProjectSettingsPage implements OnInit {
         }
         if (secret.source === 'vault' && !secret.vaultSecretId.trim()) {
           diagnostics.push(`${serviceName}.${key} needs an Updater secret selection.`);
+        }
+        if (secret.source === 'vault' && secret.mode !== 'docker_secret') {
+          diagnostics.push(`${serviceName}.${key} must use Docker secret mode when it references an Updater secret.`);
         }
         if ((secret.source || 'inline') === 'inline' && !secret.value.trim()) {
           diagnostics.push(`${serviceName}.${key} needs a manual secret value.`);
@@ -2105,7 +2125,7 @@ function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): 
         service: service.name.trim(),
         key: secret.key.trim(),
         value: secret.source === 'vault' ? '' : secret.value.trim(),
-        mode: secret.mode === 'env' ? 'env' as const : 'docker_secret' as const,
+        mode: secret.source === 'vault' ? 'docker_secret' as const : secret.mode === 'env' ? 'env' as const : 'docker_secret' as const,
         source: secret.source === 'vault' ? 'vault' as const : 'inline' as const,
         ...(secret.source === 'vault' ? { vaultSecretId: secret.vaultSecretId.trim() } : {})
       }))

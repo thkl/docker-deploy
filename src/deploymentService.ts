@@ -646,7 +646,7 @@ export class DeploymentService {
                     service: secret.service,
                     key: secret.key,
                     value: this.vaultSecretStore.resolveValue(secret.vaultSecretId),
-                    mode: secret.mode,
+                    mode: "docker_secret" as const,
                     source: "inline" as const
                 };
             })

@@ -1013,7 +1013,7 @@ function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] =
         .map((secret) => {
             const service = secret.service.trim();
             const key = secret.key.trim();
-            const mode = secret.mode === "env" ? "env" : "docker_secret";
+            const mode = secret.source === "vault" ? "docker_secret" : secret.mode === "env" ? "env" : "docker_secret";
             if (secret.source === "vault") {
                 return {
                     service,

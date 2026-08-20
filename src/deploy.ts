@@ -183,6 +183,7 @@ ${secretOverlayScript}
 
                 echo "--> Rendering persistent Compose deployment file..."
                 docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --no-interpolate > "$COMPOSE_WORKSPACE/docker-compose.deploy.yml"
+                rm -f "$COMPOSE_WORKSPACE/docker-compose.secrets.yml"
 ${persistedEnvFileRewriteScript}
 ${persistedStorageRewriteScript}
 ${persistedStorageGuardScript}
