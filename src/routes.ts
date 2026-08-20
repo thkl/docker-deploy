@@ -158,7 +158,8 @@ function registerSecretRoutes(app: Express, dependencies: Pick<RouteDependencies
 
     app.get("/api/secrets", (req: Request, res: Response) => {
         try {
-            res.json(vaultSecretStore.list());
+            const namespace = typeof req.query.namespace === "string" ? req.query.namespace : undefined;
+            res.json(vaultSecretStore.list(namespace));
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not load secrets." });
         }

@@ -185,6 +185,47 @@
         </div>
       </div>
 
+      <section class="project-secrets-panel">
+        <div class="project-secrets-head">
+          <div>
+            <strong>Project secrets</strong>
+            <span>Vault entries scoped to {{ projectSecretNamespace() }}.</span>
+          </div>
+          @if (editingVaultSecretId()) {
+            <button type="button" class="secondary compact" (click)="cancelProjectVaultSecretEdit()" [disabled]="savingVaultSecret()">Cancel edit</button>
+          }
+        </div>
+
+        <form [formGroup]="vaultSecretForm" (ngSubmit)="saveProjectVaultSecret()" class="project-secret-form">
+          <input formControlName="key" placeholder="DATABASE_PASSWORD" autocomplete="off" />
+          <input formControlName="description" placeholder="description" />
+          <input formControlName="value" type="password" autocomplete="new-password"
+            [placeholder]="editingVaultSecretId() ? 'new value optional' : 'secret value'" />
+          <button type="submit" class="secondary compact" [disabled]="savingVaultSecret()">
+            {{ savingVaultSecret() ? 'Saving...' : editingVaultSecretId() ? 'Update' : 'Create' }}
+          </button>
+        </form>
+
+        <div class="project-secret-list">
+          @for (secret of vaultSecrets(); track secret.id) {
+            <div class="project-secret-item">
+              <div>
+                <strong>{{ secret.key }}</strong>
+                <span>{{ secret.description || vaultSecretReferenceLabel(secret) }}</span>
+              </div>
+              <div class="project-secret-actions">
+                <button type="button" class="secondary compact" (click)="editProjectVaultSecret(secret)" [disabled]="savingVaultSecret() || deletingVaultSecret() !== ''">Edit</button>
+                <button type="button" class="danger-action compact" (click)="deleteProjectVaultSecret(secret)" [disabled]="deletingVaultSecret() !== '' || (secret.referencedByProjects?.length || 0) > 0">
+                  {{ deletingVaultSecret() === secret.id ? 'Deleting...' : 'Delete' }}
+                </button>
+              </div>
+            </div>
+          } @empty {
+            <small>No project secrets configured.</small>
+          }
+        </div>
+      </section>
+
       <div class="builder-shell">
         <nav class="builder-rail" aria-label="Compose builder sections">
           <button type="button" [class.active]="builderSection() === 'services'"
@@ -525,18 +566,20 @@
                 @if ((entry.source || 'inline') === 'vault' && entry.vaultSecretId) {
                   <small class="secret-reference-note">{{ vaultSecretDescription(entry.vaultSecretId) }}</small>
                 }
-                @if (entry.mode === 'docker_secret' && entry.exposure === 'env') {
-                  <div class="secret-helper-options">
-                    <input [value]="entry.helperCommand"
-                      (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'helperCommand', $event)"
-                      placeholder="auto from Dockerfile CMD, or set launch command" />
-                    <small>Env helper overrides the container entrypoint, exports {{ entry.key || 'SECRET_KEY' }}, then starts this command or the Dockerfile CMD.</small>
-                  </div>
-                }
                 } @empty {
                 <small>No sensitive environment variables configured.</small>
                 }
               </fieldset>
+
+              @if (serviceHasSecretEnvHelper(service)) {
+              <fieldset class="secret-helper-options">
+                <legend>Secret env helper</legend>
+                <input [value]="service.secretHelperCommand"
+                  (input)="updateBuilderService(service.id, 'secretHelperCommand', $event)"
+                  placeholder="auto from Dockerfile CMD, or set launch command" />
+                <small>Env helper overrides the container entrypoint, exports helper secrets, then starts this command or the Dockerfile CMD.</small>
+              </fieldset>
+              }
 
               <fieldset>
                 <legend>Volumes</legend>

@@ -13,14 +13,16 @@ import { VaultSecret, VaultSecretPayload } from "./types.js";
 export class VaultSecretStore {
     constructor(private readonly database = new AppDatabase().connection) {}
 
-    list(): VaultSecret[] {
+    list(namespace?: string): VaultSecret[] {
+        const scopedNamespace = namespace?.trim();
         const rows = this.database
             .prepare(
                 `SELECT id, namespace, key, description, created_at AS createdAt, updated_at AS updatedAt
                  FROM vault_secrets
+                 ${scopedNamespace ? "WHERE namespace = ?" : ""}
                  ORDER BY namespace, key`
             )
-            .all() as unknown as VaultSecretRow[];
+            .all(...(scopedNamespace ? [scopedNamespace] : [])) as unknown as VaultSecretRow[];
         const references = this.projectReferences();
         return rows.map((row) => ({
             id: row.id,

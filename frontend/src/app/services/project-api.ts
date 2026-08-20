@@ -113,8 +113,9 @@ export class ProjectApi {
     return this.http.post<{ restored: boolean }>('/api/settings/backup/restore', backup);
   }
 
-  listVaultSecrets(): Observable<VaultSecret[]> {
-    return this.http.get<VaultSecret[]>('/api/secrets');
+  listVaultSecrets(namespace?: string): Observable<VaultSecret[]> {
+    const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    return this.http.get<VaultSecret[]>(`/api/secrets${query}`);
   }
 
   createVaultSecret(payload: VaultSecretPayload): Observable<VaultSecret> {

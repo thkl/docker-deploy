@@ -31,6 +31,7 @@ interface ComposeBuilderService {
   expose: string;
   environment: string;
   secretEnvironment: ComposeSecretEnvironmentEntry[];
+  secretHelperCommand: string;
   volumes: string;
   networks: string;
   dependsOn: string;
@@ -90,7 +91,6 @@ interface ComposeSecretEnvironmentEntry extends ComposeEnvironmentEntry {
   source: ProjectEnvironmentSecretSource;
   vaultSecretId: string;
   exposure: ProjectEnvironmentSecretExposure;
-  helperCommand: string;
 }
 
 interface ComposeTraefikSettings {
@@ -149,6 +149,9 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly builderNetworks = signal<ComposeBuilderNetwork[]>([]);
   protected readonly builderVolumes = signal<ComposeBuilderVolume[]>([]);
   protected readonly vaultSecrets = signal<VaultSecret[]>([]);
+  protected readonly savingVaultSecret = signal(false);
+  protected readonly deletingVaultSecret = signal('');
+  protected readonly editingVaultSecretId = signal('');
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly traefikEnabled = signal(false);
@@ -313,6 +316,12 @@ export class ProjectSettingsPage implements OnInit {
     traefikRemovePublishedPorts: [true],
   });
 
+  protected readonly vaultSecretForm = this.fb.group({
+    key: ['', [Validators.required]],
+    description: [''],
+    value: ['', [Validators.required]],
+  });
+
   private patchedProjectName = '';
   private currentProjectRef = '';
   private nextBuilderId = 1;
@@ -344,6 +353,9 @@ export class ProjectSettingsPage implements OnInit {
       this.selectedServerId.set(serverId || 'local');
       this.selectedServerIds.update((serverIds) => ensureServerSelected(serverIds, serverId || 'local'));
     });
+    this.form.controls.name.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.loadVaultSecrets();
+    });
 
     effect(() => {
       if (this.isNew()) {
@@ -360,7 +372,6 @@ export class ProjectSettingsPage implements OnInit {
 
   ngOnInit() {
     this.store.loadServers();
-    this.loadVaultSecrets();
 
     this.api.getGlobalSettings().subscribe({
       next: (settings) => {
@@ -386,6 +397,7 @@ export class ProjectSettingsPage implements OnInit {
         this.currentProjectRef = '';
         this.store.selectProject('');
         this.resetForNewProject();
+        this.loadVaultSecrets();
         return;
       }
 
@@ -395,6 +407,7 @@ export class ProjectSettingsPage implements OnInit {
       this.currentName.set(this.currentProject()?.name ?? projectRef);
       this.patchedProjectName = '';
       this.selectedServerId.set(this.currentProject()?.serverId ?? this.form.controls.serverId.value ?? 'local');
+      this.loadVaultSecrets();
     });
   }
 
@@ -711,6 +724,7 @@ export class ProjectSettingsPage implements OnInit {
         expose: '',
         environment: '',
         secretEnvironment: [],
+        secretHelperCommand: '',
         volumes: '',
         networks: serviceNetwork,
         dependsOn: '',
@@ -986,7 +1000,7 @@ export class ProjectSettingsPage implements OnInit {
 
       return {
         ...service,
-        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', exposure: 'file', helperCommand: '' }]
+        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', exposure: 'file' }]
       };
     }));
   }
@@ -999,7 +1013,7 @@ export class ProjectSettingsPage implements OnInit {
       }
 
       const entries = [...service.secretEnvironment];
-      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', exposure: 'file' as const, helperCommand: '' };
+      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', exposure: 'file' as const };
       const next = field === 'delivery'
         ? { ...current }
         : { ...current, [field]: target.value };
@@ -1042,8 +1056,16 @@ export class ProjectSettingsPage implements OnInit {
     return entry.exposure === 'env' ? 'helper' : 'file';
   }
 
+  protected serviceHasSecretEnvHelper(service: ComposeBuilderService) {
+    return service.secretEnvironment.some((secret) => secret.mode === 'docker_secret' && secret.exposure === 'env');
+  }
+
   protected vaultSecretLabel(secret: VaultSecret) {
     return `${secret.namespace}/${secret.key}`;
+  }
+
+  protected projectSecretNamespace() {
+    return this.form.controls.name.value.trim() || this.currentName().trim() || 'project';
   }
 
   protected vaultSecretExists(secretId: string) {
@@ -1053,6 +1075,97 @@ export class ProjectSettingsPage implements OnInit {
   protected vaultSecretDescription(secretId: string) {
     const secret = this.vaultSecrets().find((candidate) => candidate.id === secretId);
     return secret?.description || (secret ? `${secret.namespace}/${secret.key}` : 'Select an Updater secret.');
+  }
+
+  protected saveProjectVaultSecret() {
+    this.message.set('');
+    this.error.set('');
+
+    if (this.vaultSecretForm.invalid) {
+      this.vaultSecretForm.markAllAsTouched();
+      this.error.set('Secret key and value are required.');
+      return;
+    }
+
+    const payload = this.vaultSecretForm.getRawValue();
+    const editingId = this.editingVaultSecretId();
+    this.savingVaultSecret.set(true);
+    const request = editingId
+      ? this.api.updateVaultSecret(editingId, {
+          namespace: this.projectSecretNamespace(),
+          key: payload.key,
+          description: payload.description,
+          ...(payload.value.trim() ? { value: payload.value } : {}),
+        })
+      : this.api.createVaultSecret({
+          namespace: this.projectSecretNamespace(),
+          key: payload.key,
+          description: payload.description,
+          value: payload.value,
+        });
+
+    request.subscribe({
+      next: (secret) => {
+        this.message.set(`${secret.key} ${editingId ? 'updated' : 'created'}.`);
+        this.cancelProjectVaultSecretEdit();
+        this.loadVaultSecrets();
+        this.savingVaultSecret.set(false);
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not save secret.');
+        this.savingVaultSecret.set(false);
+      },
+    });
+  }
+
+  protected editProjectVaultSecret(secret: VaultSecret) {
+    this.editingVaultSecretId.set(secret.id);
+    this.message.set('');
+    this.error.set('');
+    this.vaultSecretForm.reset({
+      key: secret.key,
+      description: secret.description ?? '',
+      value: '',
+    });
+    this.vaultSecretForm.controls.value.clearValidators();
+    this.vaultSecretForm.controls.value.updateValueAndValidity();
+  }
+
+  protected cancelProjectVaultSecretEdit() {
+    this.editingVaultSecretId.set('');
+    this.vaultSecretForm.reset({
+      key: '',
+      description: '',
+      value: '',
+    });
+    this.vaultSecretForm.controls.value.setValidators([Validators.required]);
+    this.vaultSecretForm.controls.value.updateValueAndValidity();
+  }
+
+  protected deleteProjectVaultSecret(secret: VaultSecret) {
+    if (!window.confirm(`Delete ${secret.key}?`)) {
+      return;
+    }
+
+    this.deletingVaultSecret.set(secret.id);
+    this.message.set('');
+    this.error.set('');
+    this.api.deleteVaultSecret(secret.id).subscribe({
+      next: () => {
+        this.message.set(`${secret.key} deleted.`);
+        this.loadVaultSecrets();
+        this.deletingVaultSecret.set('');
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not delete secret.');
+        this.deletingVaultSecret.set('');
+      },
+    });
+  }
+
+  protected vaultSecretReferenceLabel(secret: VaultSecret) {
+    const refs = secret.referencedByProjects ?? [];
+    return refs.length ? refs.join(', ') : 'Unused';
   }
 
   protected removeBuilderSecretEnvironmentEntry(id: number, index: number) {
@@ -1411,25 +1524,26 @@ export class ProjectSettingsPage implements OnInit {
       return;
     }
 
-    this.builderServices.update((services) => services.map((service) => ({
-      ...service,
-      environment: removeGeneratedSecretFileEntries(service.environment, secrets.filter((secret) => secret.service === service.name)),
-      secretEnvironment: secrets
-        .filter((secret) => secret.service === service.name)
-        .map((secret) => ({
+    this.builderServices.update((services) => services.map((service) => {
+      const serviceSecrets = secrets.filter((secret) => secret.service === service.name);
+      return {
+        ...service,
+        environment: removeGeneratedSecretFileEntries(service.environment, serviceSecrets),
+        secretHelperCommand: serviceSecrets.find((secret) => secret.mode === 'docker_secret' && secret.exposure === 'env' && secret.helperCommand)?.helperCommand ?? '',
+        secretEnvironment: serviceSecrets.map((secret) => ({
           key: secret.key,
           value: secret.value ?? '',
           mode: secret.source === 'vault' ? 'docker_secret' : secret.mode,
           source: secret.source === 'vault' ? 'vault' : 'inline',
           vaultSecretId: secret.vaultSecretId ?? '',
-          exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' : 'file',
-          helperCommand: secret.mode === 'docker_secret' && secret.exposure === 'env' ? secret.helperCommand ?? '' : ''
+          exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' : 'file'
         }))
-    })));
+      };
+    }));
   }
 
   private loadVaultSecrets() {
-    this.api.listVaultSecrets().subscribe({
+    this.api.listVaultSecrets(this.projectSecretNamespace()).subscribe({
       next: (secrets) => this.vaultSecrets.set(secrets),
       error: () => this.error.set('Could not load Updater vault secrets.'),
     });
@@ -2164,7 +2278,7 @@ function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): 
         mode: secret.source === 'vault' ? 'docker_secret' as const : secret.mode === 'env' ? 'env' as const : 'docker_secret' as const,
         source: secret.source === 'vault' ? 'vault' as const : 'inline' as const,
         exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' as const : 'file' as const,
-        helperCommand: secret.mode === 'docker_secret' && secret.exposure === 'env' ? secret.helperCommand.trim() : '',
+        helperCommand: secret.mode === 'docker_secret' && secret.exposure === 'env' ? service.secretHelperCommand.trim() : '',
         ...(secret.source === 'vault' ? { vaultSecretId: secret.vaultSecretId.trim() } : {})
       }))
       .filter((secret) => secret.service && secret.key && (secret.source === 'vault' ? secret.vaultSecretId : secret.value))
@@ -2813,6 +2927,7 @@ function blankBuilderService(name: string, build: string, networks: string, rest
     expose: '',
     environment: '',
     secretEnvironment: [],
+    secretHelperCommand: '',
     volumes: '',
     networks,
     dependsOn: '',

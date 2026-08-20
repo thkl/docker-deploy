@@ -269,6 +269,58 @@ textarea {
   grid-template-columns: 190px minmax(0, 1fr);
 }
 
+.project-secrets-panel {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+}
+
+.project-secrets-head,
+.project-secret-item {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.project-secrets-head span,
+.project-secret-item span,
+.project-secret-list small {
+  color: var(--muted);
+}
+
+.project-secret-form {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: minmax(140px, 0.7fr) minmax(180px, 1fr) minmax(160px, 0.9fr) auto;
+}
+
+.project-secret-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.project-secret-item {
+  border-top: 1px solid var(--line);
+  padding-top: 0.55rem;
+}
+
+.project-secret-item div:first-child {
+  display: grid;
+  gap: 0.14rem;
+  min-width: 0;
+}
+
+.project-secret-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
 .builder-rail {
   background: var(--panel-soft);
   border: 1px solid var(--line);
@@ -465,7 +517,6 @@ fieldset small {
 .secret-helper-options {
   display: grid;
   gap: 0.35rem;
-  margin-top: -0.25rem;
 }
 
 .secret-helper-options small {
@@ -796,6 +847,7 @@ button.secondary:hover {
   .toggle-grid,
   .structured-editors,
   .builder-shell,
+  .project-secret-form,
   .choice-grid {
     grid-template-columns: 1fr;
   }
@@ -814,6 +866,8 @@ button.secondary:hover {
   .form-actions,
   .builder-head,
   .builder-service-head,
+  .project-secrets-head,
+  .project-secret-item,
   .section-toolbar,
   .resource-row {
     align-items: stretch;
