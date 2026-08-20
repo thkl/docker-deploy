@@ -141,7 +141,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly composeValidation = signal<ComposeValidation | null>(null);
   protected readonly traefikDiagnostics = signal<TraefikDiagnostics | null>(null);
   protected readonly composeMode = signal<'builder' | 'yaml'>('builder');
-  protected readonly builderSection = signal<'services' | 'networks' | 'volumes' | 'traefik'>('services');
+  protected readonly builderSection = signal<'services' | 'secrets' | 'networks' | 'volumes' | 'traefik'>('services');
   protected readonly browsingHostPath = signal(false);
   protected readonly hostPathBrowserError = signal('');
   protected readonly hostPathBrowser = signal<{ serviceId: number; index: number; result: PathBrowseResult } | null>(null);
@@ -684,7 +684,7 @@ export class ProjectSettingsPage implements OnInit {
     this.composeMode.set(mode);
   }
 
-  protected setBuilderSection(section: 'services' | 'networks' | 'volumes' | 'traefik') {
+  protected setBuilderSection(section: 'services' | 'secrets' | 'networks' | 'volumes' | 'traefik') {
     this.builderSection.set(section);
   }
 
@@ -1058,6 +1058,10 @@ export class ProjectSettingsPage implements OnInit {
 
   protected serviceHasSecretEnvHelper(service: ComposeBuilderService) {
     return service.secretEnvironment.some((secret) => secret.mode === 'docker_secret' && secret.exposure === 'env');
+  }
+
+  protected builderSecretCount() {
+    return this.builderServices().reduce((count, service) => count + service.secretEnvironment.length, 0);
   }
 
   protected vaultSecretLabel(secret: VaultSecret) {

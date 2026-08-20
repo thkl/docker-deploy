@@ -321,6 +321,18 @@ textarea {
   justify-content: flex-end;
 }
 
+.secret-service-panel {
+  margin-top: 0.85rem;
+}
+
+.empty-builder-section {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  padding: 1rem;
+}
+
 .builder-rail {
   background: var(--panel-soft);
   border: 1px solid var(--line);

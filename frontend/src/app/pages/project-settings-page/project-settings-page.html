@@ -185,53 +185,17 @@
         </div>
       </div>
 
-      <section class="project-secrets-panel">
-        <div class="project-secrets-head">
-          <div>
-            <strong>Project secrets</strong>
-            <span>Vault entries scoped to {{ projectSecretNamespace() }}.</span>
-          </div>
-          @if (editingVaultSecretId()) {
-            <button type="button" class="secondary compact" (click)="cancelProjectVaultSecretEdit()" [disabled]="savingVaultSecret()">Cancel edit</button>
-          }
-        </div>
-
-        <form [formGroup]="vaultSecretForm" (ngSubmit)="saveProjectVaultSecret()" class="project-secret-form">
-          <input formControlName="key" placeholder="DATABASE_PASSWORD" autocomplete="off" />
-          <input formControlName="description" placeholder="description" />
-          <input formControlName="value" type="password" autocomplete="new-password"
-            [placeholder]="editingVaultSecretId() ? 'new value optional' : 'secret value'" />
-          <button type="submit" class="secondary compact" [disabled]="savingVaultSecret()">
-            {{ savingVaultSecret() ? 'Saving...' : editingVaultSecretId() ? 'Update' : 'Create' }}
-          </button>
-        </form>
-
-        <div class="project-secret-list">
-          @for (secret of vaultSecrets(); track secret.id) {
-            <div class="project-secret-item">
-              <div>
-                <strong>{{ secret.key }}</strong>
-                <span>{{ secret.description || vaultSecretReferenceLabel(secret) }}</span>
-              </div>
-              <div class="project-secret-actions">
-                <button type="button" class="secondary compact" (click)="editProjectVaultSecret(secret)" [disabled]="savingVaultSecret() || deletingVaultSecret() !== ''">Edit</button>
-                <button type="button" class="danger-action compact" (click)="deleteProjectVaultSecret(secret)" [disabled]="deletingVaultSecret() !== '' || (secret.referencedByProjects?.length || 0) > 0">
-                  {{ deletingVaultSecret() === secret.id ? 'Deleting...' : 'Delete' }}
-                </button>
-              </div>
-            </div>
-          } @empty {
-            <small>No project secrets configured.</small>
-          }
-        </div>
-      </section>
-
       <div class="builder-shell">
         <nav class="builder-rail" aria-label="Compose builder sections">
           <button type="button" [class.active]="builderSection() === 'services'"
             (click)="setBuilderSection('services')">
             <strong>Services</strong>
             <span>{{ builderServices().length }}</span>
+          </button>
+          <button type="button" [class.active]="builderSection() === 'secrets'"
+            (click)="setBuilderSection('secrets')">
+            <strong>Secrets</strong>
+            <span>{{ builderSecretCount() }}</span>
           </button>
           <button type="button" [class.active]="builderSection() === 'networks'"
             (click)="setBuilderSection('networks')">
@@ -516,72 +480,6 @@
               </fieldset>
 
               <fieldset>
-                <legend>Sensitive environment</legend>
-                <small>Docker secret uses Swarm secrets for stack deployments and file-backed compose secrets for Compose deployments.</small>
-                <div class="list-editor-head">
-                  <button type="button" class="secondary compact"
-                    (click)="addBuilderSecretEnvironmentEntry(service.id)">Add</button>
-                </div>
-                @for (entry of service.secretEnvironment; track $index) {
-                <div class="list-row secret-env-row">
-                  <input [value]="entry.key"
-                    (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'key', $event)"
-                    placeholder="DB_PASS" />
-                  <select [value]="entry.source || 'inline'"
-                    (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'source', $event)">
-                    <option value="inline">Manual value</option>
-                    <option value="vault">Updater secret</option>
-                  </select>
-                  @if ((entry.source || 'inline') === 'vault') {
-                    <select [value]="entry.vaultSecretId"
-                      (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'vaultSecretId', $event)">
-                      <option value="">Select secret</option>
-                      @if (entry.vaultSecretId && !vaultSecretExists(entry.vaultSecretId)) {
-                        <option [value]="entry.vaultSecretId">{{ entry.vaultSecretId }} (not loaded)</option>
-                      }
-                      @for (secret of vaultSecrets(); track secret.id) {
-                        @if(secret.id === entry.vaultSecretId) {
-                          <option [value]="secret.id" [selected]="true">{{ vaultSecretLabel(secret) }}</option>
-                        } @else {
-                          <option [value]="secret.id">{{ vaultSecretLabel(secret) }}</option>
-                        }
-                      }
-                    </select>
-                  } @else {
-                    <input [value]="entry.value"
-                      (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'value', $event)"
-                      placeholder="secret value" />
-                  }
-                  <select [value]="secretDeliveryValue(entry)"
-                    (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'delivery', $event)">
-                    <option value="file">Secret file</option>
-                    <option value="helper">Env via helper</option>
-                    @if ((entry.source || 'inline') !== 'vault') {
-                      <option value="env">Runtime env value</option>
-                    }
-                  </select>
-                  <button type="button" class="secondary compact"
-                    (click)="removeBuilderSecretEnvironmentEntry(service.id, $index)">Remove</button>
-                </div>
-                @if ((entry.source || 'inline') === 'vault' && entry.vaultSecretId) {
-                  <small class="secret-reference-note">{{ vaultSecretDescription(entry.vaultSecretId) }}</small>
-                }
-                } @empty {
-                <small>No sensitive environment variables configured.</small>
-                }
-              </fieldset>
-
-              @if (serviceHasSecretEnvHelper(service)) {
-              <fieldset class="secret-helper-options">
-                <legend>Secret env helper</legend>
-                <input [value]="service.secretHelperCommand"
-                  (input)="updateBuilderService(service.id, 'secretHelperCommand', $event)"
-                  placeholder="auto from Dockerfile CMD, or set launch command" />
-                <small>Env helper overrides the container entrypoint, exports helper secrets, then starts this command or the Dockerfile CMD.</small>
-              </fieldset>
-              }
-
-              <fieldset>
                 <legend>Volumes</legend>
                 <div class="list-editor-head">
                   <button type="button" class="secondary compact"
@@ -708,6 +606,129 @@
                 placeholder="healthcheck:&#10;  test: ['CMD', 'curl', '-f', 'http://localhost']"></textarea>
             </label>
           </section>
+          }
+          }
+
+          @if (builderSection() === 'secrets') {
+          <div class="section-toolbar">
+            <div>
+              <strong>Secrets</strong>
+              <span>Project vault entries and service secret bindings</span>
+            </div>
+          </div>
+
+          <section class="project-secrets-panel">
+            <div class="project-secrets-head">
+              <div>
+                <strong>Project secrets</strong>
+                <span>Vault entries scoped to {{ projectSecretNamespace() }}.</span>
+              </div>
+              @if (editingVaultSecretId()) {
+                <button type="button" class="secondary compact" (click)="cancelProjectVaultSecretEdit()" [disabled]="savingVaultSecret()">Cancel edit</button>
+              }
+            </div>
+
+            <form [formGroup]="vaultSecretForm" (ngSubmit)="saveProjectVaultSecret()" class="project-secret-form">
+              <input formControlName="key" placeholder="DATABASE_PASSWORD" autocomplete="off" />
+              <input formControlName="description" placeholder="description" />
+              <input formControlName="value" type="password" autocomplete="new-password"
+                [placeholder]="editingVaultSecretId() ? 'new value optional' : 'secret value'" />
+              <button type="submit" class="secondary compact" [disabled]="savingVaultSecret()">
+                {{ savingVaultSecret() ? 'Saving...' : editingVaultSecretId() ? 'Update' : 'Create' }}
+              </button>
+            </form>
+
+            <div class="project-secret-list">
+              @for (secret of vaultSecrets(); track secret.id) {
+                <div class="project-secret-item">
+                  <div>
+                    <strong>{{ secret.key }}</strong>
+                    <span>{{ secret.description || vaultSecretReferenceLabel(secret) }}</span>
+                  </div>
+                  <div class="project-secret-actions">
+                    <button type="button" class="secondary compact" (click)="editProjectVaultSecret(secret)" [disabled]="savingVaultSecret() || deletingVaultSecret() !== ''">Edit</button>
+                    <button type="button" class="danger-action compact" (click)="deleteProjectVaultSecret(secret)" [disabled]="deletingVaultSecret() !== '' || (secret.referencedByProjects?.length || 0) > 0">
+                      {{ deletingVaultSecret() === secret.id ? 'Deleting...' : 'Delete' }}
+                    </button>
+                  </div>
+                </div>
+              } @empty {
+                <small>No project secrets configured.</small>
+              }
+            </div>
+          </section>
+
+          @for (service of builderServices(); track service.id) {
+          <section class="builder-service secret-service-panel">
+            <div class="builder-service-head">
+              <div>
+                <strong>{{ service.name || 'Unnamed service' }}</strong>
+                <span>{{ service.secretEnvironment.length }} secret {{ service.secretEnvironment.length === 1 ? 'binding' : 'bindings' }}</span>
+              </div>
+              <button type="button" class="secondary compact"
+                (click)="addBuilderSecretEnvironmentEntry(service.id)">Add binding</button>
+            </div>
+
+            <fieldset>
+              <legend>Sensitive environment</legend>
+              <small>Secret file creates `KEY_FILE`; env helper exports `KEY` before starting the service.</small>
+              @for (entry of service.secretEnvironment; track $index) {
+              <div class="list-row secret-env-row">
+                <input [value]="entry.key"
+                  (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'key', $event)"
+                  placeholder="DB_PASS" />
+                <select [value]="entry.source || 'inline'"
+                  (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'source', $event)">
+                  <option value="inline">Manual value</option>
+                  <option value="vault">Updater secret</option>
+                </select>
+                @if ((entry.source || 'inline') === 'vault') {
+                  <select [value]="entry.vaultSecretId"
+                    (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'vaultSecretId', $event)">
+                    <option value="">Select secret</option>
+                    @if (entry.vaultSecretId && !vaultSecretExists(entry.vaultSecretId)) {
+                      <option [value]="entry.vaultSecretId">{{ entry.vaultSecretId }} (not loaded)</option>
+                    }
+                    @for (secret of vaultSecrets(); track secret.id) {
+                      <option [value]="secret.id">{{ vaultSecretLabel(secret) }}</option>
+                    }
+                  </select>
+                } @else {
+                  <input [value]="entry.value"
+                    (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'value', $event)"
+                    placeholder="secret value" />
+                }
+                <select [value]="secretDeliveryValue(entry)"
+                  (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'delivery', $event)">
+                  <option value="file">Secret file</option>
+                  <option value="helper">Env via helper</option>
+                  @if ((entry.source || 'inline') !== 'vault') {
+                    <option value="env">Runtime env value</option>
+                  }
+                </select>
+                <button type="button" class="secondary compact"
+                  (click)="removeBuilderSecretEnvironmentEntry(service.id, $index)">Remove</button>
+              </div>
+              @if ((entry.source || 'inline') === 'vault' && entry.vaultSecretId) {
+                <small class="secret-reference-note">{{ vaultSecretDescription(entry.vaultSecretId) }}</small>
+              }
+              } @empty {
+              <small>No sensitive environment variables configured.</small>
+              }
+            </fieldset>
+
+            @if (serviceHasSecretEnvHelper(service)) {
+            <fieldset class="secret-helper-options">
+              <legend>Secret env helper</legend>
+              <input [value]="service.secretHelperCommand"
+                (input)="updateBuilderService(service.id, 'secretHelperCommand', $event)"
+                placeholder="auto from Dockerfile CMD, or set launch command" />
+              <small>Env helper overrides the container entrypoint, exports helper secrets, then starts this command or the Dockerfile CMD.</small>
+            </fieldset>
+            }
+          </section>
+          } @empty {
+          <div class="empty-builder-section">Add a service before configuring secret bindings.</div>
           }
           }
 
