@@ -38,12 +38,33 @@ export interface ProjectSettings {
 export type ProjectConfig = Record<string, ProjectSettings>;
 
 export type ProjectEnvironmentSecretMode = "docker_secret" | "env";
+export type ProjectEnvironmentSecretSource = "inline" | "vault";
 
 export interface ProjectEnvironmentSecret {
     service: string;
     key: string;
-    value: string;
+    value?: string;
     mode: ProjectEnvironmentSecretMode;
+    source?: ProjectEnvironmentSecretSource;
+    vaultSecretId?: string;
+}
+
+export interface VaultSecret {
+    id: string;
+    namespace: string;
+    key: string;
+    description?: string;
+    value?: string;
+    createdAt: string;
+    updatedAt: string;
+    referencedByProjects?: string[];
+}
+
+export interface VaultSecretPayload {
+    namespace?: string;
+    key?: string;
+    description?: string;
+    value?: string;
 }
 
 export interface GlobalSettings {

@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, PathBrowseResult, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, PathBrowseResult, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectEnvironmentSecretSource, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics, VaultSecret } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -87,6 +87,8 @@ interface ComposeVolumeMountEntry {
 
 interface ComposeSecretEnvironmentEntry extends ComposeEnvironmentEntry {
   mode: ProjectEnvironmentSecretMode;
+  source: ProjectEnvironmentSecretSource;
+  vaultSecretId: string;
 }
 
 interface ComposeTraefikSettings {
@@ -144,6 +146,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly builderServices = signal<ComposeBuilderService[]>([]);
   protected readonly builderNetworks = signal<ComposeBuilderNetwork[]>([]);
   protected readonly builderVolumes = signal<ComposeBuilderVolume[]>([]);
+  protected readonly vaultSecrets = signal<VaultSecret[]>([]);
   protected readonly message = signal('');
   protected readonly error = signal('');
   protected readonly traefikEnabled = signal(false);
@@ -355,6 +358,7 @@ export class ProjectSettingsPage implements OnInit {
 
   ngOnInit() {
     this.store.loadServers();
+    this.loadVaultSecrets();
 
     this.api.getGlobalSettings().subscribe({
       next: (settings) => {
@@ -980,7 +984,7 @@ export class ProjectSettingsPage implements OnInit {
 
       return {
         ...service,
-        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret' }]
+        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '' }]
       };
     }));
   }
@@ -993,9 +997,18 @@ export class ProjectSettingsPage implements OnInit {
       }
 
       const entries = [...service.secretEnvironment];
-      entries[index] = { ...(entries[index] ?? { key: '', value: '', mode: 'docker_secret' }), [field]: target.value };
+      entries[index] = { ...(entries[index] ?? { key: '', value: '', mode: 'docker_secret', source: 'inline', vaultSecretId: '' }), [field]: target.value };
       return { ...service, secretEnvironment: entries };
     }));
+  }
+
+  protected vaultSecretLabel(secret: VaultSecret) {
+    return `${secret.namespace}/${secret.key}`;
+  }
+
+  protected vaultSecretDescription(secretId: string) {
+    const secret = this.vaultSecrets().find((candidate) => candidate.id === secretId);
+    return secret?.description || (secret ? `${secret.namespace}/${secret.key}` : 'Select an Updater secret.');
   }
 
   protected removeBuilderSecretEnvironmentEntry(id: number, index: number) {
@@ -1359,8 +1372,21 @@ export class ProjectSettingsPage implements OnInit {
       environment: removeGeneratedSecretFileEntries(service.environment, secrets.filter((secret) => secret.service === service.name)),
       secretEnvironment: secrets
         .filter((secret) => secret.service === service.name)
-        .map((secret) => ({ key: secret.key, value: secret.value, mode: secret.mode }))
+        .map((secret) => ({
+          key: secret.key,
+          value: secret.value ?? '',
+          mode: secret.mode,
+          source: secret.source === 'vault' ? 'vault' : 'inline',
+          vaultSecretId: secret.vaultSecretId ?? ''
+        }))
     })));
+  }
+
+  private loadVaultSecrets() {
+    this.api.listVaultSecrets().subscribe({
+      next: (secrets) => this.vaultSecrets.set(secrets),
+      error: () => this.error.set('Could not load Updater vault secrets.'),
+    });
   }
 
   private currentProject() {
@@ -1587,6 +1613,20 @@ export class ProjectSettingsPage implements OnInit {
         const source = volumeMountSource(mount);
         if (source && !isHostVolumeSource(source) && !volumeNames.includes(source)) {
           diagnostics.push(`${serviceName} references undeclared named volume ${source}.`);
+        }
+      }
+
+      for (const secret of service.secretEnvironment) {
+        const key = secret.key.trim();
+        if (!key) {
+          diagnostics.push(`${serviceName} has a sensitive environment entry without a key.`);
+          continue;
+        }
+        if (secret.source === 'vault' && !secret.vaultSecretId.trim()) {
+          diagnostics.push(`${serviceName}.${key} needs an Updater secret selection.`);
+        }
+        if ((secret.source || 'inline') === 'inline' && !secret.value.trim()) {
+          diagnostics.push(`${serviceName}.${key} needs a manual secret value.`);
         }
       }
     }
@@ -2064,10 +2104,12 @@ function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): 
       .map((secret) => ({
         service: service.name.trim(),
         key: secret.key.trim(),
-        value: secret.value.trim(),
-        mode: secret.mode === 'env' ? 'env' as const : 'docker_secret' as const
+        value: secret.source === 'vault' ? '' : secret.value.trim(),
+        mode: secret.mode === 'env' ? 'env' as const : 'docker_secret' as const,
+        source: secret.source === 'vault' ? 'vault' as const : 'inline' as const,
+        ...(secret.source === 'vault' ? { vaultSecretId: secret.vaultSecretId.trim() } : {})
       }))
-      .filter((secret) => secret.service && secret.key && secret.value)
+      .filter((secret) => secret.service && secret.key && (secret.source === 'vault' ? secret.vaultSecretId : secret.value))
   );
 }
 

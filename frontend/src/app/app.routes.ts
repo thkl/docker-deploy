@@ -52,6 +52,11 @@ export const routes: Routes = [
       import('./pages/global-settings-page/global-settings-page').then((m) => m.GlobalSettingsPage),
   },
   {
+    path: 'secrets',
+    loadComponent: () =>
+      import('./pages/secrets-page/secrets-page').then((m) => m.SecretsPage),
+  },
+  {
     path: 'servers',
     loadComponent: () =>
       import('./pages/servers-page/servers-page').then((m) => m.ServersPage),

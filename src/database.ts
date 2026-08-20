@@ -6,7 +6,7 @@ import { GlobalSettings, GlobalSettingsPayload, ProjectConfig, ProjectSettings, 
 import type { DeploymentRecord } from "./deploymentStore.js";
 import { encryptSecret, isEncryptedSecret } from "./secretStore.js";
 
-const schemaVersion = 5;
+const schemaVersion = 6;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     defaultTraefikNetwork: "proxy",
@@ -23,7 +23,7 @@ const legacyDefaultGlobalSettings: GlobalSettings = {
 };
 
 const backupVersion = 1;
-const backupTables = ["settings", "servers", "agents", "projects", "project_traefik_settings"] as const;
+const backupTables = ["settings", "servers", "agents", "projects", "project_traefik_settings", "vault_secrets"] as const;
 
 export interface ControllerStateBackup {
     version: 1;
@@ -126,6 +126,17 @@ export class AppDatabase {
                 registry_image_tag TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS vault_secrets (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                description TEXT,
+                value TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(namespace, key)
             );
 
             CREATE TABLE IF NOT EXISTS project_traefik_settings (
@@ -609,6 +620,7 @@ export class AppDatabase {
 
         runDatabaseTransaction(this.connection, () => {
             this.connection.prepare("DELETE FROM project_traefik_settings").run();
+            this.connection.prepare("DELETE FROM vault_secrets").run();
             this.connection.prepare("DELETE FROM projects").run();
             this.connection.prepare("DELETE FROM agents").run();
             this.connection.prepare("DELETE FROM servers").run();
@@ -619,6 +631,7 @@ export class AppDatabase {
             this.insertRows("agents", backup.tables.agents ?? []);
             this.insertRows("projects", backup.tables.projects ?? []);
             this.insertRows("project_traefik_settings", backup.tables.project_traefik_settings ?? []);
+            this.insertRows("vault_secrets", backup.tables.vault_secrets ?? []);
         });
 
         this.writeBackupKeys(backup.keys);
@@ -997,13 +1010,30 @@ function normalizeDeploymentStrategy(value: ProjectSettings["deploymentStrategy"
 
 function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] = []) {
     const normalized = secrets
-        .map((secret) => ({
-            service: secret.service.trim(),
-            key: secret.key.trim(),
-            value: encryptSecret(secret.value.trim()) ?? "",
-            mode: secret.mode === "env" ? "env" : "docker_secret"
-        }))
-        .filter((secret) => secret.service && secret.key && secret.value);
+        .map((secret) => {
+            const service = secret.service.trim();
+            const key = secret.key.trim();
+            const mode = secret.mode === "env" ? "env" : "docker_secret";
+            if (secret.source === "vault") {
+                return {
+                    service,
+                    key,
+                    value: "",
+                    mode,
+                    source: "vault" as const,
+                    vaultSecretId: secret.vaultSecretId?.trim() ?? ""
+                };
+            }
+
+            return {
+                service,
+                key,
+                value: encryptSecret(secret.value?.trim() ?? "") ?? "",
+                mode,
+                source: "inline" as const
+            };
+        })
+        .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.value));
 
     return normalized.length ? JSON.stringify(normalized) : null;
 }

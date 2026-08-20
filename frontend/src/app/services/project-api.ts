@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, PathBrowseResult, ProjectPayload, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, WebhookEventRecord } from '../models/project';
+import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, PathBrowseResult, ProjectPayload, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, VaultSecret, VaultSecretPayload, WebhookEventRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -111,6 +111,22 @@ export class ProjectApi {
 
   restoreBackup(backup: unknown): Observable<{ restored: boolean; restartRecommended?: boolean }> {
     return this.http.post<{ restored: boolean }>('/api/settings/backup/restore', backup);
+  }
+
+  listVaultSecrets(): Observable<VaultSecret[]> {
+    return this.http.get<VaultSecret[]>('/api/secrets');
+  }
+
+  createVaultSecret(payload: VaultSecretPayload): Observable<VaultSecret> {
+    return this.http.post<VaultSecret>('/api/secrets', payload);
+  }
+
+  updateVaultSecret(id: string, payload: VaultSecretPayload): Observable<VaultSecret> {
+    return this.http.put<VaultSecret>(`/api/secrets/${encodeURIComponent(id)}`, payload);
+  }
+
+  deleteVaultSecret(id: string): Observable<{ deleted: boolean }> {
+    return this.http.delete<{ deleted: boolean }>(`/api/secrets/${encodeURIComponent(id)}`);
   }
 
   testBackup(payload: GlobalSettings): Observable<{ ok: boolean; path: string; createdAt: string }> {

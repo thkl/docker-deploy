@@ -24,7 +24,8 @@ import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
-import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
+import { VaultSecretStore } from "./vaultSecretStore.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject, webhookProjectCandidates } from "./webhookResolver.js";
 import { WebhookStore } from "./webhookStore.js";
@@ -45,6 +46,7 @@ export interface RouteDependencies {
     agentManager: AgentManager;
     controllerKeys: ControllerKeyState;
     serverStore: ServerStore;
+    vaultSecretStore: VaultSecretStore;
     runtimeStatusStreams: RuntimeStatusStreamHub;
     agentHealth: AgentHealthService;
     eventBus: EventBus;
@@ -54,7 +56,7 @@ export interface RouteDependencies {
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, database, configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
+    const { adminAuth, database, configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, vaultSecretStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -77,10 +79,12 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/settings", adminAuth.requireAuth);
     app.use("/api/projects", adminAuth.requireAuth);
     app.use("/api/servers", adminAuth.requireAuth);
+    app.use("/api/secrets", adminAuth.requireAuth);
 
     registerSettingsRoutes(app, { database, globalSettingsStore, eventBus });
+    registerSecretRoutes(app, { vaultSecretStore });
     registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus });
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, eventBus });
     registerWebhookRoute(app, { configStore, deploymentService, webhookStore });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
@@ -142,6 +146,54 @@ function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependenci
             res.json({ restored: true, restartRecommended: Boolean(req.body?.keys?.controllerKeys) });
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not restore backup." });
+        }
+    });
+}
+
+/**
+ * Registers central vault secret endpoints.
+ */
+function registerSecretRoutes(app: Express, dependencies: Pick<RouteDependencies, "vaultSecretStore">) {
+    const { vaultSecretStore } = dependencies;
+
+    app.get("/api/secrets", (req: Request, res: Response) => {
+        try {
+            res.json(vaultSecretStore.list());
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not load secrets." });
+        }
+    });
+
+    app.post("/api/secrets", (req: Request, res: Response) => {
+        try {
+            const secret = vaultSecretStore.create(req.body as VaultSecretPayload);
+            res.status(201).json(secret);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not create secret." });
+        }
+    });
+
+    app.put("/api/secrets/:id", (req: Request, res: Response) => {
+        try {
+            const secretId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            const payload = req.body as VaultSecretPayload;
+            const { value, ...metadata } = payload;
+            const secret = vaultSecretStore.update(secretId, {
+                ...metadata,
+                ...(value?.trim() ? { value } : {})
+            });
+            res.json(secret);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not update secret." });
+        }
+    });
+
+    app.delete("/api/secrets/:id", (req: Request, res: Response) => {
+        try {
+            const secretId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+            res.json(vaultSecretStore.delete(secretId));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not delete secret." });
         }
     });
 }
@@ -627,8 +679,8 @@ async function readResponseError(response: globalThis.Response) {
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "releaseStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "runtimeStatusStreams" | "eventBus">) {
-    const { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, runtimeStatusStreams, eventBus } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "releaseStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "vaultSecretStore" | "runtimeStatusStreams" | "eventBus">) {
+    const { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, eventBus } = dependencies;
 
     app.get("/api/projects", async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -856,7 +908,13 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 return;
             }
 
-            res.json(await runProjectPreflight(projectName, appSettings, globalSettingsStore.readSettings(), agentManager));
+            res.json(await runProjectPreflight(
+                projectName,
+                appSettings,
+                globalSettingsStore.readSettings(),
+                agentManager,
+                new Set(vaultSecretStore.list().map((secret) => secret.id))
+            ));
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not run deployment preflight." });
         }
@@ -1522,8 +1580,10 @@ function maskEnvSecrets(secrets: ProjectEnvironmentSecret[] | undefined) {
     return (secrets ?? []).map((secret) => ({
         service: secret.service,
         key: secret.key,
-        value: maskSecretValue(secret.value),
-        mode: secret.mode
+        value: secret.source === "vault" ? "" : maskSecretValue(secret.value ?? ""),
+        mode: secret.mode,
+        source: secret.source === "vault" ? "vault" as const : "inline" as const,
+        ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {})
     }));
 }
 
@@ -1536,16 +1596,24 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
         .map((secret) => {
             const service = String(secret.service ?? "").trim();
             const key = String(secret.key ?? "").trim();
-            const value = String(secret.value ?? "").trim();
-            const existingSecret = existing.find((candidate) => candidate.service === service && candidate.key === key);
+            const source = secret.source === "vault" ? "vault" as const : "inline" as const;
+            const vaultSecretId = String(secret.vaultSecretId ?? "").trim();
+            const value = source === "vault" ? "" : String(secret.value ?? "").trim();
+            const existingSecret = existing.find((candidate) =>
+                candidate.service === service &&
+                candidate.key === key &&
+                (source === "vault" ? candidate.vaultSecretId === vaultSecretId : candidate.source !== "vault")
+            );
             return {
                 service,
                 key,
-                value: isMaskedSecretValue(value) ? existingSecret?.value ?? "" : value,
-                mode: secret.mode === "env" ? "env" as const : "docker_secret" as const
+                value: source === "vault" ? "" : isMaskedSecretValue(value) ? existingSecret?.value ?? "" : value,
+                mode: secret.mode === "env" ? "env" as const : "docker_secret" as const,
+                source,
+                ...(source === "vault" ? { vaultSecretId } : {})
             };
         })
-        .filter((secret) => secret.service && secret.key && secret.value);
+        .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.value));
 }
 
 function isMaskedSecretValue(value: string) {

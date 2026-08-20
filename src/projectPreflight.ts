@@ -5,10 +5,11 @@ import { ComposeInspection, ComposeValidation, DockerTopology, GlobalSettings, P
  * Runs non-mutating deployment readiness checks against the same target agent
  * path used by deployment.
  */
-export async function runProjectPreflight(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, agentManager: AgentManager): Promise<ProjectPreflightResult> {
+export async function runProjectPreflight(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, agentManager: AgentManager, vaultSecretIds = new Set<string>()): Promise<ProjectPreflightResult> {
     const deploymentTargets = targetDeploymentServerIds(appSettings, agentManager);
     const checks: ProjectPreflightCheck[] = [
         projectSourceCheck(appSettings),
+        vaultSecretReferenceCheck(appSettings, vaultSecretIds),
         registryConfigurationCheck(appSettings, globalSettings)
     ];
     const targets = await Promise.all(deploymentTargets.map((serverId) => runTargetPreflight(projectName, { ...appSettings, serverId }, globalSettings, agentManager)));
@@ -21,6 +22,34 @@ export async function runProjectPreflight(projectName: string, appSettings: Proj
         checks,
         targets
     };
+}
+
+function vaultSecretReferenceCheck(appSettings: ProjectSettings, vaultSecretIds: Set<string>): ProjectPreflightCheck {
+    const vaultRefs = (appSettings.envSecrets ?? []).filter((secret) => secret.source === "vault");
+    if (!vaultRefs.length) {
+        return pass("secrets.vault", "Vault secrets", "No Updater vault secrets are referenced.", undefined, "Deploy will use only project-local secret values.", "No action needed.");
+    }
+
+    const missing = vaultRefs.filter((secret) => !secret.vaultSecretId || !vaultSecretIds.has(secret.vaultSecretId));
+    if (missing.length) {
+        return fail(
+            "secrets.vault",
+            "Vault secrets",
+            `Missing vault secret references: ${missing.map((secret) => `${secret.service}.${secret.key}`).join(", ")}.`,
+            undefined,
+            "Deploy resolves Updater vault references in the controller before sending the job to the target agent.",
+            "Select an existing Updater secret for each missing reference, or switch the entry back to a manual value."
+        );
+    }
+
+    return pass(
+        "secrets.vault",
+        "Vault secrets",
+        `${vaultRefs.length} vault secret reference(s) are configured.`,
+        undefined,
+        "Deploy can resolve these references before creating Docker secrets or runtime environment values.",
+        "No action needed."
+    );
 }
 
 async function runTargetPreflight(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, agentManager: AgentManager): Promise<ProjectPreflightTarget> {

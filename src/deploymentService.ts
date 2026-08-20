@@ -5,6 +5,7 @@ import { assertSafeDeletePath } from "./checkoutCleanup.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
 import { RuntimeLogStream } from "./deploy.js";
 import { ReleaseStore } from "./releaseStore.js";
+import { VaultSecretStore } from "./vaultSecretStore.js";
 
 /**
  * Coordinates deployment lifecycle state with the worker execution layer.
@@ -21,6 +22,7 @@ export class DeploymentService {
         private readonly deploymentStore: DeploymentStore,
         private readonly releaseStore: ReleaseStore,
         private readonly globalSettingsStore: GlobalSettingsStore,
+        private readonly vaultSecretStore: VaultSecretStore,
         private readonly agentManager: AgentManager,
         private readonly broadcastDeployment: (projectName: string) => void,
         private readonly refreshRuntimeStatus: (projectName: string) => void | Promise<void> = () => {},
@@ -81,7 +83,18 @@ export class DeploymentService {
             return;
         }
 
-        const targetSettings = { ...appSettings, serverId };
+        let targetSettings: ProjectSettings;
+        try {
+            targetSettings = this.resolveDeploymentSecrets({ ...appSettings, serverId });
+        } catch (error) {
+            this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                error: error instanceof Error ? error.message : "Could not resolve deployment secrets.",
+                exitCode: "secret-resolution",
+                phase: "failed"
+            });
+            this.broadcastDeploymentUpdate(projectName);
+            return;
+        }
         const globalSettings = this.globalSettingsStore.readSettings();
         this.deploymentStore.setPhase(projectName, deployment.id, "dispatching");
         this.broadcastDeploymentUpdate(projectName);
@@ -611,6 +624,33 @@ export class DeploymentService {
 
         const managerId = this.agentManager.findSwarmManagerServerId(ids);
         return [managerId ?? ids[0] ?? "local"];
+    }
+
+    private resolveDeploymentSecrets(appSettings: ProjectSettings): ProjectSettings {
+        const secrets = appSettings.envSecrets ?? [];
+        if (!secrets.some((secret) => secret.source === "vault")) {
+            return appSettings;
+        }
+
+        return {
+            ...appSettings,
+            envSecrets: secrets.map((secret) => {
+                if (secret.source !== "vault") {
+                    return secret;
+                }
+                if (!secret.vaultSecretId) {
+                    throw new Error(`Vault secret reference for ${secret.service}.${secret.key} is missing a secret ID.`);
+                }
+
+                return {
+                    service: secret.service,
+                    key: secret.key,
+                    value: this.vaultSecretStore.resolveValue(secret.vaultSecretId),
+                    mode: secret.mode,
+                    source: "inline" as const
+                };
+            })
+        };
     }
 }
 

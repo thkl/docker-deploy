@@ -775,7 +775,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
         .map((secret) => ({
             service: secret.service.trim(),
             key: secret.key.trim(),
-            value: secret.value,
+            value: secret.value ?? "",
             mode: secret.mode === "env" ? "env" as const : "docker_secret" as const
         }))
         .filter((secret) => secret.service && secret.key && secret.value);
@@ -868,7 +868,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
 function renderDockerSecretCreateLines(projectName: string, secret: ProjectEnvironmentSecret) {
     const secretName = dockerSecretName(projectName, secret);
     const secretBase = dockerSecretBaseName(projectName, secret);
-    const encodedValue = Buffer.from(secret.value, "utf8").toString("base64");
+    const encodedValue = Buffer.from(secret.value ?? "", "utf8").toString("base64");
     const labels = [
         `--label ${shellQuote(`deploy.project=${projectName}`)}`,
         `--label ${shellQuote(`deploy.secret-base=${secretBase}`)}`,
@@ -978,7 +978,7 @@ function composeSecretMountTarget(service: string, key: string) {
 }
 
 function dockerSecretName(projectName: string, secret: ProjectEnvironmentSecret) {
-    const suffix = `_${createHash("sha256").update(secret.value).digest("hex").slice(0, 12)}`;
+    const suffix = `_${createHash("sha256").update(secret.value ?? "").digest("hex").slice(0, 12)}`;
     const base = dockerSecretBaseName(projectName, secret);
     return `${base.slice(0, Math.max(1, 63 - suffix.length)).replace(/[_.-]+$/g, "")}${suffix}`;
 }
@@ -1037,7 +1037,7 @@ function redactDeploymentOutput(value: string, secrets: ProjectEnvironmentSecret
 
 function deploymentSecretValues(secrets: ProjectEnvironmentSecret[] | undefined, globalSettings?: GlobalSettings) {
     return [
-        ...(secrets ?? []).map((secret) => secret.value),
+        ...(secrets ?? []).map((secret) => secret.value ?? ""),
         globalSettings?.registryPassword ?? ""
     ].filter((value) => value.length >= 3);
 }

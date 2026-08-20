@@ -23,6 +23,7 @@ import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { AuthenticatedRequest, RuntimeStatus } from "./types.js";
+import { VaultSecretStore } from "./vaultSecretStore.js";
 import { WebhookStore } from "./webhookStore.js";
 
 /**
@@ -44,6 +45,7 @@ class App {
     private readonly runtimeOperationStore = new RuntimeOperationStore(this.database.connection);
     private readonly globalSettingsStore = new GlobalSettingsStore(this.database.connection);
     private readonly serverStore = new ServerStore(this.database.connection);
+    private readonly vaultSecretStore = new VaultSecretStore(this.database.connection);
     private readonly controllerKeys = ensureControllerKeys();
     private readonly localAgent = new LocalAgent();
     private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
@@ -83,6 +85,7 @@ class App {
         this.deploymentStore,
         this.releaseStore,
         this.globalSettingsStore,
+        this.vaultSecretStore,
         this.agentManager,
         (projectName) => this.deploymentStreams.broadcast(projectName),
         (projectName) => this.runtimeStatusStreams.refreshProject(projectName),
@@ -127,6 +130,7 @@ class App {
             agentManager: this.agentManager,
             controllerKeys: this.controllerKeys,
             serverStore: this.serverStore,
+            vaultSecretStore: this.vaultSecretStore,
             runtimeStatusStreams: this.runtimeStatusStreams,
             agentHealth: this.agentHealth,
             eventBus: this.eventBus

@@ -223,13 +223,18 @@ function parseProjectEnvSecrets(value: string) {
     try {
         const parsed = JSON.parse(value) as NonNullable<ProjectSettings["envSecrets"]>;
         return parsed
-            .map((secret) => ({
-                service: secret.service,
-                key: secret.key,
-                value: decryptSecret(secret.value) ?? "",
-                mode: secret.mode === "env" ? "env" as const : "docker_secret" as const
-            }))
-            .filter((secret) => secret.service && secret.key);
+            .map((secret) => {
+                const source = secret.source === "vault" ? "vault" as const : "inline" as const;
+                return {
+                    service: secret.service,
+                    key: secret.key,
+                    value: source === "vault" ? "" : decryptSecret(secret.value ?? "") ?? "",
+                    mode: secret.mode === "env" ? "env" as const : "docker_secret" as const,
+                    source,
+                    ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {})
+                };
+            })
+            .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : true));
     } catch {
         return [];
     }
