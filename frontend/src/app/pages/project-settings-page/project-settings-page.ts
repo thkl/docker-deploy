@@ -3,9 +3,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, PathBrowseResult, ProjectEnvironmentSecret, ProjectEnvironmentSecretExposure, ProjectEnvironmentSecretMode, ProjectEnvironmentSecretSource, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics, VaultSecret } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, PathBrowseResult, ProjectEnvironmentSecret, ProjectEnvironmentSecretExposure, ProjectEnvironmentSecretMode, ProjectEnvironmentSecretSource, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
+import { ProjectSettingsPageStore } from './project-settings-page.store';
+import { ProjectSettingsSecretsSection } from './project-settings-secrets-section';
 
 interface ComposeBuilderService {
   id: number;
@@ -117,9 +119,10 @@ interface StrategySummary {
 
 @Component({
   selector: 'app-project-settings-page',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, ProjectSettingsSecretsSection],
   templateUrl: './project-settings-page.html',
   styleUrl: './project-settings-page.scss',
+  providers: [ProjectSettingsPageStore],
 })
 export class ProjectSettingsPage implements OnInit {
   protected readonly store = inject(ProjectStore);
@@ -127,6 +130,7 @@ export class ProjectSettingsPage implements OnInit {
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly settingsState = inject(ProjectSettingsPageStore);
 
   protected readonly isNew = signal(true);
   protected readonly currentName = signal('');
@@ -145,15 +149,11 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly browsingHostPath = signal(false);
   protected readonly hostPathBrowserError = signal('');
   protected readonly hostPathBrowser = signal<{ serviceId: number; index: number; result: PathBrowseResult } | null>(null);
-  protected readonly builderServices = signal<ComposeBuilderService[]>([]);
+  protected readonly builderServices = this.settingsState.builderServices;
   protected readonly builderNetworks = signal<ComposeBuilderNetwork[]>([]);
   protected readonly builderVolumes = signal<ComposeBuilderVolume[]>([]);
-  protected readonly vaultSecrets = signal<VaultSecret[]>([]);
-  protected readonly savingVaultSecret = signal(false);
-  protected readonly deletingVaultSecret = signal('');
-  protected readonly editingVaultSecretId = signal('');
-  protected readonly message = signal('');
-  protected readonly error = signal('');
+  protected readonly message = this.settingsState.message;
+  protected readonly error = this.settingsState.error;
   protected readonly traefikEnabled = signal(false);
   protected readonly wildcardCertificate = signal(false);
   protected readonly deploymentStrategy = signal<DeploymentStrategy>('compose');
@@ -314,12 +314,6 @@ export class ProjectSettingsPage implements OnInit {
     traefikWildcardDomain: [''],
     traefikWebsocket: [false],
     traefikRemovePublishedPorts: [true],
-  });
-
-  protected readonly vaultSecretForm = this.fb.group({
-    key: ['', [Validators.required]],
-    description: [''],
-    value: ['', [Validators.required]],
   });
 
   private patchedProjectName = '';
@@ -992,196 +986,12 @@ export class ProjectSettingsPage implements OnInit {
     }));
   }
 
-  protected addBuilderSecretEnvironmentEntry(id: number) {
-    this.builderServices.update((services) => services.map((service) => {
-      if (service.id !== id) {
-        return service;
-      }
-
-      return {
-        ...service,
-        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', exposure: 'file' }]
-      };
-    }));
-  }
-
-  protected updateBuilderSecretEnvironmentEntry(id: number, index: number, field: keyof ComposeSecretEnvironmentEntry | 'delivery', event: Event) {
-    const target = event.target as HTMLInputElement | HTMLSelectElement;
-    this.builderServices.update((services) => services.map((service) => {
-      if (service.id !== id) {
-        return service;
-      }
-
-      const entries = [...service.secretEnvironment];
-      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', exposure: 'file' as const };
-      const next = field === 'delivery'
-        ? { ...current }
-        : { ...current, [field]: target.value };
-      if (field === 'source' && target.value === 'vault') {
-        next.source = 'vault';
-        next.mode = 'docker_secret';
-        next.value = '';
-        next.vaultSecretId = next.vaultSecretId || this.vaultSecrets()[0]?.id || '';
-      }
-      if (field === 'source' && target.value === 'inline') {
-        next.source = 'inline';
-        next.vaultSecretId = '';
-      }
-      if (field === 'vaultSecretId') {
-        next.source = 'vault';
-        next.mode = 'docker_secret';
-        next.value = '';
-      }
-      if (field === 'delivery') {
-        if (target.value === 'env') {
-          next.mode = 'env';
-          next.exposure = 'file';
-        } else {
-          next.mode = 'docker_secret';
-          next.exposure = target.value === 'helper' ? 'env' : 'file';
-        }
-      }
-      if (next.source === 'vault') {
-        next.mode = 'docker_secret';
-      }
-      entries[index] = next;
-      return { ...service, secretEnvironment: entries };
-    }));
-  }
-
-  protected secretDeliveryValue(entry: ComposeSecretEnvironmentEntry) {
-    if (entry.mode === 'env' && (entry.source || 'inline') !== 'vault') {
-      return 'env';
-    }
-    return entry.exposure === 'env' ? 'helper' : 'file';
-  }
-
-  protected serviceHasSecretEnvHelper(service: ComposeBuilderService) {
-    return service.secretEnvironment.some((secret) => secret.mode === 'docker_secret' && secret.exposure === 'env');
-  }
-
   protected builderSecretCount() {
-    return this.builderServices().reduce((count, service) => count + service.secretEnvironment.length, 0);
-  }
-
-  protected vaultSecretLabel(secret: VaultSecret) {
-    return `${secret.namespace}/${secret.key}`;
+    return this.settingsState.builderSecretCount();
   }
 
   protected projectSecretNamespace() {
     return this.form.controls.name.value.trim() || this.currentName().trim() || 'project';
-  }
-
-  protected vaultSecretExists(secretId: string) {
-    return this.vaultSecrets().some((secret) => secret.id === secretId);
-  }
-
-  protected vaultSecretDescription(secretId: string) {
-    const secret = this.vaultSecrets().find((candidate) => candidate.id === secretId);
-    return secret?.description || (secret ? `${secret.namespace}/${secret.key}` : 'Select an Updater secret.');
-  }
-
-  protected saveProjectVaultSecret() {
-    this.message.set('');
-    this.error.set('');
-
-    if (this.vaultSecretForm.invalid) {
-      this.vaultSecretForm.markAllAsTouched();
-      this.error.set('Secret key and value are required.');
-      return;
-    }
-
-    const payload = this.vaultSecretForm.getRawValue();
-    const editingId = this.editingVaultSecretId();
-    this.savingVaultSecret.set(true);
-    const request = editingId
-      ? this.api.updateVaultSecret(editingId, {
-          namespace: this.projectSecretNamespace(),
-          key: payload.key,
-          description: payload.description,
-          ...(payload.value.trim() ? { value: payload.value } : {}),
-        })
-      : this.api.createVaultSecret({
-          namespace: this.projectSecretNamespace(),
-          key: payload.key,
-          description: payload.description,
-          value: payload.value,
-        });
-
-    request.subscribe({
-      next: (secret) => {
-        this.message.set(`${secret.key} ${editingId ? 'updated' : 'created'}.`);
-        this.cancelProjectVaultSecretEdit();
-        this.loadVaultSecrets();
-        this.savingVaultSecret.set(false);
-      },
-      error: (error) => {
-        this.error.set(error?.error?.error || 'Could not save secret.');
-        this.savingVaultSecret.set(false);
-      },
-    });
-  }
-
-  protected editProjectVaultSecret(secret: VaultSecret) {
-    this.editingVaultSecretId.set(secret.id);
-    this.message.set('');
-    this.error.set('');
-    this.vaultSecretForm.reset({
-      key: secret.key,
-      description: secret.description ?? '',
-      value: '',
-    });
-    this.vaultSecretForm.controls.value.clearValidators();
-    this.vaultSecretForm.controls.value.updateValueAndValidity();
-  }
-
-  protected cancelProjectVaultSecretEdit() {
-    this.editingVaultSecretId.set('');
-    this.vaultSecretForm.reset({
-      key: '',
-      description: '',
-      value: '',
-    });
-    this.vaultSecretForm.controls.value.setValidators([Validators.required]);
-    this.vaultSecretForm.controls.value.updateValueAndValidity();
-  }
-
-  protected deleteProjectVaultSecret(secret: VaultSecret) {
-    if (!window.confirm(`Delete ${secret.key}?`)) {
-      return;
-    }
-
-    this.deletingVaultSecret.set(secret.id);
-    this.message.set('');
-    this.error.set('');
-    this.api.deleteVaultSecret(secret.id).subscribe({
-      next: () => {
-        this.message.set(`${secret.key} deleted.`);
-        this.loadVaultSecrets();
-        this.deletingVaultSecret.set('');
-      },
-      error: (error) => {
-        this.error.set(error?.error?.error || 'Could not delete secret.');
-        this.deletingVaultSecret.set('');
-      },
-    });
-  }
-
-  protected vaultSecretReferenceLabel(secret: VaultSecret) {
-    const refs = secret.referencedByProjects ?? [];
-    return refs.length ? refs.join(', ') : 'Unused';
-  }
-
-  protected removeBuilderSecretEnvironmentEntry(id: number, index: number) {
-    this.builderServices.update((services) => services.map((service) => {
-      if (service.id !== id) {
-        return service;
-      }
-
-      const entries = [...service.secretEnvironment];
-      entries.splice(index, 1);
-      return { ...service, secretEnvironment: entries };
-    }));
   }
 
   protected addBuilderNetwork(name = 'app', external = false) {
@@ -1547,10 +1357,8 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   private loadVaultSecrets() {
-    this.api.listVaultSecrets(this.projectSecretNamespace()).subscribe({
-      next: (secrets) => this.vaultSecrets.set(secrets),
-      error: () => this.error.set('Could not load Updater vault secrets.'),
-    });
+    this.settingsState.setProjectName(this.projectSecretNamespace());
+    this.settingsState.loadVaultSecrets();
   }
 
   private currentProject() {
