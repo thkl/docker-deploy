@@ -492,6 +492,7 @@
                     <option value="vault">Updater secret</option>
                   </select>
                   @if ((entry.source || 'inline') === 'vault') {
+                    {{entry.vaultSecretId}}
                     <select [value]="entry.vaultSecretId"
                       (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'vaultSecretId', $event)">
                       <option value="">Select secret</option>
@@ -499,7 +500,11 @@
                         <option [value]="entry.vaultSecretId">{{ entry.vaultSecretId }} (not loaded)</option>
                       }
                       @for (secret of vaultSecrets(); track secret.id) {
-                        <option [value]="secret.id">{{ vaultSecretLabel(secret) }}</option>
+                        @if(secret.id === entry.vaultSecretId) {
+                          <option [value]="secret.id" [selected]="true">{{ vaultSecretLabel(secret) }}</option>
+                        } @else {
+                          <option [value]="secret.id">{{ vaultSecretLabel(secret) }}</option>
+                        }
                       }
                     </select>
                   } @else {
