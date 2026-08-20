@@ -882,8 +882,8 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
                 lines.push(`        exec /bin/sh -c ${shellQuote(helperCommand)}`);
             } else {
                 lines.push(`        DEPLOY_SECRET_HELPER_COMMAND=${helperCommand}`);
-                lines.push("        if [ -n \"$DEPLOY_SECRET_HELPER_COMMAND\" ]; then");
-                lines.push("          exec /bin/sh -c \"$DEPLOY_SECRET_HELPER_COMMAND\"");
+                lines.push("        if [ -n \"$$DEPLOY_SECRET_HELPER_COMMAND\" ]; then");
+                lines.push("          exec /bin/sh -c \"$$DEPLOY_SECRET_HELPER_COMMAND\"");
                 lines.push("        fi");
                 lines.push("        if [ \"$#\" -eq 0 ]; then");
                 lines.push("          echo \"--> CRITICAL: Secret env helper has no launch command, no Dockerfile CMD could be detected, and the image supplied no CMD.\"");
