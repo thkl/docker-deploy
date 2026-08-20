@@ -908,3 +908,8 @@ button.secondary:hover {
 .compose_input {
   min-height: 70em;
 }
+
+.head-category {
+  display: flex;
+  flex-direction: column;
+}

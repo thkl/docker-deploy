@@ -619,7 +619,7 @@
 
           <section class="project-secrets-panel">
             <div class="project-secrets-head">
-              <div>
+              <div class="head-category">
                 <strong>Project secrets</strong>
                 <span>Vault entries scoped to {{ projectSecretNamespace() }}.</span>
               </div>
@@ -661,7 +661,7 @@
           @for (service of builderServices(); track service.id) {
           <section class="builder-service secret-service-panel">
             <div class="builder-service-head">
-              <div>
+              <div class="head-category">
                 <strong>{{ service.name || 'Unnamed service' }}</strong>
                 <span>{{ service.secretEnvironment.length }} secret {{ service.secretEnvironment.length === 1 ? 'binding' : 'bindings' }}</span>
               </div>
