@@ -492,7 +492,6 @@
                     <option value="vault">Updater secret</option>
                   </select>
                   @if ((entry.source || 'inline') === 'vault') {
-                    {{entry.vaultSecretId}}
                     <select [value]="entry.vaultSecretId"
                       (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'vaultSecretId', $event)">
                       <option value="">Select secret</option>
