@@ -1023,7 +1023,8 @@ function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] =
                     mode,
                     source: "vault" as const,
                     vaultSecretId: secret.vaultSecretId?.trim() ?? "",
-                    exposure
+                    exposure,
+                    helperCommand: exposure === "env" ? secret.helperCommand?.trim() ?? "" : ""
                 };
             }
 
@@ -1033,7 +1034,8 @@ function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] =
                 value: encryptSecret(secret.value?.trim() ?? "") ?? "",
                 mode,
                 source: "inline" as const,
-                exposure
+                exposure,
+                helperCommand: exposure === "env" ? secret.helperCommand?.trim() ?? "" : ""
             };
         })
         .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.value));

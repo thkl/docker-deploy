@@ -778,7 +778,8 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
             key: secret.key.trim(),
             value: secret.value ?? "",
             mode: secret.mode === "env" ? "env" as const : "docker_secret" as const,
-            exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const
+            exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const,
+            helperCommand: secret.mode === "docker_secret" && secret.exposure === "env" ? secret.helperCommand?.trim() ?? "" : ""
         }))
         .filter((secret) => secret.service && secret.key && secret.value);
 
@@ -800,6 +801,13 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
     const secretDir = "$COMPOSE_WORKSPACE/secrets";
     const dockerSecrets = validSecrets.filter((secret) => secret.mode === "docker_secret");
     const fileBackedDockerSecrets = useSwarmSecrets ? [] : dockerSecrets;
+    const autoHelperCommands = [...new Set(validSecrets
+        .filter((secret) => secret.mode === "docker_secret" && secret.exposure === "env" && !secret.helperCommand)
+        .map((secret) => secret.service))]
+        .map((service) => ({
+            service,
+            placeholder: helperCommandPlaceholder(service)
+        }));
     const lines = [
         "",
         "                echo \"--> Preparing sensitive environment values.\"",
@@ -819,6 +827,13 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
         for (const secret of dockerSecrets) {
             lines.push(...renderDockerSecretCreateLines(projectName, secret));
         }
+    }
+
+    if (autoHelperCommands.length) {
+        lines.push("                docker compose -p \"$PROJECT_NAME\" $COMPOSE_FILES config --format json > /tmp/deploy-compose-secret-source.json");
+        lines.push(`                node - /tmp/deploy-compose-secret-source.json ${shellQuote(JSON.stringify(autoHelperCommands))} << 'DEPLOY_SECRET_HELPER_COMMANDS_JS'`);
+        lines.push(dockerfileCommandDetectionScript());
+        lines.push("DEPLOY_SECRET_HELPER_COMMANDS_JS");
     }
 
     lines.push("                cat > \"$COMPOSE_WORKSPACE/docker-compose.secrets.yml\" << 'DEPLOY_SECRETS_EOF'");
@@ -853,6 +868,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
         }
         const helperSecrets = serviceSecrets.filter((secret) => secret.mode === "docker_secret" && secret.exposure === "env");
         if (helperSecrets.length) {
+            const helperCommand = helperSecrets.map((secret) => secret.helperCommand).find(Boolean) ?? helperCommandPlaceholder(service);
             lines.push("    entrypoint:");
             lines.push("      - /bin/sh");
             lines.push("      - -c");
@@ -862,7 +878,19 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
                 const targetName = composeSecretMountTarget(service, secret.key);
                 lines.push(`        export ${secret.key}="$(cat ${shellQuote(`/run/secrets/${targetName}`)})"`);
             }
-            lines.push("        exec \"$@\"");
+            if (helperCommand && !helperCommand.startsWith("__DEPLOY_SECRET_HELPER_COMMAND_")) {
+                lines.push(`        exec /bin/sh -c ${shellQuote(helperCommand)}`);
+            } else {
+                lines.push(`        DEPLOY_SECRET_HELPER_COMMAND=${helperCommand}`);
+                lines.push("        if [ -n \"$DEPLOY_SECRET_HELPER_COMMAND\" ]; then");
+                lines.push("          exec /bin/sh -c \"$DEPLOY_SECRET_HELPER_COMMAND\"");
+                lines.push("        fi");
+                lines.push("        if [ \"$#\" -eq 0 ]; then");
+                lines.push("          echo \"--> CRITICAL: Secret env helper has no launch command, no Dockerfile CMD could be detected, and the image supplied no CMD.\"");
+                lines.push("          exit 127");
+                lines.push("        fi");
+                lines.push("        exec \"$@\"");
+            }
             lines.push("      - deploy-secret-env");
         }
     }
@@ -881,6 +909,12 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
     }
 
     lines.push("DEPLOY_SECRETS_EOF");
+
+    if (autoHelperCommands.length) {
+        lines.push(`                node - "$COMPOSE_WORKSPACE/docker-compose.secrets.yml" ${shellQuote(JSON.stringify(autoHelperCommands))} << 'DEPLOY_SECRET_HELPER_REPLACE_JS'`);
+        lines.push(secretHelperReplacementScript());
+        lines.push("DEPLOY_SECRET_HELPER_REPLACE_JS");
+    }
 
     for (const secret of fileBackedDockerSecrets) {
         const secretName = composeSecretMountTarget(secret.service, secret.key);
@@ -1008,6 +1042,154 @@ function composeSecretMountTarget(service: string, key: string) {
 
 function isShellEnvIdentifier(value: string) {
     return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+function helperCommandPlaceholder(service: string) {
+    return `__DEPLOY_SECRET_HELPER_COMMAND_${normalizeDockerSecretName(service).toUpperCase().replace(/[^A-Z0-9_]+/g, "_")}__`;
+}
+
+function dockerfileCommandDetectionScript() {
+    return String.raw`const fs = require("node:fs");
+const path = require("node:path");
+
+const [composePath, requestedJson] = process.argv.slice(2);
+const requested = JSON.parse(requestedJson || "[]");
+const compose = JSON.parse(fs.readFileSync(composePath, "utf8") || "{}");
+const services = compose && typeof compose === "object" && compose.services && typeof compose.services === "object" ? compose.services : {};
+const replacements = {};
+
+for (const item of requested) {
+  const service = services[item.service];
+  const dockerfilePath = dockerfileForService(service);
+  const command = dockerfilePath ? dockerfileLaunchCommand(dockerfilePath) : "";
+  replacements[item.placeholder] = shellQuote(command);
+  if (command) {
+    console.log("--> Secret helper command for " + item.service + " detected from " + dockerfilePath + ": " + command);
+  } else {
+    console.log("--> Secret helper command for " + item.service + " could not be detected from its Dockerfile.");
+  }
+}
+
+fs.writeFileSync("/tmp/deploy-secret-helper-replacements.json", JSON.stringify(replacements, null, 2) + "\n");
+
+function dockerfileForService(service) {
+  if (!service || typeof service !== "object" || !service.build) {
+    return "";
+  }
+
+  let context = "";
+  let dockerfile = "Dockerfile";
+  if (typeof service.build === "string") {
+    context = service.build;
+  } else if (service.build && typeof service.build === "object") {
+    context = typeof service.build.context === "string" ? service.build.context : "";
+    dockerfile = typeof service.build.dockerfile === "string" && service.build.dockerfile ? service.build.dockerfile : dockerfile;
+  }
+
+  if (!context) {
+    return "";
+  }
+
+  return path.resolve(context, dockerfile);
+}
+
+function dockerfileLaunchCommand(dockerfilePath) {
+  if (!fs.existsSync(dockerfilePath)) {
+    return "";
+  }
+
+  const instructions = dockerfileInstructions(fs.readFileSync(dockerfilePath, "utf8"));
+  const entrypoint = lastInstruction(instructions, "ENTRYPOINT");
+  const cmd = lastInstruction(instructions, "CMD");
+  const entrypointCommand = entrypoint ? dockerInstructionCommand(entrypoint.value) : "";
+  const cmdCommand = cmd ? dockerInstructionCommand(cmd.value) : "";
+
+  if (entrypointCommand && cmdCommand) {
+    return entrypointCommand + " " + cmdCommand;
+  }
+
+  return entrypointCommand || cmdCommand;
+}
+
+function dockerfileInstructions(content) {
+  const logicalLines = [];
+  let current = "";
+  for (const rawLine of content.replace(/\r\n/g, "\n").split("\n")) {
+    const line = rawLine.replace(/\s+#.*$/, "");
+    if (!line.trim() && !current) {
+      continue;
+    }
+    if (line.endsWith("\\")) {
+      current += line.slice(0, -1) + " ";
+      continue;
+    }
+    logicalLines.push((current + line).trim());
+    current = "";
+  }
+  if (current.trim()) {
+    logicalLines.push(current.trim());
+  }
+
+  return logicalLines
+    .map((line) => {
+      const match = line.match(/^([A-Z]+)\s+(.+)$/i);
+      return match ? { name: match[1].toUpperCase(), value: match[2].trim() } : null;
+    })
+    .filter(Boolean);
+}
+
+function lastInstruction(instructions, name) {
+  for (let index = instructions.length - 1; index >= 0; index -= 1) {
+    if (instructions[index].name === name) {
+      return instructions[index];
+    }
+  }
+  return null;
+}
+
+function dockerInstructionCommand(value) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((part) => shellArg(String(part))).join(" ");
+      }
+    } catch {
+      return trimmed;
+    }
+  }
+
+  return trimmed;
+}
+
+function shellArg(value) {
+  return /^[a-zA-Z0-9_./:@=-]+$/.test(value) ? value : "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
+function shellQuote(value) {
+  return "'" + String(value).replace(/'/g, "'\\''") + "'";
+}`;
+}
+
+function secretHelperReplacementScript() {
+    return String.raw`const fs = require("node:fs");
+
+const [overlayPath, requestedJson] = process.argv.slice(2);
+const requested = JSON.parse(requestedJson || "[]");
+const replacements = JSON.parse(fs.readFileSync("/tmp/deploy-secret-helper-replacements.json", "utf8") || "{}");
+let content = fs.readFileSync(overlayPath, "utf8");
+
+for (const item of requested) {
+  const replacement = replacements[item.placeholder] || "''";
+  content = content.split(item.placeholder).join(replacement);
+}
+
+fs.writeFileSync(overlayPath, content);`;
 }
 
 function dockerSecretName(projectName: string, secret: ProjectEnvironmentSecret) {

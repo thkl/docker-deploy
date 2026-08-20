@@ -495,6 +495,9 @@
                     <select [value]="entry.vaultSecretId"
                       (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'vaultSecretId', $event)">
                       <option value="">Select secret</option>
+                      @if (entry.vaultSecretId && !vaultSecretExists(entry.vaultSecretId)) {
+                        <option [value]="entry.vaultSecretId">{{ entry.vaultSecretId }} (not loaded)</option>
+                      }
                       @for (secret of vaultSecrets(); track secret.id) {
                         <option [value]="secret.id">{{ vaultSecretLabel(secret) }}</option>
                       }
@@ -519,7 +522,12 @@
                   <small class="secret-reference-note">{{ vaultSecretDescription(entry.vaultSecretId) }}</small>
                 }
                 @if (entry.mode === 'docker_secret' && entry.exposure === 'env') {
-                  <small class="secret-reference-note">Env helper overrides the container entrypoint, reads the secret file, exports {{ entry.key || 'SECRET_KEY' }}, then starts the image command.</small>
+                  <div class="secret-helper-options">
+                    <input [value]="entry.helperCommand"
+                      (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'helperCommand', $event)"
+                      placeholder="auto from Dockerfile CMD, or set launch command" />
+                    <small>Env helper overrides the container entrypoint, exports {{ entry.key || 'SECRET_KEY' }}, then starts this command or the Dockerfile CMD.</small>
+                  </div>
                 }
                 } @empty {
                 <small>No sensitive environment variables configured.</small>

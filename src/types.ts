@@ -49,6 +49,7 @@ export interface ProjectEnvironmentSecret {
     source?: ProjectEnvironmentSecretSource;
     vaultSecretId?: string;
     exposure?: ProjectEnvironmentSecretExposure;
+    helperCommand?: string;
 }
 
 export interface VaultSecret {

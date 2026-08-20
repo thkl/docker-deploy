@@ -648,7 +648,8 @@ export class DeploymentService {
                     value: this.vaultSecretStore.resolveValue(secret.vaultSecretId),
                     mode: "docker_secret" as const,
                     source: "inline" as const,
-                    exposure: secret.exposure === "env" ? "env" as const : "file" as const
+                    exposure: secret.exposure === "env" ? "env" as const : "file" as const,
+                    helperCommand: secret.exposure === "env" ? secret.helperCommand ?? "" : ""
                 };
             })
         };

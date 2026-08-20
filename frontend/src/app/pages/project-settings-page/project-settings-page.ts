@@ -90,6 +90,7 @@ interface ComposeSecretEnvironmentEntry extends ComposeEnvironmentEntry {
   source: ProjectEnvironmentSecretSource;
   vaultSecretId: string;
   exposure: ProjectEnvironmentSecretExposure;
+  helperCommand: string;
 }
 
 interface ComposeTraefikSettings {
@@ -985,7 +986,7 @@ export class ProjectSettingsPage implements OnInit {
 
       return {
         ...service,
-        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', exposure: 'file' }]
+        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', exposure: 'file', helperCommand: '' }]
       };
     }));
   }
@@ -998,7 +999,7 @@ export class ProjectSettingsPage implements OnInit {
       }
 
       const entries = [...service.secretEnvironment];
-      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', exposure: 'file' as const };
+      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', exposure: 'file' as const, helperCommand: '' };
       const next = field === 'delivery'
         ? { ...current }
         : { ...current, [field]: target.value };
@@ -1043,6 +1044,10 @@ export class ProjectSettingsPage implements OnInit {
 
   protected vaultSecretLabel(secret: VaultSecret) {
     return `${secret.namespace}/${secret.key}`;
+  }
+
+  protected vaultSecretExists(secretId: string) {
+    return this.vaultSecrets().some((secret) => secret.id === secretId);
   }
 
   protected vaultSecretDescription(secretId: string) {
@@ -1417,7 +1422,8 @@ export class ProjectSettingsPage implements OnInit {
           mode: secret.source === 'vault' ? 'docker_secret' : secret.mode,
           source: secret.source === 'vault' ? 'vault' : 'inline',
           vaultSecretId: secret.vaultSecretId ?? '',
-          exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' : 'file'
+          exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' : 'file',
+          helperCommand: secret.mode === 'docker_secret' && secret.exposure === 'env' ? secret.helperCommand ?? '' : ''
         }))
     })));
   }
@@ -2158,6 +2164,7 @@ function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): 
         mode: secret.source === 'vault' ? 'docker_secret' as const : secret.mode === 'env' ? 'env' as const : 'docker_secret' as const,
         source: secret.source === 'vault' ? 'vault' as const : 'inline' as const,
         exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' as const : 'file' as const,
+        helperCommand: secret.mode === 'docker_secret' && secret.exposure === 'env' ? secret.helperCommand.trim() : '',
         ...(secret.source === 'vault' ? { vaultSecretId: secret.vaultSecretId.trim() } : {})
       }))
       .filter((secret) => secret.service && secret.key && (secret.source === 'vault' ? secret.vaultSecretId : secret.value))

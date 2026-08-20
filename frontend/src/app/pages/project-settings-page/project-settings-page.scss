@@ -462,6 +462,16 @@ fieldset small {
   overflow-wrap: anywhere;
 }
 
+.secret-helper-options {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: -0.25rem;
+}
+
+.secret-helper-options small {
+  color: var(--muted);
+}
+
 .volume-mount-row {
   display: grid;
   grid-template-columns: minmax(86px, 0.6fr) minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(60px, 0.45fr) auto;
