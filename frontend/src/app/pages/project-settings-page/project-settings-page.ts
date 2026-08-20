@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, PathBrowseResult, ProjectEnvironmentSecret, ProjectEnvironmentSecretMode, ProjectEnvironmentSecretSource, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics, VaultSecret } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, PathBrowseResult, ProjectEnvironmentSecret, ProjectEnvironmentSecretExposure, ProjectEnvironmentSecretMode, ProjectEnvironmentSecretSource, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics, VaultSecret } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -89,6 +89,7 @@ interface ComposeSecretEnvironmentEntry extends ComposeEnvironmentEntry {
   mode: ProjectEnvironmentSecretMode;
   source: ProjectEnvironmentSecretSource;
   vaultSecretId: string;
+  exposure: ProjectEnvironmentSecretExposure;
 }
 
 interface ComposeTraefikSettings {
@@ -984,12 +985,12 @@ export class ProjectSettingsPage implements OnInit {
 
       return {
         ...service,
-        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '' }]
+        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', exposure: 'file' }]
       };
     }));
   }
 
-  protected updateBuilderSecretEnvironmentEntry(id: number, index: number, field: keyof ComposeSecretEnvironmentEntry, event: Event) {
+  protected updateBuilderSecretEnvironmentEntry(id: number, index: number, field: keyof ComposeSecretEnvironmentEntry | 'delivery', event: Event) {
     const target = event.target as HTMLInputElement | HTMLSelectElement;
     this.builderServices.update((services) => services.map((service) => {
       if (service.id !== id) {
@@ -997,8 +998,10 @@ export class ProjectSettingsPage implements OnInit {
       }
 
       const entries = [...service.secretEnvironment];
-      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '' };
-      const next = { ...current, [field]: target.value };
+      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', exposure: 'file' as const };
+      const next = field === 'delivery'
+        ? { ...current }
+        : { ...current, [field]: target.value };
       if (field === 'source' && target.value === 'vault') {
         next.source = 'vault';
         next.mode = 'docker_secret';
@@ -1014,9 +1017,28 @@ export class ProjectSettingsPage implements OnInit {
         next.mode = 'docker_secret';
         next.value = '';
       }
+      if (field === 'delivery') {
+        if (target.value === 'env') {
+          next.mode = 'env';
+          next.exposure = 'file';
+        } else {
+          next.mode = 'docker_secret';
+          next.exposure = target.value === 'helper' ? 'env' : 'file';
+        }
+      }
+      if (next.source === 'vault') {
+        next.mode = 'docker_secret';
+      }
       entries[index] = next;
       return { ...service, secretEnvironment: entries };
     }));
+  }
+
+  protected secretDeliveryValue(entry: ComposeSecretEnvironmentEntry) {
+    if (entry.mode === 'env' && (entry.source || 'inline') !== 'vault') {
+      return 'env';
+    }
+    return entry.exposure === 'env' ? 'helper' : 'file';
   }
 
   protected vaultSecretLabel(secret: VaultSecret) {
@@ -1394,7 +1416,8 @@ export class ProjectSettingsPage implements OnInit {
           value: secret.value ?? '',
           mode: secret.source === 'vault' ? 'docker_secret' : secret.mode,
           source: secret.source === 'vault' ? 'vault' : 'inline',
-          vaultSecretId: secret.vaultSecretId ?? ''
+          vaultSecretId: secret.vaultSecretId ?? '',
+          exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' : 'file'
         }))
     })));
   }
@@ -1644,6 +1667,9 @@ export class ProjectSettingsPage implements OnInit {
         }
         if (secret.source === 'vault' && secret.mode !== 'docker_secret') {
           diagnostics.push(`${serviceName}.${key} must use Docker secret mode when it references an Updater secret.`);
+        }
+        if (secret.mode === 'docker_secret' && secret.exposure === 'env' && !isShellEnvIdentifier(key)) {
+          diagnostics.push(`${serviceName}.${key} needs a shell-compatible name for env helper mode.`);
         }
         if ((secret.source || 'inline') === 'inline' && !secret.value.trim()) {
           diagnostics.push(`${serviceName}.${key} needs a manual secret value.`);
@@ -2098,8 +2124,8 @@ function appendDeploy(lines: string[], service: ComposeBuilderRenderableService,
 
 function mergeEnvironmentWithSecretPlaceholders(serviceName: string, environment: string, entries: ComposeSecretEnvironmentEntry[]) {
   const dockerSecretEntries = entries
-    .map((entry) => ({ key: entry.key.trim(), mode: entry.mode }))
-    .filter((entry) => entry.key && entry.mode === 'docker_secret');
+    .map((entry) => ({ key: entry.key.trim(), mode: entry.mode, exposure: entry.exposure }))
+    .filter((entry) => entry.key && entry.mode === 'docker_secret' && entry.exposure !== 'env');
 
   if (!dockerSecretEntries.length) {
     return environment;
@@ -2118,6 +2144,10 @@ function composeSecretName(service: string, key: string) {
   return `${service}_${key}`.toLowerCase().replace(/[^a-z0-9_.-]+/g, '_').replace(/^_+|_+$/g, '') || 'deploy_secret';
 }
 
+function isShellEnvIdentifier(value: string) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
 function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): ProjectEnvironmentSecret[] {
   return services.flatMap((service) =>
     service.secretEnvironment
@@ -2127,6 +2157,7 @@ function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): 
         value: secret.source === 'vault' ? '' : secret.value.trim(),
         mode: secret.source === 'vault' ? 'docker_secret' as const : secret.mode === 'env' ? 'env' as const : 'docker_secret' as const,
         source: secret.source === 'vault' ? 'vault' as const : 'inline' as const,
+        exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' as const : 'file' as const,
         ...(secret.source === 'vault' ? { vaultSecretId: secret.vaultSecretId.trim() } : {})
       }))
       .filter((secret) => secret.service && secret.key && (secret.source === 'vault' ? secret.vaultSecretId : secret.value))
@@ -2142,7 +2173,7 @@ function ensureServerSelected(serverIds: string[], serverId: string) {
 function removeGeneratedSecretFileEntries(environment: string, secrets: ProjectEnvironmentSecret[]) {
   const generatedKeys = new Set(
     secrets
-      .filter((secret) => secret.mode === 'docker_secret')
+      .filter((secret) => secret.mode === 'docker_secret' && secret.exposure !== 'env')
       .map((secret) => `${secret.key}_FILE`)
   );
 

@@ -462,17 +462,6 @@ fieldset small {
   overflow-wrap: anywhere;
 }
 
-.secret-mode-fixed {
-  align-items: center;
-  background: var(--button-subtle);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--muted);
-  display: inline-flex;
-  min-height: 36px;
-  padding: 0 0.65rem;
-}
-
 .volume-mount-row {
   display: grid;
   grid-template-columns: minmax(86px, 0.6fr) minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(60px, 0.45fr) auto;

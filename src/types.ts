@@ -39,6 +39,7 @@ export type ProjectConfig = Record<string, ProjectSettings>;
 
 export type ProjectEnvironmentSecretMode = "docker_secret" | "env";
 export type ProjectEnvironmentSecretSource = "inline" | "vault";
+export type ProjectEnvironmentSecretExposure = "file" | "env";
 
 export interface ProjectEnvironmentSecret {
     service: string;
@@ -47,6 +48,7 @@ export interface ProjectEnvironmentSecret {
     mode: ProjectEnvironmentSecretMode;
     source?: ProjectEnvironmentSecretSource;
     vaultSecretId?: string;
+    exposure?: ProjectEnvironmentSecretExposure;
 }
 
 export interface VaultSecret {

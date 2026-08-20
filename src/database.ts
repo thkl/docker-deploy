@@ -1014,6 +1014,7 @@ function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] =
             const service = secret.service.trim();
             const key = secret.key.trim();
             const mode = secret.source === "vault" ? "docker_secret" : secret.mode === "env" ? "env" : "docker_secret";
+            const exposure = mode === "docker_secret" && secret.exposure === "env" ? "env" : "file";
             if (secret.source === "vault") {
                 return {
                     service,
@@ -1021,7 +1022,8 @@ function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] =
                     value: "",
                     mode,
                     source: "vault" as const,
-                    vaultSecretId: secret.vaultSecretId?.trim() ?? ""
+                    vaultSecretId: secret.vaultSecretId?.trim() ?? "",
+                    exposure
                 };
             }
 
@@ -1030,7 +1032,8 @@ function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] =
                 key,
                 value: encryptSecret(secret.value?.trim() ?? "") ?? "",
                 mode,
-                source: "inline" as const
+                source: "inline" as const,
+                exposure
             };
         })
         .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.value));

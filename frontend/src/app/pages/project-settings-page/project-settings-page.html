@@ -504,20 +504,22 @@
                       (input)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'value', $event)"
                       placeholder="secret value" />
                   }
-                  @if ((entry.source || 'inline') === 'vault') {
-                    <span class="secret-mode-fixed">Docker secret</span>
-                  } @else {
-                    <select [value]="entry.mode"
-                      (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'mode', $event)">
-                      <option value="docker_secret">Docker secret</option>
+                  <select [value]="secretDeliveryValue(entry)"
+                    (change)="updateBuilderSecretEnvironmentEntry(service.id, $index, 'delivery', $event)">
+                    <option value="file">Secret file</option>
+                    <option value="helper">Env via helper</option>
+                    @if ((entry.source || 'inline') !== 'vault') {
                       <option value="env">Runtime env value</option>
-                    </select>
-                  }
+                    }
+                  </select>
                   <button type="button" class="secondary compact"
                     (click)="removeBuilderSecretEnvironmentEntry(service.id, $index)">Remove</button>
                 </div>
                 @if ((entry.source || 'inline') === 'vault' && entry.vaultSecretId) {
                   <small class="secret-reference-note">{{ vaultSecretDescription(entry.vaultSecretId) }}</small>
+                }
+                @if (entry.mode === 'docker_secret' && entry.exposure === 'env') {
+                  <small class="secret-reference-note">Env helper overrides the container entrypoint, reads the secret file, exports {{ entry.key || 'SECRET_KEY' }}, then starts the image command.</small>
                 }
                 } @empty {
                 <small>No sensitive environment variables configured.</small>

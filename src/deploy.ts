@@ -777,12 +777,23 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
             service: secret.service.trim(),
             key: secret.key.trim(),
             value: secret.value ?? "",
-            mode: secret.mode === "env" ? "env" as const : "docker_secret" as const
+            mode: secret.mode === "env" ? "env" as const : "docker_secret" as const,
+            exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const
         }))
         .filter((secret) => secret.service && secret.key && secret.value);
 
     if (!validSecrets.length) {
         return "";
+    }
+
+    const invalidHelperSecrets = validSecrets.filter((secret) => secret.mode === "docker_secret" && secret.exposure === "env" && !isShellEnvIdentifier(secret.key));
+    if (invalidHelperSecrets.length) {
+        return [
+            "",
+            "                echo \"--> CRITICAL: Secret env helper requires shell-compatible environment variable names.\"",
+            ...invalidHelperSecrets.map((secret) => `                echo ${shellQuote(`--> Invalid secret key for helper mode: ${secret.service}.${secret.key}`)}`),
+            "                exit 1"
+        ].join("\n");
     }
 
     const useSwarmSecrets = deploymentStrategy === "swarm";
@@ -817,8 +828,11 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
     for (const service of services) {
         const serviceSecrets = validSecrets.filter((secret) => secret.service === service);
         lines.push(`  ${yamlKey(service)}:`);
-        lines.push("    environment:");
-        for (const secret of serviceSecrets) {
+        const environmentSecrets = serviceSecrets.filter((secret) => secret.mode === "env" || secret.exposure !== "env");
+        if (environmentSecrets.length) {
+            lines.push("    environment:");
+        }
+        for (const secret of environmentSecrets) {
             if (secret.mode === "env") {
                 lines.push(`      ${yamlKey(secret.key)}: ${yamlScalar(secret.value)}`);
             } else {
@@ -836,6 +850,20 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
                     lines.push(`      - ${yamlKey(composeSecretMountTarget(service, secret.key))}`);
                 }
             }
+        }
+        const helperSecrets = serviceSecrets.filter((secret) => secret.mode === "docker_secret" && secret.exposure === "env");
+        if (helperSecrets.length) {
+            lines.push("    entrypoint:");
+            lines.push("      - /bin/sh");
+            lines.push("      - -c");
+            lines.push("      - |-");
+            lines.push("        set -eu");
+            for (const secret of helperSecrets) {
+                const targetName = composeSecretMountTarget(service, secret.key);
+                lines.push(`        export ${secret.key}="$(cat ${shellQuote(`/run/secrets/${targetName}`)})"`);
+            }
+            lines.push("        exec \"$@\"");
+            lines.push("      - deploy-secret-env");
         }
     }
 
@@ -976,6 +1004,10 @@ DEPLOY_REGISTRY_PULL_JS`;
 
 function composeSecretMountTarget(service: string, key: string) {
     return normalizeDockerSecretName([service, key].join("_")) || "deploy_secret";
+}
+
+function isShellEnvIdentifier(value: string) {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
 function dockerSecretName(projectName: string, secret: ProjectEnvironmentSecret) {

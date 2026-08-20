@@ -1583,6 +1583,7 @@ function maskEnvSecrets(secrets: ProjectEnvironmentSecret[] | undefined) {
         value: secret.source === "vault" ? "" : maskSecretValue(secret.value ?? ""),
         mode: secret.mode,
         source: secret.source === "vault" ? "vault" as const : "inline" as const,
+        exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const,
         ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {})
     }));
 }
@@ -1600,6 +1601,7 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
             const vaultSecretId = String(secret.vaultSecretId ?? "").trim();
             const value = source === "vault" ? "" : String(secret.value ?? "").trim();
             const mode = source === "vault" ? "docker_secret" as const : secret.mode === "env" ? "env" as const : "docker_secret" as const;
+            const exposure = mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const;
             const existingSecret = existing.find((candidate) =>
                 candidate.service === service &&
                 candidate.key === key &&
@@ -1611,6 +1613,7 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
                 value: source === "vault" ? "" : isMaskedSecretValue(value) ? existingSecret?.value ?? "" : value,
                 mode,
                 source,
+                exposure,
                 ...(source === "vault" ? { vaultSecretId } : {})
             };
         })

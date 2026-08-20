@@ -231,7 +231,8 @@ function parseProjectEnvSecrets(value: string) {
                     value: source === "vault" ? "" : decryptSecret(secret.value ?? "") ?? "",
                     mode: source === "vault" ? "docker_secret" as const : secret.mode === "env" ? "env" as const : "docker_secret" as const,
                     source,
-                    ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {})
+                    ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {}),
+                    exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const
                 };
             })
             .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : true));

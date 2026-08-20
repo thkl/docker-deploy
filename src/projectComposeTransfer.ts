@@ -22,7 +22,7 @@ interface ProjectComposeMetadata {
     };
     traefik?: TraefikSettings;
     compose: {
-        envSecrets: Array<Pick<ProjectEnvironmentSecret, "service" | "key" | "mode" | "source" | "vaultSecretId">>;
+        envSecrets: Array<Pick<ProjectEnvironmentSecret, "service" | "key" | "mode" | "source" | "vaultSecretId" | "exposure">>;
     };
 }
 
@@ -55,7 +55,8 @@ export function renderProjectComposeExport(input: {
                 key: secret.key,
                 mode: secret.mode,
                 source: secret.source === "vault" ? "vault" as const : "inline" as const,
-                ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {})
+                ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {}),
+                exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const
             }))
         }
     };
@@ -94,7 +95,8 @@ export function parseProjectComposeImport(content: string): ProjectPayload {
             value: "",
             mode: secret.mode,
             source: secret.source === "vault" ? "vault" as const : "inline" as const,
-            ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {})
+            ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {}),
+            exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const
         })),
         deploymentStrategy: metadata?.deployment.strategy === "swarm" ? "swarm" : "compose",
         traefikEnabled: Boolean(traefik?.enabled),
@@ -130,7 +132,8 @@ export function parseProjectComposeImport(content: string): ProjectPayload {
                 value: "",
                 mode: secret.mode,
                 source: secret.source === "vault" ? "vault" as const : "inline" as const,
-                ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {})
+                ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {}),
+                exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const
             }))
         },
         traefik: traefik ?? { enabled: false }
