@@ -1,7 +1,7 @@
 <section class="page-head">
   <div>
     <h2>Applications</h2>
-    <p>Runtime state, deployment readiness, and routing for managed Compose projects.</p>
+    <p>Runtime state and the latest deployment for managed applications.</p>
   </div>
   <a routerLink="/projects/new" role="button">Add application</a>
 </section>
@@ -41,7 +41,7 @@
     </div>
     <label class="search-field">
       <span>Search</span>
-      <input type="search" [value]="searchTerm()" (input)="updateSearch($event)" placeholder="name, server, repo, status" />
+      <input type="search" [value]="searchTerm()" (input)="updateSearch($event)" placeholder="name or status" />
     </label>
   </div>
 
@@ -68,7 +68,7 @@
               <a [routerLink]="['/projects', project.id, 'overview']" (click)="store.selectProject(project.id)">
                 {{ project.name }}
               </a>
-              <span>{{ targetServerLabel(project) }} · {{ project.deploymentStrategy === 'swarm' ? 'Swarm' : 'Compose' }}</span>
+              <span>{{ project.deploymentStrategy === 'swarm' ? 'Swarm application' : 'Compose application' }}</span>
             </div>
           </div>
 
@@ -97,29 +97,6 @@
             @if (project.lastDeployment?.startedAt) {
               <small>{{ formatDate(project.lastDeployment?.startedAt) }}</small>
             }
-          </div>
-
-          <div class="app-details">
-            <span>
-              <strong>{{ repositoryLabel(project) }}</strong>
-              <small>repository</small>
-            </span>
-            <span>
-              <strong>{{ proxyLabel(project) }}</strong>
-              <small>proxy</small>
-            </span>
-            <span>
-              <strong>{{ composeLabel(project) }}</strong>
-              <small>compose</small>
-            </span>
-            <span>
-              <strong>{{ accessLabel(project) }}</strong>
-              <small>trigger</small>
-            </span>
-          </div>
-
-          <div class="app-path">
-            <code>{{ project.path || '/root/docker-apps/' + project.name }}</code>
           </div>
 
           <div class="actions">

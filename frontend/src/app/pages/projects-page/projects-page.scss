@@ -79,8 +79,7 @@ p {
 .inventory-toolbar span,
 .search-field span,
 .app-primary span,
-.state-column small,
-.app-details small {
+.state-column small {
   color: var(--muted);
   font-size: 0.78rem;
 }
@@ -116,7 +115,7 @@ p {
   border-bottom: 1px solid var(--line);
   display: grid;
   gap: 0.68rem;
-  grid-template-columns: minmax(180px, 1fr) minmax(116px, 0.58fr) minmax(96px, 0.46fr) minmax(280px, 1.35fr) minmax(160px, 0.72fr) auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(140px, auto) minmax(118px, auto) auto;
   padding: 0.62rem 0.72rem;
 }
 
@@ -229,40 +228,6 @@ p {
   color: var(--danger);
 }
 
-.app-details {
-  display: grid;
-  gap: 0.46rem;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  min-width: 0;
-}
-
-.app-details span {
-  display: grid;
-  gap: 0.12rem;
-  min-width: 0;
-}
-
-.app-details strong {
-  font-size: 0.8rem;
-  font-weight: 520;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.app-path {
-  min-width: 0;
-}
-
-code {
-  color: var(--muted);
-  display: block;
-  font-size: 0.76rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .actions {
   align-items: center;
   display: flex;
@@ -296,12 +261,7 @@ code {
 
 @media (max-width: 1180px) {
   .app-row {
-    grid-template-columns: minmax(180px, 1fr) minmax(116px, auto) minmax(96px, auto) auto;
-  }
-
-  .app-details,
-  .app-path {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(220px, 1fr) minmax(140px, auto) minmax(118px, auto) auto;
   }
 }
 
@@ -325,18 +285,13 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .app-details {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .actions {
     justify-content: flex-start;
   }
 }
 
 @media (max-width: 520px) {
-  .inventory-summary,
-  .app-details {
+  .inventory-summary {
     grid-template-columns: 1fr;
   }
 }

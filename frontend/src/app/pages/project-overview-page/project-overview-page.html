@@ -161,6 +161,43 @@
   }
 
   @if (projectSection() === 'overview') {
+    <section class="deploy-panel details-panel">
+      <div class="deploy-head">
+        <div>
+          <h2>Application details</h2>
+          <p>Configuration and routing context for this application.</p>
+        </div>
+        <a class="secondary" [routerLink]="['/projects', project.id, 'settings']">Edit details</a>
+      </div>
+
+      <div class="detail-grid">
+        <span>
+          <strong>{{ repositoryLabel(project) }}</strong>
+          <small>repository</small>
+        </span>
+        <span>
+          <strong>{{ project.path || '/root/docker-apps/' + project.name }}</strong>
+          <small>path</small>
+        </span>
+        <span>
+          <strong>{{ proxyLabel(project) }}</strong>
+          <small>proxy</small>
+        </span>
+        <span>
+          <strong>{{ composeLabel(project) }}</strong>
+          <small>compose</small>
+        </span>
+        <span>
+          <strong>{{ accessLabel(project) }}</strong>
+          <small>trigger</small>
+        </span>
+        <span>
+          <strong>{{ targetServerDetail() }}</strong>
+          <small>target</small>
+        </span>
+      </div>
+    </section>
+
     <section class="deploy-panel runtime-panel">
       <div class="deploy-head">
         <div>

@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { DeploymentRecord, ProjectSummary, RuntimeStatus } from '../../models/project';
+import { DeploymentRecord, RuntimeStatus } from '../../models/project';
 import { ProjectStore } from '../../state/project-store';
 
 @Component({
@@ -23,10 +23,7 @@ export class ProjectsPage {
     return this.store.projects().filter((project) =>
       [
         project.name,
-        project.repositoryUrl,
-        project.path,
-        project.traefik.hostname,
-        this.targetServerLabel(project),
+        project.deploymentStrategy === 'swarm' ? 'Swarm application' : 'Compose application',
         this.runtimeLabel(this.store.runtimeStatusFor(project.id)),
         this.statusLabel(project.lastDeployment),
       ]
@@ -84,48 +81,6 @@ export class ProjectsPage {
           : status.status === 'error'
             ? 'Status error'
             : 'Unknown';
-  }
-
-  protected accessLabel(project: ProjectSummary) {
-    if (project.deployToken && project.token) {
-      return 'CI and webhook';
-    }
-
-    if (project.deployToken) {
-      return 'CI trigger';
-    }
-
-    if (project.token) {
-      return 'Webhook';
-    }
-
-    return 'Manual';
-  }
-
-  protected repositoryLabel(project: ProjectSummary) {
-    if (!project.repositoryUrl) {
-      return 'Repository not set';
-    }
-
-    return project.repositoryUrl.replace(/^https?:\/\//, '').replace(/^git@/, '');
-  }
-
-  protected proxyLabel(project: ProjectSummary) {
-    return project.traefik.enabled && project.traefik.hostname ? project.traefik.hostname : 'No proxy';
-  }
-
-  protected composeLabel(project: ProjectSummary) {
-    return project.hasComposeOverride ? 'Stored override' : 'Project file';
-  }
-
-  protected targetServerLabel(project: { deploymentStrategy?: string; serverId?: string; serverIds?: string[] }) {
-    if (project.deploymentStrategy === 'swarm') {
-      return 'Swarm service';
-    } else {
-      const ids = project.serverIds?.length ? project.serverIds : [project.serverId || 'local'];
-      const names = ids.map((id) => this.store.servers().find((server) => server.id === id)?.name || id);
-      return names.length > 1 ? `${names.length} servers: ${names.join(', ')}` : names[0] || 'local';
-    }
   }
 
   protected formatDate(value?: string) {

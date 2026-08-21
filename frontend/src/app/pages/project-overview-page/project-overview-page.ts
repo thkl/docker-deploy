@@ -99,6 +99,20 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     const names = ids.map((id) => this.store.servers().find((server) => server.id === id)?.name || id);
     return names.length > 1 ? `${names.length} deploy targets` : names[0] || 'local';
   });
+  protected readonly targetServerDetail = computed(() => {
+    const project = this.store.selectedProject();
+    if (!project) {
+      return 'local';
+    }
+
+    if (project.deploymentStrategy === 'swarm') {
+      return 'Swarm service';
+    }
+
+    const ids = project.serverIds?.length ? project.serverIds : [project.serverId || 'local'];
+    const names = ids.map((id) => this.store.servers().find((server) => server.id === id)?.name || id);
+    return names.join(', ') || 'local';
+  });
 
   private readonly deploymentStream = inject(DeploymentStreamService);
   private readonly runtimeLogStream = inject(RuntimeLogStreamService);
@@ -424,6 +438,38 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
       : deployment.status === 'succeeded'
         ? 'Succeeded'
         : 'Failed';
+  }
+
+  protected accessLabel(project: ProjectSummary) {
+    if (project.deployToken && project.token) {
+      return 'CI and webhook';
+    }
+
+    if (project.deployToken) {
+      return 'CI trigger';
+    }
+
+    if (project.token) {
+      return 'Webhook';
+    }
+
+    return 'Manual deploy';
+  }
+
+  protected repositoryLabel(project: ProjectSummary) {
+    if (!project.repositoryUrl) {
+      return 'Repository not set';
+    }
+
+    return project.repositoryUrl.replace(/^https?:\/\//, '').replace(/^git@/, '');
+  }
+
+  protected proxyLabel(project: ProjectSummary) {
+    return project.traefik.enabled && project.traefik.hostname ? project.traefik.hostname : 'No proxy';
+  }
+
+  protected composeLabel(project: ProjectSummary) {
+    return project.hasComposeOverride ? 'Stored override' : 'Repository compose';
   }
 
   protected streamLabel() {
