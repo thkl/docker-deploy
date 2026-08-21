@@ -1,25 +1,26 @@
 .page-head {
-  margin-bottom: 1rem;
+  margin-bottom: 0.8rem;
 }
 
 h2 {
-  font-size: clamp(1.45rem, 2.2vw, 2rem);
-  font-weight: 560;
+  font-size: 1.18rem;
+  font-weight: 600;
   margin: 0;
 }
 
 p {
   color: var(--muted);
+  font-size: 0.84rem;
   margin: 0.35rem 0 0;
 }
 
 .notice {
   background: var(--button-subtle);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 5px;
   color: var(--muted);
-  margin: 0 0 0.85rem;
-  padding: 0.7rem 0.85rem;
+  margin: 0 0 0.7rem;
+  padding: 0.58rem 0.68rem;
 }
 
 .notice.error {
@@ -28,14 +29,14 @@ p {
 
 .settings-form {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.72rem;
 }
 
 .form-panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.9rem;
+  border-radius: 6px;
+  padding: 0.72rem;
 }
 
 .panel-head {
@@ -43,8 +44,8 @@ p {
   display: flex;
   gap: 1rem;
   justify-content: space-between;
-  margin: -0.9rem -0.9rem 0.9rem;
-  padding: 0.9rem;
+  margin: -0.72rem -0.72rem 0.72rem;
+  padding: 0.72rem;
 }
 
 .panel-head.split {
@@ -52,19 +53,19 @@ p {
 }
 
 h3 {
-  font-size: 0.98rem;
+  font-size: 0.92rem;
   margin: 0;
 }
 
 .panel-head span,
 label span {
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.78rem;
 }
 
 .field-grid {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.72rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -83,12 +84,12 @@ label span {
 .strategy-summary {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 5px;
   display: grid;
   gap: 0.75rem;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 0.95fr);
-  margin-top: 0.85rem;
-  padding: 0.72rem 0.8rem;
+  margin-top: 0.72rem;
+  padding: 0.58rem 0.68rem;
 }
 
 .strategy-summary div {
@@ -104,7 +105,7 @@ label span {
 }
 
 .strategy-summary small {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
 }
 
 .strategy-summary ul {
@@ -129,11 +130,11 @@ select,
 textarea {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--ink);
   font: inherit;
-  min-height: 38px;
-  padding: 0.58rem 0.7rem;
+  min-height: 34px;
+  padding: 0.46rem 0.6rem;
   width: 100%;
 }
 
@@ -146,7 +147,7 @@ textarea:focus {
 
 textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.84rem;
+  font-size: 0.76rem;
   line-height: 1.45;
   min-height: 210px;
   resize: vertical;
@@ -160,10 +161,10 @@ textarea {
 .compose-tabs {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 5px;
   display: inline-flex;
   gap: 0.25rem;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.72rem;
   padding: 0.25rem;
   width: fit-content;
 }
@@ -174,8 +175,8 @@ textarea {
   border-radius: 5px;
   color: var(--muted);
   font-weight: 520;
-  min-height: 32px;
-  padding: 0 0.85rem;
+  min-height: 28px;
+  padding: 0 0.62rem;
 }
 
 .compose-tabs button.active {
@@ -186,17 +187,17 @@ textarea {
 .compose-inspection {
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 0.7rem;
-  margin-top: 0.9rem;
-  padding-top: 0.9rem;
+  gap: 0.58rem;
+  margin-top: 0.72rem;
+  padding-top: 0.72rem;
 }
 
 .compose-validation {
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 0.7rem;
-  margin-top: 0.9rem;
-  padding-top: 0.9rem;
+  gap: 0.58rem;
+  margin-top: 0.72rem;
+  padding-top: 0.72rem;
 }
 
 .compose-validation > div:first-child {
@@ -216,11 +217,11 @@ textarea {
 .validation-warnings {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 5px;
   color: var(--muted);
   margin: 0;
   overflow: auto;
-  padding: 0.7rem;
+  padding: 0.58rem;
   white-space: pre-wrap;
 }
 
@@ -237,11 +238,11 @@ textarea {
 .compose-service {
   align-items: center;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 5px;
   display: flex;
   gap: 0.75rem;
   justify-content: space-between;
-  padding: 0.7rem;
+  padding: 0.58rem;
 }
 
 .compose-service div {
@@ -257,25 +258,25 @@ textarea {
 .compose-builder {
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 0.85rem;
-  margin-top: 0.9rem;
-  padding-top: 0.9rem;
+  gap: 0.72rem;
+  margin-top: 0.72rem;
+  padding-top: 0.72rem;
 }
 
 .builder-shell {
   align-items: start;
   display: grid;
-  gap: 0.85rem;
+  gap: 0.72rem;
   grid-template-columns: 190px minmax(0, 1fr);
 }
 
 .project-secrets-panel {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
   display: grid;
   gap: 0.75rem;
-  padding: 0.85rem;
+  padding: 0.68rem;
 }
 
 .project-secrets-head,
@@ -328,15 +329,15 @@ textarea {
 .empty-builder-section {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 5px;
   color: var(--muted);
-  padding: 1rem;
+  padding: 0.8rem;
 }
 
 .builder-rail {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 5px;
   display: grid;
   gap: 0.25rem;
   padding: 0.35rem;
@@ -352,8 +353,8 @@ textarea {
   color: var(--muted);
   display: flex;
   justify-content: space-between;
-  min-height: 38px;
-  padding: 0 0.65rem;
+  min-height: 32px;
+  padding: 0 0.55rem;
   text-align: left;
 }
 
@@ -369,7 +370,7 @@ textarea {
 
 .builder-workspace {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.72rem;
   min-width: 0;
 }
 

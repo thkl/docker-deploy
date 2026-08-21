@@ -1,43 +1,43 @@
 :root {
   color-scheme: light dark;
-  --bg: #f6f8fb;
-  --sidebar: #101827;
-  --sidebar-ink: #f7faff;
-  --sidebar-muted: #91a1b7;
+  --bg: #f8fafc;
+  --sidebar: #ffffff;
+  --sidebar-ink: #1f2937;
+  --sidebar-muted: #6b7280;
   --panel: #ffffff;
-  --panel-soft: #fbfcff;
+  --panel-soft: #f9fafb;
   --ink: #111827;
-  --muted: #64748b;
-  --line: #e2e8f0;
-  --line-strong: #cbd5e1;
-  --accent: #2563eb;
-  --accent-strong: #1d4ed8;
-  --accent-soft: #dbeafe;
-  --button-subtle: #eef4ff;
-  --button-subtle-hover: #dbeafe;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --line-strong: #d1d5db;
+  --accent: #3b82f6;
+  --accent-strong: #2563eb;
+  --accent-soft: #eff6ff;
+  --button-subtle: #f3f6fb;
+  --button-subtle-hover: #edf2f8;
   --danger: #dc2626;
-  --warning: #b45309;
-  --running: #137c05;
-  --shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+  --warning: #b7791f;
+  --running: #15803d;
+  --shadow: 0 10px 28px rgba(15, 23, 42, 0.055);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b111c;
-    --sidebar: #080d15;
-    --sidebar-ink: #f3f7ff;
-    --sidebar-muted: #8ea2bd;
-    --panel: #111827;
-    --panel-soft: #0f1623;
-    --ink: #e5edf7;
-    --muted: #94a3b8;
-    --line: #223149;
-    --line-strong: #334155;
+    --bg: #0f141b;
+    --sidebar: #111827;
+    --sidebar-ink: #eef2f7;
+    --sidebar-muted: #9ca3af;
+    --panel: #151c26;
+    --panel-soft: #111821;
+    --ink: #e5e7eb;
+    --muted: #9ca3af;
+    --line: #273244;
+    --line-strong: #374151;
     --accent: #60a5fa;
     --accent-strong: #93c5fd;
-    --accent-soft: #172b4d;
-    --button-subtle: #17243a;
-    --button-subtle-hover: #20314d;
+    --accent-soft: #172235;
+    --button-subtle: #182231;
+    --button-subtle-hover: #1e2b3c;
     --danger: #f87171;
     --warning: #fbbf24;
     --running: #137c05;
@@ -57,9 +57,10 @@ body {
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 14px;
-  line-height: 1.45;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  letter-spacing: 0;
+  line-height: 1.42;
   margin: 0;
 }
 
@@ -83,15 +84,15 @@ button,
 a[role='button'] {
   align-items: center;
   background: transparent;
-  border: 1px solid color-mix(in srgb, var(--accent), transparent 28%);
-  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
   color: var(--accent-strong);
   cursor: pointer;
   display: inline-flex;
   font: inherit;
   justify-content: center;
-  min-height: 36px;
-  padding: 0 0.85rem;
+  min-height: 32px;
+  padding: 0 0.72rem;
   transition:
     background-color 140ms ease,
     box-shadow 140ms ease,
@@ -100,8 +101,8 @@ a[role='button'] {
 
 button:hover,
 a[role='button']:hover {
-  background: transparent;
-  border-color: var(--accent);
+  background: var(--button-subtle);
+  border-color: color-mix(in srgb, var(--accent), transparent 34%);
   color: var(--accent);
   box-shadow: none;
   transform: translateY(-1px);
@@ -152,14 +153,14 @@ code {
     linear-gradient(145deg, color-mix(in srgb, var(--panel), var(--accent) 4%), var(--panel) 58%),
     var(--panel);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: 6px;
   box-shadow: var(--shadow);
   display: grid;
   gap: 1rem;
   max-height: min(720px, calc(100vh - 2.5rem));
   max-width: 620px;
   overflow: auto;
-  padding: 1rem;
+  padding: 0.85rem;
   width: min(100%, 620px);
 }
 
@@ -169,8 +170,8 @@ code {
   display: flex;
   gap: 1rem;
   justify-content: space-between;
-  margin: -1rem -1rem 0;
-  padding: 1rem;
+  margin: -0.85rem -0.85rem 0;
+  padding: 0.85rem;
 }
 
 .modal-head h3 {
@@ -187,7 +188,7 @@ code {
   align-items: flex-start;
   background: color-mix(in srgb, var(--panel-soft), var(--accent) 4%);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 5px;
   display: flex;
   gap: 0.7rem;
   padding: 0.72rem 0.8rem;
@@ -223,8 +224,8 @@ code {
   border-radius: 6px;
   color: var(--ink);
   font: inherit;
-  min-height: 40px;
-  padding: 0.6rem 0.72rem;
+  min-height: 34px;
+  padding: 0.48rem 0.6rem;
   width: 100%;
 }
 
@@ -244,8 +245,8 @@ code {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
-  margin: 0 -1rem -1rem;
-  padding: 1rem;
+  margin: 0 -0.85rem -0.85rem;
+  padding: 0.85rem;
 }
 
 @media (max-width: 720px) {
