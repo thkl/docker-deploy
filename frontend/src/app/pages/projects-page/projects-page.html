@@ -1,112 +1,133 @@
 <section class="page-head">
   <div>
-    <h2>Projects</h2>
-    <p>Deployable Docker Compose projects managed by Deploy.</p>
+    <h2>Applications</h2>
+    <p>Runtime state, deployment readiness, and routing for managed Compose projects.</p>
   </div>
-  <a routerLink="/projects/new" role="button">Add project</a>
+  <a routerLink="/projects/new" role="button">Add application</a>
 </section>
 
 @if (message()) {
   <p class="message">{{ message() }}</p>
 }
 
-<section class="table-panel">
+<section class="inventory-summary" aria-label="Application summary">
+  <div>
+    <strong>{{ store.projects().length }}</strong>
+    <span>Total</span>
+  </div>
+  <div>
+    <strong>{{ runningCount() }}</strong>
+    <span>Running</span>
+  </div>
+  <div>
+    <strong>{{ deployingCount() }}</strong>
+    <span>Deploying</span>
+  </div>
+  <div [class.attention]="attentionCount() > 0">
+    <strong>{{ attentionCount() }}</strong>
+    <span>Attention</span>
+  </div>
+  <div>
+    <strong>{{ proxiedCount() }}</strong>
+    <span>Proxied</span>
+  </div>
+</section>
+
+<section class="inventory-panel">
+  <div class="inventory-toolbar">
+    <div>
+      <strong>Application inventory</strong>
+      <span>{{ filteredProjects().length }} shown</span>
+    </div>
+    <label class="search-field">
+      <span>Search</span>
+      <input type="search" [value]="searchTerm()" (input)="updateSearch($event)" placeholder="name, server, repo, status" />
+    </label>
+  </div>
+
   @if (store.loading()) {
-    <div class="empty">Loading projects...</div>
+    <div class="empty">Loading applications...</div>
   } @else if (store.projects().length === 0) {
-    <div class="empty">No projects configured yet.</div>
+    <div class="empty">No applications configured yet.</div>
+  } @else if (filteredProjects().length === 0) {
+    <div class="empty">No applications match this search.</div>
   } @else {
-    <table>
-      <thead>
-        <tr>
-          <th>Project</th>
-          <th>Repository</th>
-          <th>Path</th>
-          <th>Proxy</th>
-          <th>Compose</th>
-          <th>Runtime</th>
-          <th>Last deploy</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (project of store.projects(); track project.id) {
-          <tr>
-            <td>
-              <strong>{{ project.name }}</strong>
-              <small>{{ targetServerLabel(project) }}</small>
-              <small>
-                @if (project.deployToken && project.token) {
-                  CI and webhook ready
-                } @else if (project.deployToken) {
-                  CI trigger ready
-                } @else if (project.token) {
-                  Webhook ready
-                } @else {
-                  Manual deploy only
-                }
-              </small>
-            </td>
-            <td>
-              @if (project.repositoryUrl) {
-                <code>{{ project.repositoryUrl }}</code>
-              } @else {
-                <span class="muted">Not set</span>
-              }
-            </td>
-            <td><code>{{ project.path || '/root/docker-apps/' + project.name }}</code></td>
-            <td>
-              @if (project.traefik.enabled && project.traefik.hostname) {
-                <code>{{ project.traefik.hostname }}</code>
-              } @else {
-                <span class="muted">Off</span>
-              }
-            </td>
-            <td>{{ project.hasComposeOverride ? 'Stored override' : 'Project file' }}</td>
-            <td>
-              @let runtime = store.runtimeStatusFor(project.id);
-              <span
-                class="runtime-chip"
-                [class.running]="runtime?.status === 'running'"
-                [class.partial]="runtime?.status === 'partial'"
-                [class.failed]="runtime?.status === 'error'"
-              >
-                <span
-                  class="runtime-dot"
-                  [class.running]="runtime?.status === 'running'"
-                  [class.partial]="runtime?.status === 'partial'"
-                  [class.stopped]="runtime?.status === 'stopped'"
-                  [class.error]="runtime?.status === 'error'"
-                  [class.unknown]="!runtime || runtime.status === 'unknown'"
-                ></span>
-                {{ runtimeLabel(runtime) }}
-              </span>
-              @if (runtime?.checkedAt) {
-                <small>{{ formatDate(runtime?.checkedAt) }}</small>
-              }
-            </td>
-            <td>
-              <span
-                class="status-chip"
-                [class.running]="project.lastDeployment?.status === 'running'"
-                [class.failed]="project.lastDeployment?.status === 'failed'"
-              >
-                {{ statusLabel(project.lastDeployment) }}
-              </span>
-              @if (project.lastDeployment?.startedAt) {
-                <small>{{ formatDate(project.lastDeployment?.startedAt) }}</small>
-              }
-            </td>
-            <td>
-              <div class="actions">
-                <a [routerLink]="['/projects', project.id, 'overview']" (click)="store.selectProject(project.id)">
-                  Open
-                </a>
-              </div>
-            </td>
-          </tr>
-        }
-      </tbody>
-    </table>
+    <div class="inventory-list" role="list">
+      @for (project of filteredProjects(); track project.id) {
+        @let runtime = store.runtimeStatusFor(project.id);
+        <article class="app-row" role="listitem">
+          <div class="app-primary">
+            <span
+              class="runtime-light"
+              [class.running]="runtime?.status === 'running'"
+              [class.partial]="runtime?.status === 'partial'"
+              [class.failed]="runtime?.status === 'error'"
+              [class.stopped]="runtime?.status === 'stopped'"
+            ></span>
+            <div>
+              <a [routerLink]="['/projects', project.id, 'overview']" (click)="store.selectProject(project.id)">
+                {{ project.name }}
+              </a>
+              <span>{{ targetServerLabel(project) }} · {{ project.deploymentStrategy === 'swarm' ? 'Swarm' : 'Compose' }}</span>
+            </div>
+          </div>
+
+          <div class="state-column">
+            <span
+              class="runtime-chip"
+              [class.running]="runtime?.status === 'running'"
+              [class.partial]="runtime?.status === 'partial'"
+              [class.failed]="runtime?.status === 'error'"
+            >
+              {{ runtimeLabel(runtime) }}
+            </span>
+            @if (runtime?.checkedAt) {
+              <small>{{ formatDate(runtime?.checkedAt) }}</small>
+            }
+          </div>
+
+          <div class="state-column">
+            <span
+              class="status-chip"
+              [class.running]="project.lastDeployment?.status === 'running'"
+              [class.failed]="project.lastDeployment?.status === 'failed'"
+            >
+              {{ statusLabel(project.lastDeployment) }}
+            </span>
+            @if (project.lastDeployment?.startedAt) {
+              <small>{{ formatDate(project.lastDeployment?.startedAt) }}</small>
+            }
+          </div>
+
+          <div class="app-details">
+            <span>
+              <strong>{{ repositoryLabel(project) }}</strong>
+              <small>repository</small>
+            </span>
+            <span>
+              <strong>{{ proxyLabel(project) }}</strong>
+              <small>proxy</small>
+            </span>
+            <span>
+              <strong>{{ composeLabel(project) }}</strong>
+              <small>compose</small>
+            </span>
+            <span>
+              <strong>{{ accessLabel(project) }}</strong>
+              <small>trigger</small>
+            </span>
+          </div>
+
+          <div class="app-path">
+            <code>{{ project.path || '/root/docker-apps/' + project.name }}</code>
+          </div>
+
+          <div class="actions">
+            <a [routerLink]="['/projects', project.id, 'overview']" (click)="store.selectProject(project.id)">Open</a>
+            <a [routerLink]="['/projects', project.id, 'settings']" (click)="store.selectProject(project.id)">Settings</a>
+          </div>
+        </article>
+      }
+    </div>
   }
 </section>
