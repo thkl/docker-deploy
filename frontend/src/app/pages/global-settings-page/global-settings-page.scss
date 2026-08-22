@@ -67,6 +67,7 @@ label {
 }
 
 input,
+select,
 textarea {
   background: var(--panel-soft);
   border: 1px solid var(--line);
@@ -98,6 +99,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   border-color: var(--accent);
   outline: 3px solid color-mix(in srgb, var(--accent), transparent 78%);
@@ -122,6 +124,42 @@ button.secondary:hover,
   flex-wrap: wrap;
   gap: 0.65rem;
   margin-top: 0.9rem;
+}
+
+.notification-events,
+.notification-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.notification-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.notification-channel {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.72rem;
+}
+
+.notification-channel-head {
+  align-items: center;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+}
+
+.notification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
 
 .path-field {
@@ -299,6 +337,10 @@ button.danger-action:hover {
   display: flex;
   gap: 0.65rem;
   margin-top: 0.85rem;
+}
+
+.check-row.compact {
+  margin-top: 0;
 }
 
 .check-row input {

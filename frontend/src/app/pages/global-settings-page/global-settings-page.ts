@@ -1,6 +1,6 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { PathBrowseResult } from '../../models/project';
+import { GlobalSettings, NotificationChannelSettings, NotificationChannelType, PathBrowseResult } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -20,6 +20,7 @@ export class GlobalSettingsPage implements OnInit {
   protected readonly exportingBackup = signal(false);
   protected readonly restoringBackup = signal(false);
   protected readonly testingBackup = signal(false);
+  protected readonly testingNotifications = signal(false);
   protected readonly browsingBackupPath = signal(false);
   protected readonly backupPathBrowser = signal<PathBrowseResult | null>(null);
   protected readonly backupPathBrowserError = signal('');
@@ -38,7 +39,13 @@ export class GlobalSettingsPage implements OnInit {
     registryAddress: [''],
     registryUsername: [''],
     registryPassword: [''],
+    notificationsEnabled: [false],
+    notificationDeploymentStarted: [true],
+    notificationDeploymentSucceeded: [true],
+    notificationDeploymentFailed: [true],
+    notificationServiceDown: [true],
   });
+  protected readonly notificationChannels = signal<NotificationChannelSettings[]>([]);
 
   ngOnInit() {
     this.loadSettings();
@@ -55,9 +62,9 @@ export class GlobalSettingsPage implements OnInit {
     }
 
     this.saving.set(true);
-    this.api.updateGlobalSettings(this.form.getRawValue()).subscribe({
+    this.api.updateGlobalSettings(this.settingsPayload()).subscribe({
       next: (settings) => {
-        this.form.reset(settings);
+        this.applySettings(settings);
         this.store.loadProjects();
         this.message.set('Global settings saved.');
         this.saving.set(false);
@@ -106,7 +113,7 @@ export class GlobalSettingsPage implements OnInit {
     }
 
     this.testingBackup.set(true);
-    this.api.testBackup(this.form.getRawValue()).subscribe({
+    this.api.testBackup(this.settingsPayload()).subscribe({
       next: (result) => {
         this.message.set(`Test backup written to ${result.path}.`);
         this.testingBackup.set(false);
@@ -207,11 +214,79 @@ export class GlobalSettingsPage implements OnInit {
     reader.readAsText(file);
   }
 
+  protected addNotificationChannel(type: NotificationChannelType = 'slack') {
+    const channelNumber = this.notificationChannels().length + 1;
+    this.notificationChannels.update((channels) => [
+      ...channels,
+      {
+        id: `notification-${Date.now()}-${channelNumber}`,
+        type,
+        name: this.defaultNotificationName(type, channelNumber),
+        enabled: true,
+        slackWebhookUrl: '',
+        pushoverToken: '',
+        pushoverUser: '',
+        emailTo: '',
+        emailFrom: '',
+        smtpHost: '',
+        smtpPort: type === 'email' ? 587 : undefined,
+        smtpSecure: false,
+        smtpUsername: '',
+        smtpPassword: '',
+      },
+    ]);
+  }
+
+  protected removeNotificationChannel(id: string) {
+    this.notificationChannels.update((channels) => channels.filter((channel) => channel.id !== id));
+  }
+
+  protected updateNotificationChannel(id: string, field: keyof NotificationChannelSettings, event: Event) {
+    const target = event.target as HTMLInputElement | HTMLSelectElement;
+    const value = target instanceof HTMLInputElement && target.type === 'checkbox'
+      ? target.checked
+      : field === 'smtpPort'
+        ? Number(target.value || 0)
+        : target.value;
+    this.notificationChannels.update((channels) => channels.map((channel) => channel.id === id ? { ...channel, [field]: value } : channel));
+  }
+
+  protected testNotifications(channelId?: string) {
+    this.message.set('');
+    this.error.set('');
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      this.error.set('Complete the required settings before testing notifications.');
+      return;
+    }
+
+    this.testingNotifications.set(true);
+    this.api.updateGlobalSettings(this.settingsPayload()).subscribe({
+      next: (settings) => {
+        this.applySettings(settings);
+        this.api.testNotification(channelId).subscribe({
+          next: (result) => {
+            this.message.set(`Test notification sent to ${result.channels.map((channel) => channel.name).join(', ')}.`);
+            this.testingNotifications.set(false);
+          },
+          error: (error) => {
+            this.error.set(error?.error?.error || 'Could not send test notification.');
+            this.testingNotifications.set(false);
+          },
+        });
+      },
+      error: (error) => {
+        this.error.set(error?.error?.error || 'Could not save notification settings.');
+        this.testingNotifications.set(false);
+      },
+    });
+  }
+
   private loadSettings() {
     this.loading.set(true);
     this.api.getGlobalSettings().subscribe({
       next: (settings) => {
-        this.form.reset(settings);
+        this.applySettings(settings);
         this.loading.set(false);
       },
       error: () => {
@@ -219,5 +294,60 @@ export class GlobalSettingsPage implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+
+  private applySettings(settings: GlobalSettings) {
+    this.form.reset({
+      dataRoot: settings.dataRoot,
+      defaultTraefikNetwork: settings.defaultTraefikNetwork,
+      defaultTraefikEntryPoints: settings.defaultTraefikEntryPoints,
+      defaultTraefikCertResolver: settings.defaultTraefikCertResolver,
+      sshKeyPath: settings.sshKeyPath,
+      cleanupAfterDeploy: settings.cleanupAfterDeploy,
+      autoBackupEnabled: settings.autoBackupEnabled,
+      autoBackupCron: settings.autoBackupCron,
+      autoBackupPath: settings.autoBackupPath,
+      registryAddress: settings.registryAddress,
+      registryUsername: settings.registryUsername,
+      registryPassword: settings.registryPassword ?? '',
+      notificationsEnabled: settings.notifications?.enabled ?? false,
+      notificationDeploymentStarted: settings.notifications?.events?.deploymentStarted ?? true,
+      notificationDeploymentSucceeded: settings.notifications?.events?.deploymentSucceeded ?? true,
+      notificationDeploymentFailed: settings.notifications?.events?.deploymentFailed ?? true,
+      notificationServiceDown: settings.notifications?.events?.serviceDown ?? true,
+    });
+    this.notificationChannels.set(settings.notifications?.channels ?? []);
+  }
+
+  private settingsPayload(): GlobalSettings {
+    const value = this.form.getRawValue();
+    return {
+      dataRoot: value.dataRoot,
+      defaultTraefikNetwork: value.defaultTraefikNetwork,
+      defaultTraefikEntryPoints: value.defaultTraefikEntryPoints,
+      defaultTraefikCertResolver: value.defaultTraefikCertResolver,
+      sshKeyPath: value.sshKeyPath,
+      cleanupAfterDeploy: value.cleanupAfterDeploy,
+      autoBackupEnabled: value.autoBackupEnabled,
+      autoBackupCron: value.autoBackupCron,
+      autoBackupPath: value.autoBackupPath,
+      registryAddress: value.registryAddress,
+      registryUsername: value.registryUsername,
+      registryPassword: value.registryPassword,
+      notifications: {
+        enabled: value.notificationsEnabled,
+        events: {
+          deploymentStarted: value.notificationDeploymentStarted,
+          deploymentSucceeded: value.notificationDeploymentSucceeded,
+          deploymentFailed: value.notificationDeploymentFailed,
+          serviceDown: value.notificationServiceDown,
+        },
+        channels: this.notificationChannels(),
+      },
+    };
+  }
+
+  private defaultNotificationName(type: NotificationChannelType, channelNumber: number) {
+    return `${type === 'slack' ? 'Slack' : type === 'pushover' ? 'Pushover' : 'Email'} ${channelNumber}`;
   }
 }

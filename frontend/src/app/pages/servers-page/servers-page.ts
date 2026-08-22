@@ -66,6 +66,16 @@ export class ServersPage implements OnInit, OnDestroy {
     registryAddress: '',
     registryUsername: '',
     registryPassword: '',
+    notifications: {
+      enabled: false,
+      events: {
+        deploymentStarted: true,
+        deploymentSucceeded: true,
+        deploymentFailed: true,
+        serviceDown: true,
+      },
+      channels: [],
+    },
   });
   protected readonly servers = this.store.servers;
   protected readonly serverForm = this.fb.group({

@@ -105,6 +105,10 @@ export class ProjectApi {
     return this.http.put<GlobalSettings>('/api/settings', payload);
   }
 
+  testNotification(channelId?: string): Observable<{ ok: boolean; channels: Array<{ id: string; name: string; type: string }> }> {
+    return this.http.post<{ ok: boolean; channels: Array<{ id: string; name: string; type: string }> }>('/api/settings/notifications/test', { channelId });
+  }
+
   exportBackup(): Observable<unknown> {
     return this.http.get<unknown>('/api/settings/backup');
   }

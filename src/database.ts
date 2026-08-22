@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
-import { GlobalSettings, GlobalSettingsPayload, ProjectConfig, ProjectSettings, ServerActiveJob, ServerRecord } from "./types.js";
+import { GlobalSettings, GlobalSettingsPayload, NotificationSettings, ProjectConfig, ProjectSettings, ServerActiveJob, ServerRecord } from "./types.js";
 import type { DeploymentRecord } from "./deploymentStore.js";
 import { encryptSecret, isEncryptedSecret } from "./secretStore.js";
 
@@ -19,7 +19,17 @@ const legacyDefaultGlobalSettings: GlobalSettings = {
     autoBackupPath: "/root/docker-apps/.updater/backups",
     registryAddress: "",
     registryUsername: "",
-    registryPassword: ""
+    registryPassword: "",
+    notifications: {
+        enabled: false,
+        events: {
+            deploymentStarted: true,
+            deploymentSucceeded: true,
+            deploymentFailed: true,
+            serviceDown: true
+        },
+        channels: []
+    }
 };
 
 const backupVersion = 1;
@@ -1116,6 +1126,36 @@ function normalizeLegacyGlobalSettings(payload: GlobalSettingsPayload): GlobalSe
         autoBackupPath: payload.autoBackupPath?.trim() || legacyDefaultGlobalSettings.autoBackupPath,
         registryAddress: payload.registryAddress?.trim() || "",
         registryUsername: payload.registryUsername?.trim() || "",
-        registryPassword: payload.registryPassword?.trim() || ""
+        registryPassword: payload.registryPassword?.trim() || "",
+        notifications: normalizeLegacyNotificationSettings(payload.notifications)
+    };
+}
+
+function normalizeLegacyNotificationSettings(payload: GlobalSettingsPayload["notifications"]): NotificationSettings {
+    const events = payload?.events ?? {};
+    return {
+        enabled: Boolean(payload?.enabled),
+        events: {
+            deploymentStarted: events.deploymentStarted !== false,
+            deploymentSucceeded: events.deploymentSucceeded !== false,
+            deploymentFailed: events.deploymentFailed !== false,
+            serviceDown: events.serviceDown !== false
+        },
+        channels: (payload?.channels ?? []).map((channel, index) => ({
+            id: channel.id?.trim() || `notification-${index + 1}`,
+            type: channel.type === "pushover" || channel.type === "email" ? channel.type : "slack",
+            name: channel.name?.trim() || `Notification ${index + 1}`,
+            enabled: channel.enabled !== false,
+            slackWebhookUrl: channel.slackWebhookUrl?.trim() ?? "",
+            pushoverToken: channel.pushoverToken?.trim() ?? "",
+            pushoverUser: channel.pushoverUser?.trim() ?? "",
+            emailTo: channel.emailTo?.trim() ?? "",
+            emailFrom: channel.emailFrom?.trim() ?? "",
+            smtpHost: channel.smtpHost?.trim() ?? "",
+            smtpPort: Number(channel.smtpPort || 587),
+            smtpSecure: Boolean(channel.smtpSecure),
+            smtpUsername: channel.smtpUsername?.trim() ?? "",
+            smtpPassword: channel.smtpPassword?.trim() ?? ""
+        }))
     };
 }

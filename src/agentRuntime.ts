@@ -117,7 +117,17 @@ export class AgentRuntime {
                         autoBackupPath: "/root/docker-apps/.updater/backups",
                         registryAddress: "",
                         registryUsername: "",
-                        registryPassword: ""
+                        registryPassword: "",
+                        notifications: {
+                            enabled: false,
+                            events: {
+                                deploymentStarted: true,
+                                deploymentSucceeded: true,
+                                deploymentFailed: true,
+                                serviceDown: true
+                            },
+                            channels: []
+                        }
                     }),
                     system: await collectSystemMetrics()
                 }

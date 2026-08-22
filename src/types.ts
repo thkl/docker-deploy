@@ -83,6 +83,7 @@ export interface GlobalSettings {
     registryAddress: string;
     registryUsername: string;
     registryPassword?: string;
+    notifications: NotificationSettings;
 }
 
 export interface GlobalSettingsPayload {
@@ -98,6 +99,46 @@ export interface GlobalSettingsPayload {
     registryAddress?: string;
     registryUsername?: string;
     registryPassword?: string;
+    notifications?: NotificationSettingsPayload;
+}
+
+export type NotificationEventType = "deployment.started" | "deployment.succeeded" | "deployment.failed" | "service.down";
+export type NotificationChannelType = "slack" | "pushover" | "email";
+
+export interface NotificationEventSettings {
+    deploymentStarted: boolean;
+    deploymentSucceeded: boolean;
+    deploymentFailed: boolean;
+    serviceDown: boolean;
+}
+
+export interface NotificationChannelSettings {
+    id: string;
+    type: NotificationChannelType;
+    name: string;
+    enabled: boolean;
+    slackWebhookUrl?: string;
+    pushoverToken?: string;
+    pushoverUser?: string;
+    emailTo?: string;
+    emailFrom?: string;
+    smtpHost?: string;
+    smtpPort?: number;
+    smtpSecure?: boolean;
+    smtpUsername?: string;
+    smtpPassword?: string;
+}
+
+export interface NotificationSettings {
+    enabled: boolean;
+    events: NotificationEventSettings;
+    channels: NotificationChannelSettings[];
+}
+
+export interface NotificationSettingsPayload {
+    enabled?: boolean;
+    events?: Partial<NotificationEventSettings>;
+    channels?: Partial<NotificationChannelSettings>[];
 }
 
 export interface ProjectRegistrySettings {

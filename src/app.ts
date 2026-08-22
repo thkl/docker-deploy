@@ -15,6 +15,7 @@ import { EventBus } from "./eventBus.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ensureControllerKeys } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
+import { NotificationService } from "./notificationService.js";
 import { registerRoutes } from "./routes.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { RuntimeLogStreamHub } from "./runtimeLogStreams.js";
@@ -51,6 +52,7 @@ class App {
     private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
     private readonly configAutoBackup = new ConfigAutoBackupService(this.database, this.globalSettingsStore);
     private readonly eventBus = new EventBus(this.adminAuth, () => this.buildEventSnapshot());
+    private readonly notificationService = new NotificationService(this.globalSettingsStore);
     private readonly agentHealth = new AgentHealthService(
         this.serverStore,
         this.deploymentStore,
@@ -113,6 +115,7 @@ class App {
      */
     private async start() {
         await this.warmLocalCapabilities();
+        this.eventBus.subscribe((event) => this.notificationService.handleEvent(event));
         const config = this.configStore.readConfig();
         await this.deploymentService.reconcileRunningDeployments(config);
         this.configureBodyParsing();
@@ -133,7 +136,8 @@ class App {
             vaultSecretStore: this.vaultSecretStore,
             runtimeStatusStreams: this.runtimeStatusStreams,
             agentHealth: this.agentHealth,
-            eventBus: this.eventBus
+            eventBus: this.eventBus,
+            notificationService: this.notificationService
         });
         this.registerErrorHandler();
 

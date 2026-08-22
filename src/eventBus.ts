@@ -19,6 +19,7 @@ export type ControllerEvent =
  */
 export class EventBus {
     private readonly clients = new Set<WebSocket>();
+    private readonly subscribers = new Set<(event: ControllerEvent) => void | Promise<void>>();
 
     constructor(
         private readonly adminAuth: AdminAuth,
@@ -53,6 +54,16 @@ export class EventBus {
         for (const client of this.clients) {
             this.send(client, event);
         }
+        for (const subscriber of this.subscribers) {
+            Promise.resolve(subscriber(event)).catch((error) => {
+                console.warn(`[event-bus] subscriber failed: ${error instanceof Error ? error.message : String(error)}`);
+            });
+        }
+    }
+
+    subscribe(subscriber: (event: ControllerEvent) => void | Promise<void>) {
+        this.subscribers.add(subscriber);
+        return () => this.subscribers.delete(subscriber);
     }
 
     private registerClient(webSocket: WebSocket) {

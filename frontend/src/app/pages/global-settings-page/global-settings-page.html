@@ -104,6 +104,129 @@
 
     <section class="settings-panel">
       <div class="panel-head">
+        <h3>Notifications</h3>
+        <span>Deployment and runtime alerts</span>
+      </div>
+
+      <label class="check-row">
+        <input type="checkbox" formControlName="notificationsEnabled" />
+        <span>Enable notifications</span>
+      </label>
+
+      <div class="notification-events">
+        <label class="check-row compact">
+          <input type="checkbox" formControlName="notificationDeploymentStarted" />
+          <span>Deployment started</span>
+        </label>
+        <label class="check-row compact">
+          <input type="checkbox" formControlName="notificationDeploymentSucceeded" />
+          <span>Deployment finished</span>
+        </label>
+        <label class="check-row compact">
+          <input type="checkbox" formControlName="notificationDeploymentFailed" />
+          <span>Deployment error</span>
+        </label>
+        <label class="check-row compact">
+          <input type="checkbox" formControlName="notificationServiceDown" />
+          <span>Service went down</span>
+        </label>
+      </div>
+
+      <div class="notification-toolbar">
+        <button type="button" class="secondary" (click)="addNotificationChannel('slack')">Add Slack</button>
+        <button type="button" class="secondary" (click)="addNotificationChannel('pushover')">Add Pushover</button>
+        <button type="button" class="secondary" (click)="addNotificationChannel('email')">Add email</button>
+        <button type="button" class="secondary" (click)="testNotifications()" [disabled]="testingNotifications() || !notificationChannels().length">
+          {{ testingNotifications() ? 'Sending...' : 'Test enabled channels' }}
+        </button>
+      </div>
+
+      <div class="notification-list">
+        @for (channel of notificationChannels(); track channel.id) {
+          <section class="notification-channel">
+            <div class="notification-channel-head">
+              <label class="check-row compact">
+                <input type="checkbox" [checked]="channel.enabled" (change)="updateNotificationChannel(channel.id, 'enabled', $event)" />
+                <span>{{ channel.name || channel.type }}</span>
+              </label>
+              <div class="notification-actions">
+                <button type="button" class="secondary compact" (click)="testNotifications(channel.id)" [disabled]="testingNotifications() || !channel.enabled">Test</button>
+                <button type="button" class="secondary compact" (click)="removeNotificationChannel(channel.id)">Remove</button>
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>Name</span>
+                <input [value]="channel.name" (input)="updateNotificationChannel(channel.id, 'name', $event)" placeholder="Operations Slack" />
+              </label>
+              <label>
+                <span>Plugin</span>
+                <select [value]="channel.type" (change)="updateNotificationChannel(channel.id, 'type', $event)">
+                  <option value="slack">Slack</option>
+                  <option value="pushover">Pushover</option>
+                  <option value="email">Email</option>
+                </select>
+              </label>
+            </div>
+
+            @if (channel.type === 'slack') {
+              <label>
+                <span>Webhook URL</span>
+                <input [value]="channel.slackWebhookUrl || ''" (input)="updateNotificationChannel(channel.id, 'slackWebhookUrl', $event)" autocomplete="off" placeholder="https://hooks.slack.com/services/..." />
+              </label>
+            } @else if (channel.type === 'pushover') {
+              <div class="field-grid">
+                <label>
+                  <span>Application token</span>
+                  <input [value]="channel.pushoverToken || ''" (input)="updateNotificationChannel(channel.id, 'pushoverToken', $event)" autocomplete="off" placeholder="app token" />
+                </label>
+                <label>
+                  <span>User key</span>
+                  <input [value]="channel.pushoverUser || ''" (input)="updateNotificationChannel(channel.id, 'pushoverUser', $event)" autocomplete="off" placeholder="user key" />
+                </label>
+              </div>
+            } @else {
+              <div class="field-grid">
+                <label>
+                  <span>To</span>
+                  <input [value]="channel.emailTo || ''" (input)="updateNotificationChannel(channel.id, 'emailTo', $event)" autocomplete="off" placeholder="ops@example.com" />
+                </label>
+                <label>
+                  <span>From</span>
+                  <input [value]="channel.emailFrom || ''" (input)="updateNotificationChannel(channel.id, 'emailFrom', $event)" autocomplete="off" placeholder="deploy@example.com" />
+                </label>
+                <label>
+                  <span>SMTP host</span>
+                  <input [value]="channel.smtpHost || ''" (input)="updateNotificationChannel(channel.id, 'smtpHost', $event)" autocomplete="off" placeholder="smtp.example.com" />
+                </label>
+                <label>
+                  <span>SMTP port</span>
+                  <input type="number" [value]="channel.smtpPort || 587" (input)="updateNotificationChannel(channel.id, 'smtpPort', $event)" />
+                </label>
+                <label>
+                  <span>SMTP username</span>
+                  <input [value]="channel.smtpUsername || ''" (input)="updateNotificationChannel(channel.id, 'smtpUsername', $event)" autocomplete="off" placeholder="optional" />
+                </label>
+                <label>
+                  <span>SMTP password</span>
+                  <input type="password" [value]="channel.smtpPassword || ''" (input)="updateNotificationChannel(channel.id, 'smtpPassword', $event)" autocomplete="new-password" placeholder="leave blank to keep current password" />
+                </label>
+              </div>
+              <label class="check-row compact">
+                <input type="checkbox" [checked]="channel.smtpSecure" (change)="updateNotificationChannel(channel.id, 'smtpSecure', $event)" />
+                <span>Use implicit TLS</span>
+              </label>
+            }
+          </section>
+        } @empty {
+          <p class="muted-copy">No notification channels configured.</p>
+        }
+      </div>
+    </section>
+
+    <section class="settings-panel">
+      <div class="panel-head">
         <h3>Backup and recovery</h3>
         <span>Manual and scheduled controller-state exports</span>
       </div>

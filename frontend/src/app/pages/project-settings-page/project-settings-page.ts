@@ -291,6 +291,16 @@ export class ProjectSettingsPage implements OnInit {
     registryAddress: '',
     registryUsername: '',
     registryPassword: '',
+    notifications: {
+      enabled: false,
+      events: {
+        deploymentStarted: true,
+        deploymentSucceeded: true,
+        deploymentFailed: true,
+        serviceDown: true,
+      },
+      channels: [],
+    },
   });
 
   protected readonly form = this.fb.group({

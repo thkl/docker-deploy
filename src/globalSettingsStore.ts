@@ -1,7 +1,7 @@
 import { AppDatabase, runDatabaseTransaction } from "./database.js";
 import { isValidCronExpression } from "./configAutoBackup.js";
 import { decryptSecret, encryptSecret } from "./secretStore.js";
-import { GlobalSettings, GlobalSettingsPayload } from "./types.js";
+import { GlobalSettings, GlobalSettingsPayload, NotificationChannelSettings, NotificationSettings } from "./types.js";
 
 export const defaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
@@ -15,7 +15,17 @@ export const defaultGlobalSettings: GlobalSettings = {
     autoBackupPath: "/root/docker-apps/.updater/backups",
     registryAddress: "",
     registryUsername: "",
-    registryPassword: ""
+    registryPassword: "",
+    notifications: {
+        enabled: false,
+        events: {
+            deploymentStarted: true,
+            deploymentSucceeded: true,
+            deploymentFailed: true,
+            serviceDown: true
+        },
+        channels: []
+    }
 };
 
 /**
@@ -38,7 +48,12 @@ export class GlobalSettingsStore {
             return settings;
         }, {});
 
-        return normalizeGlobalSettings({ ...defaultGlobalSettings, ...stored, registryPassword: decryptSecret(stored.registryPassword) ?? "" });
+        return normalizeGlobalSettings({
+            ...defaultGlobalSettings,
+            ...stored,
+            registryPassword: decryptSecret(stored.registryPassword) ?? "",
+            notifications: decryptNotificationSecrets(normalizeNotificationSettings(stored.notifications ?? defaultGlobalSettings.notifications))
+        });
     }
 
     /**
@@ -48,11 +63,16 @@ export class GlobalSettingsStore {
         const existing = this.readSettings();
         const settings = normalizeGlobalSettings({
             ...payload,
-            registryPassword: shouldKeepExistingSecret(payload.registryPassword) ? existing.registryPassword : payload.registryPassword
+            registryPassword: shouldKeepExistingSecret(payload.registryPassword) ? existing.registryPassword : payload.registryPassword,
+            notifications: mergeNotificationSecretPlaceholders(payload.notifications, existing.notifications)
         });
         runDatabaseTransaction(this.database, () => {
             for (const [key, value] of Object.entries(settings)) {
-                const storedValue = key === "registryPassword" ? encryptSecret(String(value || "")) : value;
+                const storedValue = key === "registryPassword"
+                    ? encryptSecret(String(value || ""))
+                    : key === "notifications"
+                        ? encryptNotificationSecrets(value as NotificationSettings)
+                        : value;
                 this.database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, JSON.stringify(storedValue));
             }
         });
@@ -74,6 +94,7 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
     const registryAddress = normalizeRegistryAddress(payload.registryAddress);
     const registryUsername = payload.registryUsername?.trim() ?? "";
     const registryPassword = shouldKeepExistingSecret(payload.registryPassword) ? "" : payload.registryPassword?.trim() ?? "";
+    const notifications = normalizeNotificationSettings(payload.notifications);
 
     if (!sshKeyPath.startsWith("/") && !sshKeyPath.startsWith("~/")) {
         throw new Error("SSH key path must be an absolute path or start with ~/.");
@@ -95,7 +116,8 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
         autoBackupPath,
         registryAddress,
         registryUsername,
-        registryPassword
+        registryPassword,
+        notifications
     };
 }
 
@@ -174,4 +196,92 @@ function normalizeRegistryAddress(value: string | undefined) {
 function shouldKeepExistingSecret(value: string | undefined) {
     const trimmed = value?.trim();
     return !trimmed || /^\*+$/.test(trimmed) || /^[^*]+?\.\.\.[^*]+$/.test(trimmed);
+}
+
+function normalizeNotificationSettings(payload: GlobalSettingsPayload["notifications"]): NotificationSettings {
+    const events = payload?.events ?? {};
+    return {
+        enabled: Boolean(payload?.enabled),
+        events: {
+            deploymentStarted: events.deploymentStarted !== false,
+            deploymentSucceeded: events.deploymentSucceeded !== false,
+            deploymentFailed: events.deploymentFailed !== false,
+            serviceDown: events.serviceDown !== false
+        },
+        channels: (payload?.channels ?? []).map((channel, index) => normalizeNotificationChannel(channel, index))
+    };
+}
+
+function normalizeNotificationChannel(channel: Partial<NotificationChannelSettings>, index: number): NotificationChannelSettings {
+    const type = channel.type === "pushover" || channel.type === "email" ? channel.type : "slack";
+    const smtpPort = Number(channel.smtpPort || (channel.smtpSecure ? 465 : 587));
+    return {
+        id: channel.id?.trim() || `notification-${index + 1}`,
+        type,
+        name: channel.name?.trim() || defaultNotificationChannelName(type, index),
+        enabled: channel.enabled !== false,
+        slackWebhookUrl: channel.slackWebhookUrl?.trim() ?? "",
+        pushoverToken: channel.pushoverToken?.trim() ?? "",
+        pushoverUser: channel.pushoverUser?.trim() ?? "",
+        emailTo: channel.emailTo?.trim() ?? "",
+        emailFrom: channel.emailFrom?.trim() ?? "",
+        smtpHost: channel.smtpHost?.trim() ?? "",
+        smtpPort: Number.isFinite(smtpPort) ? smtpPort : 587,
+        smtpSecure: Boolean(channel.smtpSecure),
+        smtpUsername: channel.smtpUsername?.trim() ?? "",
+        smtpPassword: channel.smtpPassword?.trim() ?? ""
+    };
+}
+
+function defaultNotificationChannelName(type: NotificationChannelSettings["type"], index: number) {
+    const label = type === "slack" ? "Slack" : type === "pushover" ? "Pushover" : "Email";
+    return `${label} ${index + 1}`;
+}
+
+function mergeNotificationSecretPlaceholders(payload: GlobalSettingsPayload["notifications"], existing: NotificationSettings) {
+    if (!payload) {
+        return existing;
+    }
+
+    const existingById = new Map(existing.channels.map((channel) => [channel.id, channel]));
+    return {
+        ...payload,
+        channels: (payload.channels ?? []).map((channel) => {
+            const existingChannel = channel.id ? existingById.get(channel.id) : undefined;
+            return {
+                ...channel,
+                slackWebhookUrl: shouldKeepExistingSecret(channel.slackWebhookUrl) ? existingChannel?.slackWebhookUrl ?? "" : channel.slackWebhookUrl,
+                pushoverToken: shouldKeepExistingSecret(channel.pushoverToken) ? existingChannel?.pushoverToken ?? "" : channel.pushoverToken,
+                pushoverUser: shouldKeepExistingSecret(channel.pushoverUser) ? existingChannel?.pushoverUser ?? "" : channel.pushoverUser,
+                smtpPassword: shouldKeepExistingSecret(channel.smtpPassword) ? existingChannel?.smtpPassword ?? "" : channel.smtpPassword
+            };
+        })
+    };
+}
+
+function encryptNotificationSecrets(settings: NotificationSettings) {
+    return {
+        ...settings,
+        channels: settings.channels.map((channel) => ({
+            ...channel,
+            slackWebhookUrl: encryptSecret(channel.slackWebhookUrl) ?? "",
+            pushoverToken: encryptSecret(channel.pushoverToken) ?? "",
+            pushoverUser: encryptSecret(channel.pushoverUser) ?? "",
+            smtpPassword: encryptSecret(channel.smtpPassword) ?? ""
+        }))
+    };
+}
+
+function decryptNotificationSecrets(settings: NotificationSettings) {
+    return {
+        ...defaultGlobalSettings.notifications,
+        ...settings,
+        channels: (settings.channels ?? []).map((channel) => ({
+            ...channel,
+            slackWebhookUrl: decryptSecret(channel.slackWebhookUrl) ?? "",
+            pushoverToken: decryptSecret(channel.pushoverToken) ?? "",
+            pushoverUser: decryptSecret(channel.pushoverUser) ?? "",
+            smtpPassword: decryptSecret(channel.smtpPassword) ?? ""
+        }))
+    };
 }

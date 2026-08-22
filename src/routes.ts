@@ -20,6 +20,7 @@ import { runProjectPreflight } from "./projectPreflight.js";
 import { parseProjectComposeImport, renderProjectComposeExport } from "./projectComposeTransfer.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
+import { NotificationService } from "./notificationService.js";
 import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
@@ -50,13 +51,14 @@ export interface RouteDependencies {
     runtimeStatusStreams: RuntimeStatusStreamHub;
     agentHealth: AgentHealthService;
     eventBus: EventBus;
+    notificationService: NotificationService;
 }
 
 /**
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, database, configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, vaultSecretStore, runtimeStatusStreams, agentHealth, eventBus } = dependencies;
+    const { adminAuth, database, configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, vaultSecretStore, runtimeStatusStreams, agentHealth, eventBus, notificationService } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -81,7 +83,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/servers", adminAuth.requireAuth);
     app.use("/api/secrets", adminAuth.requireAuth);
 
-    registerSettingsRoutes(app, { database, globalSettingsStore, eventBus });
+    registerSettingsRoutes(app, { database, globalSettingsStore, eventBus, notificationService });
     registerSecretRoutes(app, { vaultSecretStore });
     registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
     registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, eventBus });
@@ -93,8 +95,8 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
 /**
  * Registers global settings read/write endpoints.
  */
-function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependencies, "database" | "globalSettingsStore" | "eventBus">) {
-    const { database, globalSettingsStore, eventBus } = dependencies;
+function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependencies, "database" | "globalSettingsStore" | "eventBus" | "notificationService">) {
+    const { database, globalSettingsStore, eventBus, notificationService } = dependencies;
 
     app.get("/api/settings", (req: Request, res: Response) => {
         res.json(publicGlobalSettings(globalSettingsStore.readSettings()));
@@ -106,6 +108,14 @@ function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependenci
             res.json(publicGlobalSettings(settings));
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not save global settings." });
+        }
+    });
+
+    app.post("/api/settings/notifications/test", async (req: Request, res: Response) => {
+        try {
+            res.json(await notificationService.sendTest(typeof req.body.channelId === "string" ? req.body.channelId : undefined));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not send test notification." });
         }
     });
 
@@ -604,7 +614,17 @@ function payloadRegistrySettings(payload: ProjectPayload, fallback?: ProjectSett
 function publicGlobalSettings(settings: GlobalSettings): GlobalSettings {
     return {
         ...settings,
-        registryPassword: settings.registryPassword ? maskSecretValue(settings.registryPassword) : ""
+        registryPassword: settings.registryPassword ? maskSecretValue(settings.registryPassword) : "",
+        notifications: {
+            ...settings.notifications,
+            channels: settings.notifications.channels.map((channel) => ({
+                ...channel,
+                slackWebhookUrl: channel.slackWebhookUrl ? maskSecretValue(channel.slackWebhookUrl) : "",
+                pushoverToken: channel.pushoverToken ? maskSecretValue(channel.pushoverToken) : "",
+                pushoverUser: channel.pushoverUser ? maskSecretValue(channel.pushoverUser) : "",
+                smtpPassword: channel.smtpPassword ? maskSecretValue(channel.smtpPassword) : ""
+            }))
+        }
     };
 }
 
