@@ -158,7 +158,10 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly wildcardCertificate = signal(false);
   protected readonly deploymentStrategy = signal<DeploymentStrategy>('compose');
   protected readonly registryDeployFromRegistry = signal(false);
+  protected readonly repositoryUrl = signal('');
   protected readonly isSwarmMode = computed(() => this.deploymentStrategy() === 'swarm');
+  protected readonly buildContextAvailable = computed(() => Boolean(this.repositoryUrl().trim()));
+  protected readonly buildFieldDisabled = computed(() => !this.buildContextAvailable() || (this.isSwarmMode() && !this.registryDeployFromRegistry()));
   private readonly traefikFormRevision = signal(0);
   protected readonly selectedServerId = signal('local');
   protected readonly selectedServerIds = signal<string[]>(['local']);
@@ -332,6 +335,9 @@ export class ProjectSettingsPage implements OnInit {
     });
     this.form.controls.registryDeployFromRegistry.valueChanges.pipe(takeUntilDestroyed()).subscribe((enabled) => {
       this.registryDeployFromRegistry.set(enabled);
+    });
+    this.form.controls.repositoryUrl.valueChanges.pipe(takeUntilDestroyed()).subscribe((repositoryUrl) => {
+      this.repositoryUrl.set(repositoryUrl);
     });
     for (const control of [
       this.form.controls.traefikHostname,
@@ -752,9 +758,17 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   protected updateBuilderService(id: number, field: keyof ComposeBuilderService, event: Event) {
+    if (this.isBuildField(field) && this.buildFieldDisabled()) {
+      return;
+    }
+
     const target = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
     const value = field === 'init' && target instanceof HTMLInputElement ? target.checked : target.value;
     this.builderServices.update((services) => services.map((service) => service.id === id ? { ...service, [field]: value } : service));
+  }
+
+  protected visibleBuildFieldValue(service: ComposeBuilderService, field: 'build' | 'dockerfile' | 'buildTarget') {
+    return this.buildContextAvailable() ? service[field] : '';
   }
 
   protected toggleBuilderServiceListValue(id: number, field: 'networks' | 'dependsOn', item: string, event: Event) {
@@ -1151,7 +1165,7 @@ export class ProjectSettingsPage implements OnInit {
       this.builderNetworks(),
       this.builderVolumes(),
       this.currentTraefikComposeSettings(),
-      { registryDeployFromRegistry: this.form.controls.registryDeployFromRegistry.value }
+      { registryDeployFromRegistry: this.form.controls.registryDeployFromRegistry.value, allowBuild: Boolean(this.form.controls.repositoryUrl.value.trim()) }
     ));
     this.composeMode.set('yaml');
     this.message.set('Compose override generated. Review it, then save the project.');
@@ -1244,6 +1258,7 @@ export class ProjectSettingsPage implements OnInit {
     this.wildcardCertificate.set(Boolean(traefik.wildcardCertificate ?? payload.traefikWildcardCertificate));
     this.deploymentStrategy.set(deploymentStrategy === 'swarm' ? 'swarm' : 'compose');
     this.registryDeployFromRegistry.set(Boolean(registry.deployFromRegistry));
+    this.repositoryUrl.set(payload.git?.repositoryUrl ?? payload.repositoryUrl ?? '');
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
     this.loadBuilderFromCompose(composeOverride);
@@ -1283,6 +1298,7 @@ export class ProjectSettingsPage implements OnInit {
     });
     this.deploymentStrategy.set('compose');
     this.registryDeployFromRegistry.set(false);
+    this.repositoryUrl.set('');
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set([this.form.controls.serverId.value || 'local']);
     this.resetComposeBuilder();
@@ -1327,6 +1343,7 @@ export class ProjectSettingsPage implements OnInit {
     });
     this.deploymentStrategy.set(deploymentStrategy === 'swarm' ? 'swarm' : 'compose');
     this.registryDeployFromRegistry.set(Boolean(registry.deployFromRegistry));
+    this.repositoryUrl.set(gitSection?.repositoryUrl ?? project.repositoryUrl ?? '');
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
     this.loadBuilderFromCompose(composeSection?.override ?? project.composeOverride ?? '');
@@ -1384,7 +1401,7 @@ export class ProjectSettingsPage implements OnInit {
       return null;
     }
     const composeOverride = this.composeMode() === 'builder'
-      ? renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes(), traefikSettings, { registryDeployFromRegistry: value.registryDeployFromRegistry })
+      ? renderComposeBuilder(this.builderServices(), this.builderNetworks(), this.builderVolumes(), traefikSettings, { registryDeployFromRegistry: value.registryDeployFromRegistry, allowBuild: Boolean(value.repositoryUrl.trim()) })
       : mergeTraefikIntoCompose(value.composeOverride.trim(), traefikSettings, { registryDeployFromRegistry: value.registryDeployFromRegistry });
 
     if (composeOverride === null) {
@@ -1558,10 +1575,12 @@ export class ProjectSettingsPage implements OnInit {
     for (const service of this.builderServices()) {
       const serviceName = service.name.trim() || 'Unnamed service';
       const swarmMode = this.form.controls.deploymentStrategy.value === 'swarm';
-      const registryImageFromBuild = this.registryDeployFromRegistry() && service.build.trim();
+      const registryImageFromBuild = this.buildContextAvailable() && this.registryDeployFromRegistry() && service.build.trim();
       if (swarmMode && !service.image.trim() && !registryImageFromBuild) {
         diagnostics.push(this.registryDeployFromRegistry()
-          ? `${serviceName} needs a build context so Deploy can publish a registry image for Swarm.`
+          ? this.buildContextAvailable()
+            ? `${serviceName} needs a build context so Deploy can publish a registry image for Swarm.`
+            : `${serviceName} needs an image for Swarm stack deployment because no repository URL is configured.`
           : `${serviceName} needs an image for Swarm stack deployment, or enable registry image deployment.`);
       }
 
@@ -1640,6 +1659,10 @@ export class ProjectSettingsPage implements OnInit {
     const apiError = (error as { error?: { error?: string } }).error?.error;
     return apiError || 'Could not save project.';
   }
+
+  private isBuildField(field: keyof ComposeBuilderService) {
+    return field === 'build' || field === 'dockerfile' || field === 'buildTarget';
+  }
 }
 
 function renderComposeBuilder(
@@ -1647,11 +1670,12 @@ function renderComposeBuilder(
   networks: ComposeBuilderRenderableNetwork[],
   volumes: ComposeBuilderRenderableVolume[],
   traefik?: ComposeTraefikSettings,
-  options: { registryDeployFromRegistry?: boolean } = {}
+  options: { registryDeployFromRegistry?: boolean; allowBuild?: boolean } = {}
 ) {
   const lines = ['services:'];
   const useSwarmStack = traefik?.deploymentStrategy === 'swarm';
-  const keepBuildForRegistryRewrite = useSwarmStack && Boolean(options.registryDeployFromRegistry);
+  const allowBuild = options.allowBuild !== false;
+  const keepBuildForRegistryRewrite = allowBuild && useSwarmStack && Boolean(options.registryDeployFromRegistry);
   const prepared = prepareComposeBuilderForTraefik(services, networks, traefik);
   const validServices = prepared.services.filter((service) => service.name.trim());
 
@@ -1665,7 +1689,7 @@ function renderComposeBuilder(
     } else if (registryPlaceholderImage) {
       lines.push(`    image: ${yamlScalar(registryPlaceholderImage)}`);
     }
-    if ((!useSwarmStack || keepBuildForRegistryRewrite) && service.build.trim() && (service.dockerfile.trim() || service.buildTarget.trim())) {
+    if (allowBuild && (!useSwarmStack || keepBuildForRegistryRewrite) && service.build.trim() && (service.dockerfile.trim() || service.buildTarget.trim())) {
       lines.push('    build:');
       lines.push(`      context: ${yamlScalar(service.build.trim())}`);
       if (service.dockerfile.trim()) {
@@ -1674,7 +1698,7 @@ function renderComposeBuilder(
       if (service.buildTarget.trim()) {
         lines.push(`      target: ${yamlScalar(service.buildTarget.trim())}`);
       }
-    } else if ((!useSwarmStack || keepBuildForRegistryRewrite) && service.build.trim()) {
+    } else if (allowBuild && (!useSwarmStack || keepBuildForRegistryRewrite) && service.build.trim()) {
       lines.push(`    build: ${yamlScalar(service.build.trim())}`);
     }
     if (!useSwarmStack && service.containerName.trim()) {

@@ -263,9 +263,12 @@
               </label>
               <label>
                 <span>Build context</span>
-                <input [value]="service.build" (input)="updateBuilderService(service.id, 'build', $event)"
-                  placeholder="." [disabled]="isSwarmMode() && !registryDeployFromRegistry()" />
-                @if (isSwarmMode() && service.build && registryDeployFromRegistry()) {
+                <input [value]="visibleBuildFieldValue(service, 'build')"
+                  (input)="updateBuilderService(service.id, 'build', $event)" placeholder="."
+                  [disabled]="buildFieldDisabled()" />
+                @if (!buildContextAvailable()) {
+                <small>Disabled for image-only projects without a repository URL.</small>
+                } @else if (isSwarmMode() && service.build && registryDeployFromRegistry()) {
                 <small>Deploy will publish or pull this service through the configured registry image.</small>
                 } @else if (isSwarmMode() && registryDeployFromRegistry()) {
                 <small>Set a build context so Deploy can create the registry image.</small>
@@ -275,13 +278,15 @@
               </label>
               <label>
                 <span>Dockerfile</span>
-                <input [value]="service.dockerfile" (input)="updateBuilderService(service.id, 'dockerfile', $event)"
-                  placeholder="Dockerfile" />
+                <input [value]="visibleBuildFieldValue(service, 'dockerfile')"
+                  (input)="updateBuilderService(service.id, 'dockerfile', $event)" placeholder="Dockerfile"
+                  [disabled]="buildFieldDisabled()" />
               </label>
               <label>
                 <span>Build target</span>
-                <input [value]="service.buildTarget" (input)="updateBuilderService(service.id, 'buildTarget', $event)"
-                  placeholder="runtime" [disabled]="isSwarmMode() && !registryDeployFromRegistry()" />
+                <input [value]="visibleBuildFieldValue(service, 'buildTarget')"
+                  (input)="updateBuilderService(service.id, 'buildTarget', $event)" placeholder="runtime"
+                  [disabled]="buildFieldDisabled()" />
               </label>
               <label>
                 <span>Container name</span>

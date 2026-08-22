@@ -8,83 +8,107 @@
         [class.failed]="runtimeStatus()?.status === 'error'"
       ></span>
       <div>
-        <strong>{{ runtimeStatusLabel(runtimeStatus()) }}</strong>
-        <span>
-          {{ statusLabel(latestDeployment()) }} deploy
-          @if (runtimeStatus()?.services?.length) {
-            · {{ runtimeStatus()?.services?.length }} services
-          }
-          @if (runtimeStatus()?.checkedAt) {
-            · checked {{ formatDate(runtimeStatus()?.checkedAt) }}
-          }
-        </span>
+        <strong>{{ project.name }}</strong>
+        <span>{{ isSwarmProject() ? 'Swarm stack' : 'Compose project' }}</span>
       </div>
     </div>
-    <div class="status-facts">
-      <span>{{ selectedServer()?.name || project.serverId || 'local' }}</span>
-      <span>{{ targetServerLabel() }}</span>
-      <span>{{ isSwarmProject() ? 'Swarm stack' : 'Compose project' }}</span>
-      <span>{{ project.hasComposeOverride ? 'Stored override' : 'Repository compose' }}</span>
-      <span>{{ project.traefik.enabled && project.traefik.hostname ? project.traefik.hostname : 'No proxy' }}</span>
-      <span>{{ project.path || '/root/docker-apps/' + project.name }}</span>
+    <div class="status-summary">
+      <span>
+        <strong>{{ runtimeStatusLabel(runtimeStatus()) }}</strong>
+        <small>runtime</small>
+      </span>
+      <span>
+        <strong>{{ statusLabel(latestDeployment()) }}</strong>
+        <small>last deploy</small>
+      </span>
+      <span>
+        <strong>{{ runtimeStatus()?.services?.length || 0 }}</strong>
+        <small>services</small>
+      </span>
+      <span>
+        <strong>{{ targetServerLabel() }}</strong>
+        <small>target</small>
+      </span>
     </div>
   </section>
 
   <section class="command-bar">
-    <div class="command-group primary-actions">
-      <button type="button" (click)="deploy(project.id)" [disabled]="deploying() || rollingBackReleaseId() !== ''">
-        {{ deploying() ? 'Starting...' : 'Deploy now' }}
-      </button>
-      <button type="button" class="secondary" (click)="runPreflight(project.id)" [disabled]="runningPreflight() || deploying() || rollingBackReleaseId() !== ''">
-        {{ runningPreflight() ? 'Checking...' : 'Preflight' }}
-      </button>
-      @if (rollbackCandidate(); as release) {
-        <button type="button" class="secondary" (click)="rollbackRelease(project.id, release)" [disabled]="deploying() || rollingBackReleaseId() !== '' || latestDeployment()?.status === 'running'">
-          {{ rollingBackReleaseId() === release.id ? 'Rolling back...' : 'Rollback' }}
+    <div class="command-panel deploy-actions">
+      <div class="command-panel-head">
+        <strong>Deployment</strong>
+        @if (latestDeployment()?.startedAt) {
+          <span>{{ formatDate(latestDeployment()?.startedAt) }}</span>
+        } @else {
+          <span>No deployment yet</span>
+        }
+      </div>
+      <div class="command-group primary-actions">
+        <button type="button" (click)="deploy(project.id)" [disabled]="deploying() || rollingBackReleaseId() !== ''">
+          {{ deploying() ? 'Starting...' : 'Deploy now' }}
         </button>
-      }
-      @if (latestDeployment()?.status === 'running') {
-        <button type="button" class="danger-action" (click)="cancelDeployment(project.id)" [disabled]="cancelingDeployment()">
-          {{ cancelingDeployment() ? 'Canceling...' : 'Cancel deploy' }}
+        <button type="button" class="secondary" (click)="runPreflight(project.id)" [disabled]="runningPreflight() || deploying() || rollingBackReleaseId() !== ''">
+          {{ runningPreflight() ? 'Checking...' : 'Preflight' }}
         </button>
-      }
-      <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingDeployment() || loadingRuntimeStatus()">
-        {{ loadingDeployment() || loadingRuntimeStatus() ? 'Refreshing...' : 'Refresh' }}
-      </button>
+        @if (rollbackCandidate(); as release) {
+          <button type="button" class="secondary" (click)="rollbackRelease(project.id, release)" [disabled]="deploying() || rollingBackReleaseId() !== '' || latestDeployment()?.status === 'running'">
+            {{ rollingBackReleaseId() === release.id ? 'Rolling back...' : 'Rollback' }}
+          </button>
+        }
+        @if (latestDeployment()?.status === 'running') {
+          <button type="button" class="danger-action" (click)="cancelDeployment(project.id)" [disabled]="cancelingDeployment()">
+            {{ cancelingDeployment() ? 'Canceling...' : 'Cancel deploy' }}
+          </button>
+        }
+        <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingDeployment() || loadingRuntimeStatus()">
+          {{ loadingDeployment() || loadingRuntimeStatus() ? 'Refreshing...' : 'Refresh' }}
+        </button>
+      </div>
     </div>
 
-    <div class="command-group service-command">
-      <select class="secondary" [value]="selectedRuntimeService()" (change)="updateRuntimeService($event)" [disabled]="loadingRuntimeStatus() || runtimeActionKey() !== '' || !runtimeStatus()?.services?.length">
-        @for (service of runtimeStatus()?.services || []; track service.containerId || service.containerName || service.service) {
-          <option [value]="service.service">{{ service.service }}</option>
-        } @empty {
-          <option value="">No services</option>
+    <div class="command-panel service-actions-panel">
+      <div class="command-panel-head">
+        <strong>Selected service</strong>
+        <span>{{ selectedRuntimeService() || 'No service' }}</span>
+      </div>
+      <div class="command-group service-command">
+        <select class="secondary" [value]="selectedRuntimeService()" (change)="updateRuntimeService($event)" [disabled]="loadingRuntimeStatus() || runtimeActionKey() !== '' || !runtimeStatus()?.services?.length">
+          @for (service of runtimeStatus()?.services || []; track service.containerId || service.containerName || service.service) {
+            <option [value]="service.service">{{ service.service }}</option>
+          } @empty {
+            <option value="">No services</option>
+          }
+        </select>
+        @if (selectedRuntimeServiceStatus(); as service) {
+          <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'restart')" [disabled]="runtimeActionBusy(service)">
+            {{ runtimeActionBusy(service, 'restart') ? (isSwarmProject() ? 'Updating...' : 'Restarting...') : runtimeActionLabel('restart') }}
+          </button>
+          <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'start')" [disabled]="runtimeActionBusy(service)">
+            {{ runtimeActionBusy(service, 'start') ? (isSwarmProject() ? 'Scaling...' : 'Starting...') : runtimeActionLabel('start') }}
+          </button>
+          <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'stop')" [disabled]="runtimeActionBusy(service)">
+            {{ runtimeActionBusy(service, 'stop') ? (isSwarmProject() ? 'Scaling...' : 'Stopping...') : runtimeActionLabel('stop') }}
+          </button>
+          @if (!isSwarmProject()) {
+          <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'recreate')" [disabled]="runtimeActionBusy(service)">
+            {{ runtimeActionBusy(service, 'recreate') ? 'Recreating...' : runtimeActionLabel('recreate') }}
+          </button>
+          <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'pull')" [disabled]="runtimeActionBusy(service)">
+            {{ runtimeActionBusy(service, 'pull') ? 'Pulling...' : runtimeActionLabel('pull') }}
+          </button>
+          }
         }
-      </select>
-      @if (selectedRuntimeServiceStatus(); as service) {
-        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'restart')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'restart') ? (isSwarmProject() ? 'Updating...' : 'Restarting...') : runtimeActionLabel('restart') }}
-        </button>
-        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'start')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'start') ? (isSwarmProject() ? 'Scaling...' : 'Starting...') : runtimeActionLabel('start') }}
-        </button>
-        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'stop')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'stop') ? (isSwarmProject() ? 'Scaling...' : 'Stopping...') : runtimeActionLabel('stop') }}
-        </button>
-        @if (!isSwarmProject()) {
-        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'recreate')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'recreate') ? 'Recreating...' : runtimeActionLabel('recreate') }}
-        </button>
-        <button type="button" class="secondary compact" (click)="runRuntimeAction(project.id, service, 'pull')" [disabled]="runtimeActionBusy(service)">
-          {{ runtimeActionBusy(service, 'pull') ? 'Pulling...' : runtimeActionLabel('pull') }}
-        </button>
-        }
-      }
+      </div>
     </div>
 
-    <div class="command-group">
+    <div class="command-panel project-actions">
+      <div class="command-panel-head">
+        <strong>Project</strong>
+        <span>{{ project.id }}</span>
+      </div>
+      <div class="command-group">
       <a class="secondary" [routerLink]="['/projects', project.id, 'settings']">Settings</a>
       <button type="button" class="danger-action" (click)="openDelete(project)">Delete</button>
+      </div>
     </div>
   </section>
 
@@ -260,6 +284,13 @@
 
         @if (status.services.length > 0) {
           <div class="service-list">
+            <div class="service-row service-header" aria-hidden="true">
+              <span>Service</span>
+              <span>State</span>
+              <span>Health</span>
+              <span>Image</span>
+              <span>Ports</span>
+            </div>
             @for (service of status.services; track service.containerId || service.containerName || service.service) {
               <div class="service-row selectable" [class.selected]="selectedRuntimeService() === service.service" (click)="selectedRuntimeService.set(service.service)">
                 <div class="service-item">
@@ -267,7 +298,7 @@
                   <small>{{ isSwarmProject() ? (service.containerName || service.containerId || 'service task unavailable') : (service.containerName || service.containerId || 'container unavailable') }}</small>
                 </div>
                 <span class="service-state">{{ service.state }}</span>
-                <span>{{ service.health || 'no healthcheck' }}</span>
+                <span class="service-health">{{ service.health || 'no healthcheck' }}</span>
                 <code>{{ service.image || 'image unknown' }}</code>
                 <small>{{ servicePortLabel(service) }}</small>
               </div>
