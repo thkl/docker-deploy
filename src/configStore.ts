@@ -33,6 +33,7 @@ export class ConfigStore {
                     p.registry_deploy_from_registry AS registryDeployFromRegistry,
                     p.registry_image_namespace AS registryImageNamespace,
                     p.registry_image_tag AS registryImageTag,
+                    p.notification_settings_json AS notificationSettingsJson,
                     t.enabled AS traefikEnabled,
                     t.hostname AS traefikHostname,
                     t.service AS traefikService,
@@ -112,6 +113,7 @@ export class ConfigStore {
                     p.registry_deploy_from_registry AS registryDeployFromRegistry,
                     p.registry_image_namespace AS registryImageNamespace,
                     p.registry_image_tag AS registryImageTag,
+                    p.notification_settings_json AS notificationSettingsJson,
                     t.enabled AS traefikEnabled,
                     t.hostname AS traefikHostname,
                     t.service AS traefikService,
@@ -150,6 +152,7 @@ interface ProjectRow {
     registryDeployFromRegistry: number | null;
     registryImageNamespace: string | null;
     registryImageTag: string | null;
+    notificationSettingsJson: string | null;
     traefikEnabled: number | null;
     traefikHostname: string | null;
     traefikService: string | null;
@@ -185,6 +188,7 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
             ...(row.registryImageNamespace ? { imageNamespace: row.registryImageNamespace } : {}),
             ...(row.registryImageTag ? { imageTag: row.registryImageTag } : {})
         },
+        ...(row.notificationSettingsJson ? { notifications: parseProjectNotificationSettings(row.notificationSettingsJson) } : {}),
         ...(row.traefikEnabled === null
             ? {}
             : {
@@ -203,6 +207,31 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
                   }
               })
     };
+}
+
+function parseProjectNotificationSettings(value: string): NonNullable<ProjectSettings["notifications"]> | undefined {
+    try {
+        const parsed = JSON.parse(value) as Partial<NonNullable<ProjectSettings["notifications"]>>;
+        const events = parsed.events ?? {
+            deploymentStarted: true,
+            deploymentSucceeded: true,
+            deploymentFailed: true,
+            serviceDown: true
+        };
+        return {
+            useGlobal: parsed.useGlobal !== false,
+            enabled: parsed.enabled !== false,
+            channelIds: Array.isArray(parsed.channelIds) ? parsed.channelIds.map((id) => String(id).trim()).filter(Boolean) : [],
+            events: {
+                deploymentStarted: events.deploymentStarted !== false,
+                deploymentSucceeded: events.deploymentSucceeded !== false,
+                deploymentFailed: events.deploymentFailed !== false,
+                serviceDown: events.serviceDown !== false
+            }
+        };
+    } catch {
+        return undefined;
+    }
 }
 
 function parseServerIds(value: string | null, fallback: string) {

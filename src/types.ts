@@ -32,6 +32,7 @@ export interface ProjectSettings {
     envSecrets?: ProjectEnvironmentSecret[];
     deploymentStrategy?: DeploymentStrategy;
     registry?: ProjectRegistrySettings;
+    notifications?: ProjectNotificationSettings;
     traefik?: TraefikSettings;
 }
 
@@ -172,6 +173,13 @@ export interface ProjectRegistrySettings {
     imageTag?: string;
 }
 
+export interface ProjectNotificationSettings {
+    useGlobal: boolean;
+    enabled: boolean;
+    channelIds: string[];
+    events: NotificationEventSettings;
+}
+
 export interface ReleaseSnapshotImage {
     service: string;
     image: string;
@@ -307,6 +315,7 @@ export interface ProjectPayload {
         deploymentStrategy?: DeploymentStrategy;
     };
     registry?: Partial<ProjectRegistrySettings>;
+    notifications?: Partial<ProjectNotificationSettings>;
     compose?: {
         override?: string;
         envSecrets?: ProjectEnvironmentSecret[];

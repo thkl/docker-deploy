@@ -1,7 +1,7 @@
 import { Component, computed, effect, ElementRef, ViewChild, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DeploymentRecord, DeploymentStrategy, ProjectPreflightCheck, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerRecord, WebhookEventRecord } from '../../models/project';
+import { DeploymentRecord, DeploymentStrategy, NotificationDeliveryRecord, ProjectPreflightCheck, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerRecord, WebhookEventRecord } from '../../models/project';
 import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { RuntimeLogStreamService } from '../../services/runtime-log-stream';
@@ -26,6 +26,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runtimeOperations = signal<RuntimeOperationRecord[]>([]);
   protected readonly latestWebhook = signal<WebhookEventRecord | null>(null);
   protected readonly releaseSnapshots = signal<ProjectReleaseSnapshot[]>([]);
+  protected readonly notificationHistory = signal<NotificationDeliveryRecord[]>([]);
   protected readonly preflightResult = signal<ProjectPreflightResult | null>(null);
   protected readonly loadingDeployment = signal(false);
   protected readonly loadingRuntimeStatus = signal(false);
@@ -113,6 +114,64 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     const names = ids.map((id) => this.store.servers().find((server) => server.id === id)?.name || id);
     return names.join(', ') || 'local';
   });
+  protected readonly overviewTimeline = computed(() => {
+    const items: Array<{ id: string; title: string; detail: string; time: string; tone: 'neutral' | 'success' | 'warning' | 'danger' }> = [];
+    const deployment = this.latestDeployment();
+    if (deployment) {
+      items.push({
+        id: `deployment:${deployment.id}`,
+        title: `Deployment ${deployment.status}`,
+        detail: `${deployment.trigger} on ${deployment.serverId || 'local'}${deployment.error ? ` · ${deployment.error}` : ''}`,
+        time: deployment.finishedAt || deployment.startedAt,
+        tone: deployment.status === 'succeeded' ? 'success' : deployment.status === 'failed' ? 'danger' : 'warning',
+      });
+    }
+
+    const runtime = this.runtimeStatus();
+    if (runtime) {
+      items.push({
+        id: `runtime:${runtime.checkedAt}`,
+        title: `Runtime ${runtime.status}`,
+        detail: `${runtime.services.length} service${runtime.services.length === 1 ? '' : 's'} checked${runtime.error ? ` · ${runtime.error}` : ''}`,
+        time: runtime.checkedAt,
+        tone: runtime.status === 'running' ? 'success' : runtime.status === 'partial' ? 'warning' : runtime.status === 'error' ? 'danger' : 'neutral',
+      });
+    }
+
+    const webhook = this.latestWebhook();
+    if (webhook) {
+      items.push({
+        id: `webhook:${webhook.id}`,
+        title: `Webhook ${webhook.status}`,
+        detail: webhook.reason,
+        time: webhook.receivedAt,
+        tone: webhook.status === 'dispatched' ? 'success' : webhook.status === 'error' ? 'danger' : 'neutral',
+      });
+    }
+
+    const release = this.releaseSnapshots()[0];
+    if (release) {
+      items.push({
+        id: `release:${release.id}`,
+        title: 'Release snapshot saved',
+        detail: `${release.images.length} image${release.images.length === 1 ? '' : 's'} · ${release.serverId}`,
+        time: release.createdAt,
+        tone: release.rollbackAvailable ? 'success' : 'warning',
+      });
+    }
+
+    for (const notification of this.notificationHistory().slice(0, 4)) {
+      items.push({
+        id: `notification:${notification.id}`,
+        title: `${notification.channelName || 'Notification'} ${notification.status}`,
+        detail: notification.title,
+        time: notification.createdAt,
+        tone: notification.status === 'sent' ? 'success' : notification.status === 'failed' ? 'danger' : 'warning',
+      });
+    }
+
+    return items.sort((left, right) => new Date(right.time).getTime() - new Date(left.time).getTime()).slice(0, 6);
+  });
 
   private readonly deploymentStream = inject(DeploymentStreamService);
   private readonly runtimeLogStream = inject(RuntimeLogStreamService);
@@ -172,6 +231,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.loadRuntimeOperations(projectRef);
         this.loadLatestWebhook(projectRef);
         this.loadReleases(projectRef);
+        this.loadNotificationHistory(projectRef);
       }
     });
   }
@@ -916,6 +976,25 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.releaseSnapshots.set([]);
         this.loadingReleases.set(false);
         this.releaseError.set(error?.error?.error || 'Could not load release snapshots.');
+      },
+    });
+  }
+
+  private loadNotificationHistory(projectRef: string) {
+    this.api.listNotificationHistory(100).subscribe({
+      next: (history) => {
+        if (this.activeProjectRef !== projectRef) {
+          return;
+        }
+
+        const project = this.projectByRef(projectRef);
+        const projectKeys = new Set([projectRef, project?.id, project?.name].filter(Boolean));
+        this.notificationHistory.set(history.filter((item) => projectKeys.has(item.projectId) || projectKeys.has(item.projectName)));
+      },
+      error: () => {
+        if (this.activeProjectRef === projectRef) {
+          this.notificationHistory.set([]);
+        }
       },
     });
   }

@@ -138,6 +138,84 @@
   white-space: nowrap;
 }
 
+.timeline-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 0.7rem;
+  overflow: hidden;
+}
+
+.compact-head {
+  padding: 0.62rem 0.72rem;
+}
+
+.timeline-list {
+  border-top: 1px solid var(--line);
+  display: grid;
+}
+
+.timeline-row {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 42px;
+  padding: 0.48rem 0.72rem;
+}
+
+.timeline-row:last-child {
+  border-bottom: 0;
+}
+
+.timeline-light {
+  background: var(--muted);
+  border-radius: 999px;
+  height: 0.48rem;
+  width: 0.48rem;
+}
+
+.timeline-row.success .timeline-light {
+  background: var(--running);
+}
+
+.timeline-row.warning .timeline-light {
+  background: var(--warning);
+}
+
+.timeline-row.danger .timeline-light {
+  background: var(--danger);
+}
+
+.timeline-row div {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.timeline-row strong,
+.timeline-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-row strong {
+  font-size: 0.84rem;
+}
+
+.timeline-row small,
+.timeline-row time {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.timeline-row time {
+  white-space: nowrap;
+}
+
 .project-subnav {
   background: var(--panel);
   border: 1px solid var(--line);

@@ -112,6 +112,29 @@
     </div>
   </section>
 
+  @if (overviewTimeline().length) {
+    <section class="timeline-panel">
+      <div class="deploy-head compact-head">
+        <div>
+          <h2>Recent timeline</h2>
+          <p>Latest deployment, runtime, webhook, release, and notification events.</p>
+        </div>
+      </div>
+      <div class="timeline-list">
+        @for (item of overviewTimeline(); track item.id) {
+          <div class="timeline-row" [class.success]="item.tone === 'success'" [class.warning]="item.tone === 'warning'" [class.danger]="item.tone === 'danger'">
+            <span class="timeline-light"></span>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <small>{{ item.detail }}</small>
+            </div>
+            <time>{{ formatDate(item.time) }}</time>
+          </div>
+        }
+      </div>
+    </section>
+  }
+
   <nav class="project-subnav" aria-label="Project sections">
     <a [routerLink]="['/projects', project.id, 'overview']" routerLinkActive="active">Overview</a>
     <a [routerLink]="['/projects', project.id, 'compose']" routerLinkActive="active">Compose</a>

@@ -92,6 +92,21 @@ label span {
   padding: 0.58rem 0.68rem;
 }
 
+.notification-summary {
+  align-items: start;
+  margin-top: 0.75rem;
+}
+
+.notification-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.notification-channel-list {
+  grid-column: 1 / -1;
+}
+
 .strategy-summary div {
   display: grid;
   gap: 0.24rem;

@@ -113,6 +113,56 @@
       </label>
     </div>
 
+    <section class="strategy-summary notification-summary">
+      <div>
+        <small>Notifications</small>
+        <strong>{{ form.controls.notificationUseGlobal.value ? 'Use global rules' : 'Project override' }}</strong>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" formControlName="notificationUseGlobal" />
+        <span>Use global notification rules</span>
+      </label>
+
+      @if (!form.controls.notificationUseGlobal.value) {
+        <label class="check-row">
+          <input type="checkbox" formControlName="notificationEnabled" />
+          <span>Enable notifications for this project</span>
+        </label>
+
+        <div class="notification-events">
+          <label class="check-row compact">
+            <input type="checkbox" formControlName="notificationDeploymentStarted" />
+            <span>Started</span>
+          </label>
+          <label class="check-row compact">
+            <input type="checkbox" formControlName="notificationDeploymentSucceeded" />
+            <span>Finished</span>
+          </label>
+          <label class="check-row compact">
+            <input type="checkbox" formControlName="notificationDeploymentFailed" />
+            <span>Error</span>
+          </label>
+          <label class="check-row compact">
+            <input type="checkbox" formControlName="notificationServiceDown" />
+            <span>Service down</span>
+          </label>
+        </div>
+
+        <fieldset class="target-server-list notification-channel-list">
+          <legend>Notification channels</legend>
+          <p class="muted-copy">Leave all unchecked to use every enabled global channel.</p>
+          @for (channel of globalDefaults().notifications.channels; track channel.id) {
+            <label class="check-row">
+              <input type="checkbox" [checked]="notificationChannelSelected(channel.id)" (change)="toggleNotificationChannel(channel.id, $event)" />
+              <span>{{ channel.name }} · {{ channel.type }}</span>
+            </label>
+          } @empty {
+            <p class="muted-copy">No global notification channels configured.</p>
+          }
+        </fieldset>
+      }
+    </section>
+
     @if (strategySummary(); as strategy) {
     <section class="strategy-summary">
       <div>

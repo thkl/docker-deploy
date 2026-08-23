@@ -97,6 +97,7 @@ export interface ProjectSummary {
   envSecrets?: ProjectEnvironmentSecret[];
   deploymentStrategy?: DeploymentStrategy;
   registry?: ProjectRegistrySettings;
+  notifications?: ProjectNotificationSettings;
   hasComposeOverride: boolean;
   traefik: TraefikSettings;
   lastDeployment?: DeploymentRecord | null;
@@ -196,11 +197,19 @@ export interface ProjectPayload {
     strategy?: DeploymentStrategy;
   };
   registry?: ProjectRegistrySettings;
+  notifications?: ProjectNotificationSettings;
   compose?: {
     override: string;
     envSecrets?: ProjectEnvironmentSecret[];
   };
   traefik?: TraefikSettings;
+}
+
+export interface ProjectNotificationSettings {
+  useGlobal: boolean;
+  enabled: boolean;
+  channelIds: string[];
+  events: NotificationEventSettings;
 }
 
 export interface DeleteProjectPayload {

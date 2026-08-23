@@ -159,6 +159,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly deploymentStrategy = signal<DeploymentStrategy>('compose');
   protected readonly registryDeployFromRegistry = signal(false);
   protected readonly repositoryUrl = signal('');
+  protected readonly selectedNotificationChannelIds = signal<string[]>([]);
   protected readonly isSwarmMode = computed(() => this.deploymentStrategy() === 'swarm');
   protected readonly buildContextAvailable = computed(() => Boolean(this.repositoryUrl().trim()));
   protected readonly buildFieldDisabled = computed(() => !this.buildContextAvailable() || (this.isSwarmMode() && !this.registryDeployFromRegistry()));
@@ -278,7 +279,7 @@ export class ProjectSettingsPage implements OnInit {
     return mounts;
   });
   protected readonly builderDiagnostics = computed(() => this.buildBuilderDiagnostics());
-  private readonly globalDefaults = signal<GlobalSettings>({
+  protected readonly globalDefaults = signal<GlobalSettings>({
     dataRoot: '/root/docker-apps',
     defaultTraefikNetwork: 'proxy',
     defaultTraefikEntryPoints: 'websecure',
@@ -317,6 +318,12 @@ export class ProjectSettingsPage implements OnInit {
     registryDeployFromRegistry: [false],
     registryImageNamespace: [''],
     registryImageTag: ['latest'],
+    notificationUseGlobal: [true],
+    notificationEnabled: [true],
+    notificationDeploymentStarted: [true],
+    notificationDeploymentSucceeded: [true],
+    notificationDeploymentFailed: [true],
+    notificationServiceDown: [true],
     path: [''],
     composeOverride: [''],
     traefikEnabled: [false],
@@ -778,6 +785,18 @@ export class ProjectSettingsPage implements OnInit {
     const target = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
     const value = field === 'init' && target instanceof HTMLInputElement ? target.checked : target.value;
     this.builderServices.update((services) => services.map((service) => service.id === id ? { ...service, [field]: value } : service));
+  }
+
+  protected notificationChannelSelected(channelId: string) {
+    return this.selectedNotificationChannelIds().includes(channelId);
+  }
+
+  protected toggleNotificationChannel(channelId: string, event: Event) {
+    const target = event.target as HTMLInputElement;
+    this.selectedNotificationChannelIds.update((ids) => {
+      const without = ids.filter((id) => id !== channelId);
+      return target.checked ? [...without, channelId] : without;
+    });
   }
 
   protected visibleBuildFieldValue(service: ComposeBuilderService, field: 'build' | 'dockerfile' | 'buildTarget') {
@@ -1253,6 +1272,12 @@ export class ProjectSettingsPage implements OnInit {
       registryDeployFromRegistry: Boolean(registry.deployFromRegistry),
       registryImageNamespace: registry.imageNamespace ?? '',
       registryImageTag: registry.imageTag ?? 'latest',
+      notificationUseGlobal: payload.notifications?.useGlobal ?? true,
+      notificationEnabled: payload.notifications?.enabled ?? true,
+      notificationDeploymentStarted: payload.notifications?.events?.deploymentStarted ?? true,
+      notificationDeploymentSucceeded: payload.notifications?.events?.deploymentSucceeded ?? true,
+      notificationDeploymentFailed: payload.notifications?.events?.deploymentFailed ?? true,
+      notificationServiceDown: payload.notifications?.events?.serviceDown ?? true,
       path: payload.project?.path ?? payload.path ?? '',
       composeOverride,
       traefikEnabled: Boolean(traefik.enabled),
@@ -1272,6 +1297,7 @@ export class ProjectSettingsPage implements OnInit {
     this.deploymentStrategy.set(deploymentStrategy === 'swarm' ? 'swarm' : 'compose');
     this.registryDeployFromRegistry.set(Boolean(registry.deployFromRegistry));
     this.repositoryUrl.set(payload.git?.repositoryUrl ?? payload.repositoryUrl ?? '');
+    this.selectedNotificationChannelIds.set(payload.notifications?.channelIds ?? []);
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
     this.loadBuilderFromCompose(composeOverride);
@@ -1295,6 +1321,12 @@ export class ProjectSettingsPage implements OnInit {
       registryDeployFromRegistry: false,
       registryImageNamespace: '',
       registryImageTag: 'latest',
+      notificationUseGlobal: true,
+      notificationEnabled: true,
+      notificationDeploymentStarted: true,
+      notificationDeploymentSucceeded: true,
+      notificationDeploymentFailed: true,
+      notificationServiceDown: true,
       path: '',
       composeOverride: '',
       traefikEnabled: false,
@@ -1312,6 +1344,7 @@ export class ProjectSettingsPage implements OnInit {
     this.deploymentStrategy.set('compose');
     this.registryDeployFromRegistry.set(false);
     this.repositoryUrl.set('');
+    this.selectedNotificationChannelIds.set([]);
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set([this.form.controls.serverId.value || 'local']);
     this.resetComposeBuilder();
@@ -1340,6 +1373,12 @@ export class ProjectSettingsPage implements OnInit {
       registryDeployFromRegistry: Boolean(registry.deployFromRegistry),
       registryImageNamespace: registry.imageNamespace ?? '',
       registryImageTag: registry.imageTag ?? 'latest',
+      notificationUseGlobal: project.notifications?.useGlobal ?? true,
+      notificationEnabled: project.notifications?.enabled ?? true,
+      notificationDeploymentStarted: project.notifications?.events?.deploymentStarted ?? true,
+      notificationDeploymentSucceeded: project.notifications?.events?.deploymentSucceeded ?? true,
+      notificationDeploymentFailed: project.notifications?.events?.deploymentFailed ?? true,
+      notificationServiceDown: project.notifications?.events?.serviceDown ?? true,
       path: projectSection?.path ?? project.path ?? '',
       composeOverride: composeSection?.override ?? project.composeOverride ?? '',
       traefikEnabled: Boolean(traefik.enabled),
@@ -1357,6 +1396,7 @@ export class ProjectSettingsPage implements OnInit {
     this.deploymentStrategy.set(deploymentStrategy === 'swarm' ? 'swarm' : 'compose');
     this.registryDeployFromRegistry.set(Boolean(registry.deployFromRegistry));
     this.repositoryUrl.set(gitSection?.repositoryUrl ?? project.repositoryUrl ?? '');
+    this.selectedNotificationChannelIds.set(project.notifications?.channelIds ?? []);
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
     this.loadBuilderFromCompose(composeSection?.override ?? project.composeOverride ?? '');
@@ -1452,6 +1492,17 @@ export class ProjectSettingsPage implements OnInit {
       registryDeployFromRegistry: value.registryDeployFromRegistry,
       registryImageNamespace: value.registryImageNamespace.trim(),
       registryImageTag: value.registryImageTag.trim(),
+      notifications: {
+        useGlobal: value.notificationUseGlobal,
+        enabled: value.notificationEnabled,
+        channelIds: this.selectedNotificationChannelIds(),
+        events: {
+          deploymentStarted: value.notificationDeploymentStarted,
+          deploymentSucceeded: value.notificationDeploymentSucceeded,
+          deploymentFailed: value.notificationDeploymentFailed,
+          serviceDown: value.notificationServiceDown,
+        },
+      },
       path: value.path.trim(),
       composeOverride: composeOverride.trim(),
       envSecrets,

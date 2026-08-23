@@ -137,6 +137,7 @@ export class AppDatabase {
                 registry_deploy_from_registry INTEGER NOT NULL DEFAULT 0,
                 registry_image_namespace TEXT,
                 registry_image_tag TEXT,
+                notification_settings_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -280,6 +281,7 @@ export class AppDatabase {
         this.ensureColumn("projects", "registry_deploy_from_registry", "INTEGER NOT NULL DEFAULT 0");
         this.ensureColumn("projects", "registry_image_namespace", "TEXT");
         this.ensureColumn("projects", "registry_image_tag", "TEXT");
+        this.ensureColumn("projects", "notification_settings_json", "TEXT");
         this.ensureColumn("deployments", "run_id", "TEXT");
         this.ensureColumn("deployments", "phase", "TEXT NOT NULL DEFAULT 'running'");
         this.ensureColumn("deployments", "agent_job_id", "TEXT");
@@ -876,8 +878,8 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
     database
         .prepare(
             `INSERT INTO projects
-             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, deployment_strategy, registry_publish, registry_deploy_from_registry, registry_image_namespace, registry_image_tag, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, deployment_strategy, registry_publish, registry_deploy_from_registry, registry_image_namespace, registry_image_tag, notification_settings_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 server_id = excluded.server_id,
@@ -893,6 +895,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
                 registry_deploy_from_registry = excluded.registry_deploy_from_registry,
                 registry_image_namespace = excluded.registry_image_namespace,
                 registry_image_tag = excluded.registry_image_tag,
+                notification_settings_json = excluded.notification_settings_json,
                 updated_at = excluded.updated_at`
         )
         .run(
@@ -911,6 +914,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
             settings.registry?.deployFromRegistry ? 1 : 0,
             settings.registry?.imageNamespace ?? null,
             settings.registry?.imageTag ?? null,
+            settings.notifications ? JSON.stringify(settings.notifications) : null,
             existing?.createdAt ?? now,
             now
         );

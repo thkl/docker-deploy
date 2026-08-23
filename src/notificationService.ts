@@ -1,5 +1,6 @@
 import net from "node:net";
 import tls from "node:tls";
+import { ConfigStore } from "./configStore.js";
 import { DeploymentRecord } from "./deploymentStore.js";
 import { ControllerEvent } from "./eventBus.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
@@ -28,6 +29,7 @@ export class NotificationService {
 
     constructor(
         private readonly globalSettingsStore: GlobalSettingsStore,
+        private readonly configStore: ConfigStore,
         private readonly notificationStore: NotificationStore,
         private readonly publishNotification: (record: NotificationDeliveryRecord) => void = () => {}
     ) {}
@@ -103,7 +105,7 @@ export class NotificationService {
     }
 
     private async notify(event: NotificationEventType, title: string, body: string, context: { projectId?: string; projectName?: string; service?: string } = {}) {
-        const settings = this.globalSettingsStore.readSettings().notifications;
+        const settings = this.effectiveSettings(context.projectId ?? context.projectName);
         await this.dispatch(settings, { event, title, body }, undefined, context);
     }
 
@@ -162,6 +164,27 @@ export class NotificationService {
                 });
             }
         }));
+    }
+
+    private effectiveSettings(projectRef?: string) {
+        const settings = this.globalSettingsStore.readSettings().notifications;
+        if (!projectRef) {
+            return settings;
+        }
+
+        const project = this.configStore.resolveProject(projectRef);
+        const override = project?.settings.notifications;
+        if (!override || override.useGlobal) {
+            return settings;
+        }
+
+        const channelIds = new Set(override.channelIds);
+        return {
+            ...settings,
+            enabled: override.enabled,
+            events: override.events,
+            channels: settings.channels.filter((channel) => !channelIds.size || channelIds.has(channel.id))
+        } satisfies NotificationSettings;
     }
 
     private recordNotification(record: Parameters<NotificationStore["record"]>[0]) {

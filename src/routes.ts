@@ -618,6 +618,32 @@ function payloadRegistrySettings(payload: ProjectPayload, fallback?: ProjectSett
     };
 }
 
+function payloadNotificationSettings(payload: ProjectPayload, fallback?: ProjectSettings["notifications"]): ProjectSettings["notifications"] {
+    const notifications = payload.notifications;
+    if (!notifications && fallback) {
+        return fallback;
+    }
+
+    const events = notifications?.events ?? fallback?.events ?? {
+        deploymentStarted: true,
+        deploymentSucceeded: true,
+        deploymentFailed: true,
+        serviceDown: true
+    };
+
+    return {
+        useGlobal: notifications?.useGlobal !== false,
+        enabled: notifications?.enabled !== false,
+        channelIds: Array.isArray(notifications?.channelIds) ? [...new Set(notifications.channelIds.map((id) => String(id).trim()).filter(Boolean))] : fallback?.channelIds ?? [],
+        events: {
+            deploymentStarted: events.deploymentStarted !== false,
+            deploymentSucceeded: events.deploymentSucceeded !== false,
+            deploymentFailed: events.deploymentFailed !== false,
+            serviceDown: events.serviceDown !== false
+        }
+    };
+}
+
 function publicGlobalSettings(settings: GlobalSettings): GlobalSettings {
     return {
         ...settings,
@@ -772,6 +798,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload),
                 registry: payloadRegistrySettings(payload),
+                notifications: payloadNotificationSettings(payload),
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
@@ -829,6 +856,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
                 registry: payloadRegistrySettings(payload, existing.registry),
+                notifications: payloadNotificationSettings(payload, existing.notifications),
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
@@ -1171,6 +1199,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(composeOverride ? { composeOverride } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
                 registry: payloadRegistrySettings(payload, existing.registry),
+                notifications: payloadNotificationSettings(payload, existing.notifications),
                 ...(traefik ? { traefik } : {})
             };
 
@@ -1551,6 +1580,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         envSecrets,
         deploymentStrategy,
         registry,
+        notifications: settings.notifications ?? payloadNotificationSettings({} as ProjectPayload),
         hasComposeOverride: Boolean(composeOverride),
         traefik,
         lastDeployment,

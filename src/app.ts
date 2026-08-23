@@ -57,6 +57,7 @@ class App {
     private readonly eventBus = new EventBus(this.adminAuth, () => this.buildEventSnapshot());
     private readonly notificationService = new NotificationService(
         this.globalSettingsStore,
+        this.configStore,
         this.notificationStore,
         (notification) => this.eventBus.publish({ type: "notification.sent", notification })
     );
