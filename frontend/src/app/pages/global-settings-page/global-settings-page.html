@@ -132,6 +132,17 @@
         </label>
       </div>
 
+      <div class="field-grid notification-polling">
+        <label class="check-row compact">
+          <input type="checkbox" formControlName="notificationHealthPollingEnabled" />
+          <span>Poll runtime health for downtime alerts</span>
+        </label>
+        <label>
+          <span>Polling interval seconds</span>
+          <input type="number" formControlName="notificationHealthPollingIntervalSeconds" min="15" max="3600" />
+        </label>
+      </div>
+
       <div class="notification-toolbar">
         <button type="button" class="secondary" (click)="addNotificationChannel('slack')">Add Slack</button>
         <button type="button" class="secondary" (click)="addNotificationChannel('pushover')">Add Pushover</button>

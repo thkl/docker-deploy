@@ -131,14 +131,36 @@ export interface NotificationChannelSettings {
 
 export interface NotificationSettings {
     enabled: boolean;
+    healthPollingEnabled: boolean;
+    healthPollingIntervalSeconds: number;
     events: NotificationEventSettings;
     channels: NotificationChannelSettings[];
 }
 
 export interface NotificationSettingsPayload {
     enabled?: boolean;
+    healthPollingEnabled?: boolean;
+    healthPollingIntervalSeconds?: number;
     events?: Partial<NotificationEventSettings>;
     channels?: Partial<NotificationChannelSettings>[];
+}
+
+export type NotificationDeliveryStatus = "sent" | "failed" | "skipped";
+
+export interface NotificationDeliveryRecord {
+    id: string;
+    event: NotificationEventType;
+    channelId?: string;
+    channelName?: string;
+    channelType?: NotificationChannelType;
+    projectId?: string;
+    projectName?: string;
+    service?: string;
+    title: string;
+    body: string;
+    status: NotificationDeliveryStatus;
+    error?: string;
+    createdAt: string;
 }
 
 export interface ProjectRegistrySettings {

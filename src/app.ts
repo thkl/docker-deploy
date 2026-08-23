@@ -16,8 +16,10 @@ import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ensureControllerKeys } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
 import { NotificationService } from "./notificationService.js";
+import { NotificationStore } from "./notificationStore.js";
 import { registerRoutes } from "./routes.js";
 import { ReleaseStore } from "./releaseStore.js";
+import { RuntimeHealthPoller } from "./runtimeHealthPoller.js";
 import { RuntimeLogStreamHub } from "./runtimeLogStreams.js";
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
@@ -43,6 +45,7 @@ class App {
     private readonly deploymentStore = new DeploymentStore(this.database.connection);
     private readonly releaseStore = new ReleaseStore(this.database.connection);
     private readonly webhookStore = new WebhookStore(this.database.connection);
+    private readonly notificationStore = new NotificationStore(this.database.connection);
     private readonly runtimeOperationStore = new RuntimeOperationStore(this.database.connection);
     private readonly globalSettingsStore = new GlobalSettingsStore(this.database.connection);
     private readonly serverStore = new ServerStore(this.database.connection);
@@ -52,7 +55,17 @@ class App {
     private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
     private readonly configAutoBackup = new ConfigAutoBackupService(this.database, this.globalSettingsStore);
     private readonly eventBus = new EventBus(this.adminAuth, () => this.buildEventSnapshot());
-    private readonly notificationService = new NotificationService(this.globalSettingsStore);
+    private readonly notificationService = new NotificationService(
+        this.globalSettingsStore,
+        this.notificationStore,
+        (notification) => this.eventBus.publish({ type: "notification.sent", notification })
+    );
+    private readonly runtimeHealthPoller = new RuntimeHealthPoller(
+        this.configStore,
+        this.globalSettingsStore,
+        this.agentManager,
+        (event) => this.eventBus.publish(event)
+    );
     private readonly agentHealth = new AgentHealthService(
         this.serverStore,
         this.deploymentStore,
@@ -128,6 +141,7 @@ class App {
             deploymentStore: this.deploymentStore,
             releaseStore: this.releaseStore,
             webhookStore: this.webhookStore,
+            notificationStore: this.notificationStore,
             runtimeOperationStore: this.runtimeOperationStore,
             globalSettingsStore: this.globalSettingsStore,
             agentManager: this.agentManager,
@@ -150,6 +164,7 @@ class App {
         server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
         this.agentHealth.startHeartbeat();
         this.configAutoBackup.start();
+        this.runtimeHealthPoller.start();
     }
 
     /**

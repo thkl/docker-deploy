@@ -22,6 +22,8 @@ const legacyDefaultGlobalSettings: GlobalSettings = {
     registryPassword: "",
     notifications: {
         enabled: false,
+        healthPollingEnabled: true,
+        healthPollingIntervalSeconds: 60,
         events: {
             deploymentStarted: true,
             deploymentSucceeded: true,
@@ -222,6 +224,22 @@ export class AppDatabase {
                 candidates_json TEXT NOT NULL,
                 deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
                 received_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS notification_events (
+                id TEXT PRIMARY KEY,
+                event TEXT NOT NULL,
+                channel_id TEXT,
+                channel_name TEXT,
+                channel_type TEXT,
+                project_id TEXT,
+                project_name TEXT,
+                service TEXT,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error TEXT,
+                created_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS release_snapshots (
@@ -1133,8 +1151,11 @@ function normalizeLegacyGlobalSettings(payload: GlobalSettingsPayload): GlobalSe
 
 function normalizeLegacyNotificationSettings(payload: GlobalSettingsPayload["notifications"]): NotificationSettings {
     const events = payload?.events ?? {};
+    const interval = Number(payload?.healthPollingIntervalSeconds ?? 60);
     return {
         enabled: Boolean(payload?.enabled),
+        healthPollingEnabled: payload?.healthPollingEnabled !== false,
+        healthPollingIntervalSeconds: Number.isFinite(interval) ? Math.max(15, Math.min(Math.round(interval), 3600)) : 60,
         events: {
             deploymentStarted: events.deploymentStarted !== false,
             deploymentSucceeded: events.deploymentSucceeded !== false,

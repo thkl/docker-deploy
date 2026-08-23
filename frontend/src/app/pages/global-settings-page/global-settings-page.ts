@@ -40,6 +40,8 @@ export class GlobalSettingsPage implements OnInit {
     registryUsername: [''],
     registryPassword: [''],
     notificationsEnabled: [false],
+    notificationHealthPollingEnabled: [true],
+    notificationHealthPollingIntervalSeconds: [60],
     notificationDeploymentStarted: [true],
     notificationDeploymentSucceeded: [true],
     notificationDeploymentFailed: [true],
@@ -312,6 +314,8 @@ export class GlobalSettingsPage implements OnInit {
       registryPassword: settings.registryPassword ?? '',
       notificationsEnabled: settings.notifications?.enabled ?? false,
       notificationDeploymentStarted: settings.notifications?.events?.deploymentStarted ?? true,
+      notificationHealthPollingEnabled: settings.notifications?.healthPollingEnabled ?? true,
+      notificationHealthPollingIntervalSeconds: settings.notifications?.healthPollingIntervalSeconds ?? 60,
       notificationDeploymentSucceeded: settings.notifications?.events?.deploymentSucceeded ?? true,
       notificationDeploymentFailed: settings.notifications?.events?.deploymentFailed ?? true,
       notificationServiceDown: settings.notifications?.events?.serviceDown ?? true,
@@ -336,6 +340,8 @@ export class GlobalSettingsPage implements OnInit {
       registryPassword: value.registryPassword,
       notifications: {
         enabled: value.notificationsEnabled,
+        healthPollingEnabled: value.notificationHealthPollingEnabled,
+        healthPollingIntervalSeconds: Number(value.notificationHealthPollingIntervalSeconds || 60),
         events: {
           deploymentStarted: value.notificationDeploymentStarted,
           deploymentSucceeded: value.notificationDeploymentSucceeded,

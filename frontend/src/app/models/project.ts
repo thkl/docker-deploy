@@ -274,8 +274,28 @@ export interface NotificationChannelSettings {
 
 export interface NotificationSettings {
   enabled: boolean;
+  healthPollingEnabled: boolean;
+  healthPollingIntervalSeconds: number;
   events: NotificationEventSettings;
   channels: NotificationChannelSettings[];
+}
+
+export type NotificationDeliveryStatus = 'sent' | 'failed' | 'skipped';
+
+export interface NotificationDeliveryRecord {
+  id: string;
+  event: 'deployment.started' | 'deployment.succeeded' | 'deployment.failed' | 'service.down';
+  channelId?: string;
+  channelName?: string;
+  channelType?: NotificationChannelType;
+  projectId?: string;
+  projectName?: string;
+  service?: string;
+  title: string;
+  body: string;
+  status: NotificationDeliveryStatus;
+  error?: string;
+  createdAt: string;
 }
 
 export interface PathBrowseEntry {

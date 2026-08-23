@@ -18,6 +18,8 @@ export const defaultGlobalSettings: GlobalSettings = {
     registryPassword: "",
     notifications: {
         enabled: false,
+        healthPollingEnabled: true,
+        healthPollingIntervalSeconds: 60,
         events: {
             deploymentStarted: true,
             deploymentSucceeded: true,
@@ -200,8 +202,11 @@ function shouldKeepExistingSecret(value: string | undefined) {
 
 function normalizeNotificationSettings(payload: GlobalSettingsPayload["notifications"]): NotificationSettings {
     const events = payload?.events ?? {};
+    const interval = Number(payload?.healthPollingIntervalSeconds ?? 60);
     return {
         enabled: Boolean(payload?.enabled),
+        healthPollingEnabled: payload?.healthPollingEnabled !== false,
+        healthPollingIntervalSeconds: Number.isFinite(interval) ? Math.max(15, Math.min(Math.round(interval), 3600)) : 60,
         events: {
             deploymentStarted: events.deploymentStarted !== false,
             deploymentSucceeded: events.deploymentSucceeded !== false,

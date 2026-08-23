@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { Observable, shareReplay } from 'rxjs';
-import { DeploymentRecord, RuntimeOperationRecord, RuntimeStatus, ServerRecord } from '../models/project';
+import { DeploymentRecord, NotificationDeliveryRecord, RuntimeOperationRecord, RuntimeStatus, ServerRecord } from '../models/project';
 import { AuthService } from './auth';
 
 export type ControllerEvent =
@@ -9,6 +9,7 @@ export type ControllerEvent =
   | { type: 'servers.updated'; changedAt: string }
   | { type: 'server.health'; server: ServerRecord }
   | { type: 'deployment.updated'; projectId?: string; projectName: string; deployment: DeploymentRecord | null }
+  | { type: 'notification.sent'; notification: NotificationDeliveryRecord }
   | { type: 'runtime.status'; projectId?: string; projectName: string; status: RuntimeStatus }
   | { type: 'runtime.operation.updated'; projectId?: string; projectName: string; operation: RuntimeOperationRecord };
 

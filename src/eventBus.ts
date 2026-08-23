@@ -2,6 +2,7 @@ import { Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { AdminAuth } from "./auth.js";
 import { DeploymentRecord } from "./deploymentStore.js";
+import { NotificationDeliveryRecord } from "./types.js";
 import { RuntimeOperationRecord } from "./runtimeOperationStore.js";
 import { RuntimeStatus, ServerRecord } from "./types.js";
 
@@ -11,6 +12,7 @@ export type ControllerEvent =
     | { type: "servers.updated"; changedAt: string }
     | { type: "server.health"; server: ServerRecord }
     | { type: "deployment.updated"; projectId?: string; projectName: string; deployment: DeploymentRecord | null }
+    | { type: "notification.sent"; notification: NotificationDeliveryRecord }
     | { type: "runtime.status"; projectId?: string; projectName: string; status: RuntimeStatus }
     | { type: "runtime.operation.updated"; projectId?: string; projectName: string; operation: RuntimeOperationRecord };
 

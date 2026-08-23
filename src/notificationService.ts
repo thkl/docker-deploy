@@ -3,7 +3,8 @@ import tls from "node:tls";
 import { DeploymentRecord } from "./deploymentStore.js";
 import { ControllerEvent } from "./eventBus.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
-import { NotificationChannelSettings, NotificationEventType, NotificationSettings, RuntimeServiceStatus } from "./types.js";
+import { NotificationStore } from "./notificationStore.js";
+import { NotificationChannelSettings, NotificationDeliveryRecord, NotificationEventType, NotificationSettings, RuntimeServiceStatus } from "./types.js";
 
 interface NotificationMessage {
     event: NotificationEventType;
@@ -25,7 +26,11 @@ export class NotificationService {
         ["email", new EmailNotificationPlugin()]
     ]);
 
-    constructor(private readonly globalSettingsStore: GlobalSettingsStore) {}
+    constructor(
+        private readonly globalSettingsStore: GlobalSettingsStore,
+        private readonly notificationStore: NotificationStore,
+        private readonly publishNotification: (record: NotificationDeliveryRecord) => void = () => {}
+    ) {}
 
     async handleEvent(event: ControllerEvent) {
         if (event.type === "deployment.updated" && event.deployment) {
@@ -62,11 +67,20 @@ export class NotificationService {
         }
 
         if (deployment.status === "running") {
-            await this.notify("deployment.started", `Deployment started: ${projectName}`, `${projectName} deployment started by ${deployment.trigger}.`);
+            await this.notify("deployment.started", `Deployment started: ${projectName}`, `${projectName} deployment started by ${deployment.trigger}.`, {
+                projectId: deployment.projectId,
+                projectName
+            });
         } else if (deployment.status === "succeeded") {
-            await this.notify("deployment.succeeded", `Deployment finished: ${projectName}`, `${projectName} deployment completed successfully.`);
+            await this.notify("deployment.succeeded", `Deployment finished: ${projectName}`, `${projectName} deployment completed successfully.`, {
+                projectId: deployment.projectId,
+                projectName
+            });
         } else if (deployment.status === "failed") {
-            await this.notify("deployment.failed", `Deployment failed: ${projectName}`, `${projectName} deployment failed${deployment.error ? `: ${deployment.error}` : "."}`);
+            await this.notify("deployment.failed", `Deployment failed: ${projectName}`, `${projectName} deployment failed${deployment.error ? `: ${deployment.error}` : "."}`, {
+                projectId: deployment.projectId,
+                projectName
+            });
         }
     }
 
@@ -79,34 +93,81 @@ export class NotificationService {
 
             if (previousUp === true && !currentUp) {
                 const state = service.health ? `${service.state}/${service.health}` : service.state;
-                await this.notify("service.down", `Service down: ${projectName}/${service.service}`, `${projectName} service ${service.service} is ${state}.`);
+                await this.notify("service.down", `Service down: ${projectName}/${service.service}`, `${projectName} service ${service.service} is ${state}.`, {
+                    projectId: projectKey,
+                    projectName,
+                    service: service.service
+                });
             }
         }
     }
 
-    private async notify(event: NotificationEventType, title: string, body: string) {
+    private async notify(event: NotificationEventType, title: string, body: string, context: { projectId?: string; projectName?: string; service?: string } = {}) {
         const settings = this.globalSettingsStore.readSettings().notifications;
-        await this.dispatch(settings, { event, title, body });
+        await this.dispatch(settings, { event, title, body }, undefined, context);
     }
 
-    private async dispatch(settings: NotificationSettings, message: NotificationMessage, channels = activeChannels(settings)) {
+    private async dispatch(
+        settings: NotificationSettings,
+        message: NotificationMessage,
+        channels = activeChannels(settings),
+        context: { projectId?: string; projectName?: string; service?: string } = {}
+    ) {
         if (!settings.enabled || !isEventEnabled(settings, message.event)) {
             return;
         }
 
-        await Promise.allSettled(channels.map(async (channel) => {
+        if (!channels.length) {
+            this.recordNotification({
+                ...context,
+                event: message.event,
+                title: message.title,
+                body: message.body,
+                status: "skipped",
+                error: "No enabled notification channels are configured."
+            });
+            return;
+        }
+
+        await Promise.all(channels.map(async (channel) => {
             const plugin = this.plugins.get(channel.type);
-            if (!plugin) {
-                throw new Error(`Notification plugin ${channel.type} is not available.`);
-            }
-            await plugin.send(channel, message);
-        })).then((results) => {
-            for (const result of results) {
-                if (result.status === "rejected") {
-                    console.warn(`[notifications] ${readErrorMessage(result.reason)}`);
+            try {
+                if (!plugin) {
+                    throw new Error(`Notification plugin ${channel.type} is not available.`);
                 }
+                await plugin.send(channel, message);
+                this.recordNotification({
+                    ...context,
+                    event: message.event,
+                    channelId: channel.id,
+                    channelName: channel.name,
+                    channelType: channel.type,
+                    title: message.title,
+                    body: message.body,
+                    status: "sent"
+                });
+            } catch (error) {
+                const messageText = readErrorMessage(error);
+                console.warn(`[notifications] ${messageText}`);
+                this.recordNotification({
+                    ...context,
+                    event: message.event,
+                    channelId: channel.id,
+                    channelName: channel.name,
+                    channelType: channel.type,
+                    title: message.title,
+                    body: message.body,
+                    status: "failed",
+                    error: messageText
+                });
             }
-        });
+        }));
+    }
+
+    private recordNotification(record: Parameters<NotificationStore["record"]>[0]) {
+        const saved = this.notificationStore.record(record);
+        this.publishNotification(saved);
+        return saved;
     }
 }
 

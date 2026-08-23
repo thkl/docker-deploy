@@ -1,12 +1,14 @@
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { NotificationDeliveryRecord } from '../../models/project';
 import { ControllerEvent, EventBusService } from '../../services/event-bus';
+import { ProjectApi } from '../../services/project-api';
 
 interface ActivityItem {
   id: string;
   dedupeKey: string;
-  type: ControllerEvent['type'];
+  type: string;
   title: string;
   detail: string;
   time: string;
@@ -23,12 +25,14 @@ interface ActivityItem {
 })
 export class ActivityPage implements OnInit, OnDestroy {
   private readonly eventBus = inject(EventBusService);
+  private readonly api = inject(ProjectApi);
   private subscription?: Subscription;
 
   protected readonly events = signal<ActivityItem[]>([]);
   protected readonly streamState = signal<'connecting' | 'live' | 'error'>('connecting');
 
   ngOnInit() {
+    this.loadNotificationHistory();
     this.subscription = this.eventBus.stream().subscribe({
       next: (event) => {
         this.streamState.set('live');
@@ -59,7 +63,7 @@ export class ActivityPage implements OnInit, OnDestroy {
     }).format(new Date(value));
   }
 
-  protected eventTypeLabel(value: ControllerEvent['type']) {
+  protected eventTypeLabel(value: string) {
     return value.replace(/\./g, ' ');
   }
 
@@ -173,6 +177,10 @@ export class ActivityPage implements OnInit, OnDestroy {
       };
     }
 
+    if (event.type === 'notification.sent') {
+      return this.notificationToActivityItem(event.notification);
+    }
+
     return {
       id: this.eventId(event.type, event.operation.id, event.operation.finishedAt),
       dedupeKey: `runtime.operation.updated:${event.operation.id}`,
@@ -183,6 +191,29 @@ export class ActivityPage implements OnInit, OnDestroy {
       tone: event.operation.status === 'succeeded' ? 'success' : 'danger',
       projectId: event.projectId,
       serverId: event.operation.serverId,
+    };
+  }
+
+  private loadNotificationHistory() {
+    this.api.listNotificationHistory(50).subscribe({
+      next: (records) => {
+        for (const record of records.reverse()) {
+          this.upsertActivityItem(this.notificationToActivityItem(record));
+        }
+      },
+    });
+  }
+
+  private notificationToActivityItem(record: NotificationDeliveryRecord): ActivityItem {
+    return {
+      id: this.eventId('notification', record.id),
+      dedupeKey: `notification:${record.id}`,
+      type: 'notification.sent',
+      title: `${record.channelName || 'Notification'} ${record.status}`,
+      detail: `${record.title}${record.error ? ` · ${record.error}` : ''}`,
+      time: record.createdAt,
+      tone: record.status === 'sent' ? 'success' : record.status === 'failed' ? 'danger' : 'warning',
+      projectId: record.projectId,
     };
   }
 

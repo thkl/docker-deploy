@@ -557,6 +557,8 @@ function defaultGlobalSettingsForRemoteJobs(): GlobalSettings {
         registryPassword: "",
         notifications: {
             enabled: false,
+            healthPollingEnabled: true,
+            healthPollingIntervalSeconds: 60,
             events: {
                 deploymentStarted: true,
                 deploymentSucceeded: true,

@@ -21,6 +21,7 @@ import { parseProjectComposeImport, renderProjectComposeExport } from "./project
 import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { NotificationService } from "./notificationService.js";
+import { NotificationStore } from "./notificationStore.js";
 import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
@@ -42,6 +43,7 @@ export interface RouteDependencies {
     deploymentStore: DeploymentStore;
     releaseStore: ReleaseStore;
     webhookStore: WebhookStore;
+    notificationStore: NotificationStore;
     runtimeOperationStore: RuntimeOperationStore;
     globalSettingsStore: GlobalSettingsStore;
     agentManager: AgentManager;
@@ -58,7 +60,7 @@ export interface RouteDependencies {
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, database, configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, vaultSecretStore, runtimeStatusStreams, agentHealth, eventBus, notificationService } = dependencies;
+    const { adminAuth, database, configStore, deploymentService, deploymentStore, releaseStore, webhookStore, notificationStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, vaultSecretStore, runtimeStatusStreams, agentHealth, eventBus, notificationService } = dependencies;
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -83,7 +85,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/servers", adminAuth.requireAuth);
     app.use("/api/secrets", adminAuth.requireAuth);
 
-    registerSettingsRoutes(app, { database, globalSettingsStore, eventBus, notificationService });
+    registerSettingsRoutes(app, { database, globalSettingsStore, eventBus, notificationService, notificationStore });
     registerSecretRoutes(app, { vaultSecretStore });
     registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
     registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, eventBus });
@@ -95,8 +97,8 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
 /**
  * Registers global settings read/write endpoints.
  */
-function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependencies, "database" | "globalSettingsStore" | "eventBus" | "notificationService">) {
-    const { database, globalSettingsStore, eventBus, notificationService } = dependencies;
+function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependencies, "database" | "globalSettingsStore" | "eventBus" | "notificationService" | "notificationStore">) {
+    const { database, globalSettingsStore, eventBus, notificationService, notificationStore } = dependencies;
 
     app.get("/api/settings", (req: Request, res: Response) => {
         res.json(publicGlobalSettings(globalSettingsStore.readSettings()));
@@ -117,6 +119,11 @@ function registerSettingsRoutes(app: Express, dependencies: Pick<RouteDependenci
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not send test notification." });
         }
+    });
+
+    app.get("/api/settings/notifications/history", (req: Request, res: Response) => {
+        const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 100;
+        res.json(notificationStore.list(Number.isFinite(limit) ? limit : 100));
     });
 
     app.get("/api/settings/backup", (req: Request, res: Response) => {

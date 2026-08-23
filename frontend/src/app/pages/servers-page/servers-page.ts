@@ -68,6 +68,8 @@ export class ServersPage implements OnInit, OnDestroy {
     registryPassword: '',
     notifications: {
       enabled: false,
+      healthPollingEnabled: true,
+      healthPollingIntervalSeconds: 60,
       events: {
         deploymentStarted: true,
         deploymentSucceeded: true,

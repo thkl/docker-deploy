@@ -293,6 +293,8 @@ export class ProjectSettingsPage implements OnInit {
     registryPassword: '',
     notifications: {
       enabled: false,
+      healthPollingEnabled: true,
+      healthPollingIntervalSeconds: 60,
       events: {
         deploymentStarted: true,
         deploymentSucceeded: true,
