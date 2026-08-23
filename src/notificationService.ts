@@ -19,6 +19,7 @@ interface NotificationPlugin {
 }
 
 export class NotificationService {
+    private readonly controllerStartedAt = Date.now();
     private readonly deploymentStatus = new Map<string, DeploymentRecord["status"]>();
     private readonly serviceState = new Map<string, boolean>();
     private readonly plugins = new Map<NotificationChannelSettings["type"], NotificationPlugin>([
@@ -69,6 +70,9 @@ export class NotificationService {
         }
 
         if (deployment.status === "running") {
+            if (previous === undefined && this.startedBeforeController(deployment)) {
+                return;
+            }
             await this.notify("deployment.started", `Deployment started: ${projectName}`, `${projectName} deployment started by ${deployment.trigger}.`, {
                 projectId: deployment.projectId,
                 projectName
@@ -84,6 +88,11 @@ export class NotificationService {
                 projectName
             });
         }
+    }
+
+    private startedBeforeController(deployment: DeploymentRecord) {
+        const startedAt = Date.parse(deployment.startedAt);
+        return Number.isFinite(startedAt) && startedAt <= this.controllerStartedAt;
     }
 
     private async handleRuntimeStatus(projectKey: string, projectName: string, services: RuntimeServiceStatus[]) {
