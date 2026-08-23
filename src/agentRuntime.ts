@@ -118,6 +118,7 @@ export class AgentRuntime {
                         registryAddress: "",
                         registryUsername: "",
                         registryPassword: "",
+                        releaseSnapshotLimit: 20,
                         notifications: {
                             enabled: false,
                             healthPollingEnabled: true,

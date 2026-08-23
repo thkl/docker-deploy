@@ -39,6 +39,7 @@ export class GlobalSettingsPage implements OnInit {
     registryAddress: [''],
     registryUsername: [''],
     registryPassword: [''],
+    releaseSnapshotLimit: [20],
     notificationsEnabled: [false],
     notificationHealthPollingEnabled: [true],
     notificationHealthPollingIntervalSeconds: [60],
@@ -312,6 +313,7 @@ export class GlobalSettingsPage implements OnInit {
       registryAddress: settings.registryAddress,
       registryUsername: settings.registryUsername,
       registryPassword: settings.registryPassword ?? '',
+      releaseSnapshotLimit: settings.releaseSnapshotLimit ?? 20,
       notificationsEnabled: settings.notifications?.enabled ?? false,
       notificationDeploymentStarted: settings.notifications?.events?.deploymentStarted ?? true,
       notificationHealthPollingEnabled: settings.notifications?.healthPollingEnabled ?? true,
@@ -338,6 +340,7 @@ export class GlobalSettingsPage implements OnInit {
       registryAddress: value.registryAddress,
       registryUsername: value.registryUsername,
       registryPassword: value.registryPassword,
+      releaseSnapshotLimit: Number(value.releaseSnapshotLimit || 20),
       notifications: {
         enabled: value.notificationsEnabled,
         healthPollingEnabled: value.notificationHealthPollingEnabled,

@@ -20,6 +20,7 @@ const legacyDefaultGlobalSettings: GlobalSettings = {
     registryAddress: "",
     registryUsername: "",
     registryPassword: "",
+    releaseSnapshotLimit: 20,
     notifications: {
         enabled: false,
         healthPollingEnabled: true,
@@ -1145,8 +1146,17 @@ function normalizeLegacyGlobalSettings(payload: GlobalSettingsPayload): GlobalSe
         registryAddress: payload.registryAddress?.trim() || "",
         registryUsername: payload.registryUsername?.trim() || "",
         registryPassword: payload.registryPassword?.trim() || "",
+        releaseSnapshotLimit: normalizeLegacyRetentionLimit(payload.releaseSnapshotLimit),
         notifications: normalizeLegacyNotificationSettings(payload.notifications)
     };
+}
+
+function normalizeLegacyRetentionLimit(value: number | undefined) {
+    const parsed = Number(value ?? legacyDefaultGlobalSettings.releaseSnapshotLimit);
+    if (!Number.isFinite(parsed)) {
+        return legacyDefaultGlobalSettings.releaseSnapshotLimit;
+    }
+    return Math.max(1, Math.min(Math.trunc(parsed), 200));
 }
 
 function normalizeLegacyNotificationSettings(payload: GlobalSettingsPayload["notifications"]): NotificationSettings {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AppDatabase, runDatabaseTransaction } from "./database.js";
 import { CapturedReleaseSnapshot, ProjectReleaseSnapshot } from "./types.js";
 
-const maxSnapshotsPerProject = 20;
+export const defaultMaxSnapshotsPerProject = 20;
 
 export class ReleaseStore {
     constructor(private readonly database = new AppDatabase().connection) {}
@@ -21,7 +21,7 @@ export class ReleaseStore {
         return row ? this.rowToRecord(row) : null;
     }
 
-    save(projectName: string, deployment: { id: string; runId?: string; projectId?: string }, snapshot: CapturedReleaseSnapshot) {
+    save(projectName: string, deployment: { id: string; runId?: string; projectId?: string }, snapshot: CapturedReleaseSnapshot, snapshotLimit = defaultMaxSnapshotsPerProject) {
         const projectId = deployment.projectId ?? this.projectIdByRef(projectName);
         if (!projectId) {
             throw new Error("Project does not exist.");
@@ -61,7 +61,7 @@ export class ReleaseStore {
                     JSON.stringify(record.buildServices),
                     record.createdAt
                 );
-            this.trim(projectId);
+            this.trim(projectId, snapshotLimit);
         });
 
         return record;
@@ -74,7 +74,8 @@ export class ReleaseStore {
         }
     }
 
-    private trim(projectId: string) {
+    private trim(projectId: string, snapshotLimit: number) {
+        const limit = Math.max(1, Math.min(Math.trunc(snapshotLimit) || defaultMaxSnapshotsPerProject, 200));
         this.database
             .prepare(
                 `DELETE FROM release_snapshots
@@ -86,7 +87,7 @@ export class ReleaseStore {
                        LIMIT ?
                    )`
             )
-            .run(projectId, projectId, maxSnapshotsPerProject);
+            .run(projectId, projectId, limit);
     }
 
     private projectIdByRef(projectRef: string) {

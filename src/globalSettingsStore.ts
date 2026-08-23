@@ -16,6 +16,7 @@ export const defaultGlobalSettings: GlobalSettings = {
     registryAddress: "",
     registryUsername: "",
     registryPassword: "",
+    releaseSnapshotLimit: 20,
     notifications: {
         enabled: false,
         healthPollingEnabled: true,
@@ -96,6 +97,7 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
     const registryAddress = normalizeRegistryAddress(payload.registryAddress);
     const registryUsername = payload.registryUsername?.trim() ?? "";
     const registryPassword = shouldKeepExistingSecret(payload.registryPassword) ? "" : payload.registryPassword?.trim() ?? "";
+    const releaseSnapshotLimit = normalizeRetentionLimit(payload.releaseSnapshotLimit, defaultGlobalSettings.releaseSnapshotLimit, "Release snapshot limit");
     const notifications = normalizeNotificationSettings(payload.notifications);
 
     if (!sshKeyPath.startsWith("/") && !sshKeyPath.startsWith("~/")) {
@@ -119,6 +121,7 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
         registryAddress,
         registryUsername,
         registryPassword,
+        releaseSnapshotLimit,
         notifications
     };
 }
@@ -198,6 +201,18 @@ function normalizeRegistryAddress(value: string | undefined) {
 function shouldKeepExistingSecret(value: string | undefined) {
     const trimmed = value?.trim();
     return !trimmed || /^\*+$/.test(trimmed) || /^[^*]+?\.\.\.[^*]+$/.test(trimmed);
+}
+
+function normalizeRetentionLimit(value: number | undefined, fallback: number, label: string) {
+    const parsed = Number(value ?? fallback);
+    if (!Number.isFinite(parsed)) {
+        throw new Error(`${label} must be a number.`);
+    }
+    const normalized = Math.trunc(parsed);
+    if (normalized < 1 || normalized > 200) {
+        throw new Error(`${label} must be between 1 and 200.`);
+    }
+    return normalized;
 }
 
 function normalizeNotificationSettings(payload: GlobalSettingsPayload["notifications"]): NotificationSettings {

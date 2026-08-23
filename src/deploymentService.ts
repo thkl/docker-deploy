@@ -277,7 +277,7 @@ export class DeploymentService {
         try {
             const agent = this.agentManager.getClient(appSettings.serverId ?? "local");
             const snapshot = await agent.captureReleaseSnapshot(projectName, appSettings, globalSettings);
-            const release = this.releaseStore.save(projectName, deployment, snapshot);
+            const release = this.releaseStore.save(projectName, deployment, snapshot, globalSettings.releaseSnapshotLimit);
             this.appendDeploymentLine(projectName, deploymentId, "stdout", release.rollbackAvailable
                 ? `--> Release snapshot saved: ${release.id}.`
                 : `--> Release snapshot saved: ${release.id}. Rollback unavailable because ${release.rollbackUnavailableReason}`);

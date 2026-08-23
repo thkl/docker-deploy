@@ -66,6 +66,7 @@ export class ServersPage implements OnInit, OnDestroy {
     registryAddress: '',
     registryUsername: '',
     registryPassword: '',
+    releaseSnapshotLimit: 20,
     notifications: {
       enabled: false,
       healthPollingEnabled: true,

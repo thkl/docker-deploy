@@ -291,6 +291,7 @@ export class ProjectSettingsPage implements OnInit {
     registryAddress: '',
     registryUsername: '',
     registryPassword: '',
+    releaseSnapshotLimit: 20,
     notifications: {
       enabled: false,
       healthPollingEnabled: true,

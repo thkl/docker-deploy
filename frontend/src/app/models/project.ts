@@ -243,6 +243,7 @@ export interface GlobalSettings {
   registryAddress: string;
   registryUsername: string;
   registryPassword?: string;
+  releaseSnapshotLimit: number;
   notifications: NotificationSettings;
 }
 

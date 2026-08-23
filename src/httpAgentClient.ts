@@ -555,6 +555,7 @@ function defaultGlobalSettingsForRemoteJobs(): GlobalSettings {
         registryAddress: "",
         registryUsername: "",
         registryPassword: "",
+        releaseSnapshotLimit: 20,
         notifications: {
             enabled: false,
             healthPollingEnabled: true,

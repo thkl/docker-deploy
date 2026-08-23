@@ -35,6 +35,11 @@
           <span>SSH key path</span>
           <input formControlName="sshKeyPath" placeholder="~/.ssh" />
         </label>
+
+        <label>
+          <span>Release snapshots per project</span>
+          <input type="number" formControlName="releaseSnapshotLimit" min="1" max="200" />
+        </label>
       </div>
 
       <label class="check-row">

@@ -83,6 +83,7 @@ export interface GlobalSettings {
     registryAddress: string;
     registryUsername: string;
     registryPassword?: string;
+    releaseSnapshotLimit: number;
     notifications: NotificationSettings;
 }
 
@@ -99,6 +100,7 @@ export interface GlobalSettingsPayload {
     registryAddress?: string;
     registryUsername?: string;
     registryPassword?: string;
+    releaseSnapshotLimit?: number;
     notifications?: NotificationSettingsPayload;
 }
 
