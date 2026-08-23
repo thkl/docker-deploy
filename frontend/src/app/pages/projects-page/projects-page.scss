@@ -3,19 +3,19 @@
   display: flex;
   gap: 0.75rem;
   justify-content: space-between;
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.72rem;
 }
 
 h2 {
-  font-size: 1.18rem;
+  font-size: 1.05rem;
   font-weight: 600;
   margin: 0;
 }
 
 p {
   color: var(--muted);
-  font-size: 0.84rem;
-  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  margin: 0.24rem 0 0;
 }
 
 .message {
@@ -25,29 +25,31 @@ p {
 
 .inventory-summary {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.48rem;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  margin-bottom: 0.72rem;
+  margin-bottom: 0.65rem;
 }
 
 .inventory-summary div {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
   display: grid;
   gap: 0.12rem;
   min-width: 0;
-  padding: 0.58rem 0.68rem;
+  padding: 0.5rem 0.62rem;
 }
 
 .inventory-summary strong {
-  font-size: 1.08rem;
+  font-size: 1rem;
   font-weight: 650;
 }
 
 .inventory-summary span {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -58,7 +60,8 @@ p {
 .inventory-panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
 
@@ -68,7 +71,7 @@ p {
   display: flex;
   gap: 0.75rem;
   justify-content: space-between;
-  padding: 0.58rem 0.72rem;
+  padding: 0.52rem 0.64rem;
 }
 
 .inventory-toolbar > div {
@@ -81,7 +84,7 @@ p {
 .app-primary span,
 .state-column small {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
 }
 
 .search-field {
@@ -94,11 +97,11 @@ p {
 .search-field input {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--ink);
   font: inherit;
-  min-height: 30px;
-  padding: 0 0.58rem;
+  min-height: 28px;
+  padding: 0 0.54rem;
 }
 
 .search-field input:focus {
@@ -114,9 +117,10 @@ p {
   align-items: center;
   border-bottom: 1px solid var(--line);
   display: grid;
-  gap: 0.68rem;
+  gap: 0.58rem;
   grid-template-columns: minmax(220px, 1fr) minmax(140px, auto) minmax(118px, auto) auto;
-  padding: 0.62rem 0.72rem;
+  min-height: 50px;
+  padding: 0.52rem 0.64rem;
 }
 
 .app-row:last-child {
@@ -130,7 +134,7 @@ p {
 .app-primary {
   align-items: center;
   display: grid;
-  gap: 0.56rem;
+  gap: 0.5rem;
   grid-template-columns: auto minmax(0, 1fr);
   min-width: 0;
 }
@@ -143,6 +147,7 @@ p {
 
 .app-primary a {
   color: var(--ink);
+  font-size: 0.88rem;
   font-weight: 620;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -155,9 +160,10 @@ p {
 
 .runtime-light {
   background: var(--muted);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--panel), transparent 4%);
   border-radius: 999px;
-  height: 0.54rem;
-  width: 0.54rem;
+  height: 0.5rem;
+  width: 0.5rem;
 }
 
 .runtime-light.running {
@@ -187,10 +193,10 @@ p {
 .runtime-chip {
   border-radius: 999px;
   display: inline-flex;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 600;
   max-width: 100%;
-  padding: 0.14rem 0.45rem;
+  padding: 0.1rem 0.42rem;
 }
 
 .status-chip {
@@ -231,7 +237,7 @@ p {
 .actions {
   align-items: center;
   display: flex;
-  gap: 0.42rem;
+  gap: 0.36rem;
   justify-content: flex-end;
 }
 
@@ -239,12 +245,12 @@ p {
   align-items: center;
   background: transparent;
   border: 1px solid var(--line-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--accent-strong);
   display: inline-flex;
   font-weight: 500;
-  min-height: 30px;
-  padding: 0 0.58rem;
+  min-height: 28px;
+  padding: 0 0.52rem;
 }
 
 .actions a:hover {

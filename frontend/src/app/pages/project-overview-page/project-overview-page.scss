@@ -1,12 +1,13 @@
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.72rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  padding: 0.64rem;
 }
 
 .panel h2 {
-  font-size: 0.98rem;
+  font-size: 0.92rem;
   margin: 0 0 0.35rem;
 }
 
@@ -19,12 +20,13 @@
   align-items: stretch;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
   display: grid;
-  gap: 0.72rem;
+  gap: 0.62rem;
   grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.4fr);
   justify-content: space-between;
-  padding: 0.62rem 0.72rem;
+  padding: 0.56rem 0.64rem;
 }
 
 .status-main {
@@ -53,8 +55,8 @@
   background: var(--muted);
   border-radius: 999px;
   flex: 0 0 auto;
-  height: 0.56rem;
-  width: 0.56rem;
+  height: 0.5rem;
+  width: 0.5rem;
 }
 
 .runtime-light.running {
@@ -79,11 +81,11 @@
 .status-summary span {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   display: grid;
   gap: 0.12rem;
   min-width: 0;
-  padding: 0.45rem 0.52rem;
+  padding: 0.4rem 0.48rem;
 }
 
 .status-summary strong,
@@ -103,18 +105,19 @@
   display: grid;
   gap: 0.7rem;
   grid-template-columns: minmax(260px, 1fr) minmax(300px, 1.25fr) minmax(140px, auto);
-  margin-bottom: 0.7rem;
-  margin-top: 0.7rem;
+  margin-bottom: 0.64rem;
+  margin-top: 0.64rem;
 }
 
 .command-panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
   display: grid;
   gap: 0.55rem;
   min-width: 0;
-  padding: 0.58rem 0.62rem;
+  padding: 0.54rem 0.58rem;
 }
 
 .command-panel-head {
@@ -141,13 +144,14 @@
 .timeline-panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
   margin-bottom: 0.7rem;
   overflow: hidden;
 }
 
 .compact-head {
-  padding: 0.62rem 0.72rem;
+  padding: 0.56rem 0.64rem;
 }
 
 .timeline-list {
@@ -161,8 +165,8 @@
   display: grid;
   gap: 0.6rem;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 42px;
-  padding: 0.48rem 0.72rem;
+  min-height: 38px;
+  padding: 0.42rem 0.64rem;
 }
 
 .timeline-row:last-child {
@@ -172,8 +176,8 @@
 .timeline-light {
   background: var(--muted);
   border-radius: 999px;
-  height: 0.48rem;
-  width: 0.48rem;
+  height: 0.44rem;
+  width: 0.44rem;
 }
 
 .timeline-row.success .timeline-light {
@@ -219,20 +223,21 @@
 .project-subnav {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
   margin-bottom: 0.7rem;
-  padding: 0.3rem;
+  padding: 0.26rem;
 }
 
 .project-subnav a {
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
-  font-size: 0.84rem;
-  min-height: 30px;
-  padding: 0.34rem 0.58rem;
+  font-size: 0.8rem;
+  min-height: 28px;
+  padding: 0.28rem 0.52rem;
 }
 
 .project-subnav a:hover,
@@ -261,11 +266,11 @@
   align-items: center;
   background: transparent;
   border: 1px solid var(--line-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--accent-strong);
   display: inline-flex;
-  min-height: 30px;
-  padding: 0 0.62rem;
+  min-height: 28px;
+  padding: 0 0.56rem;
 }
 
 .command-group a:hover,
@@ -315,7 +320,8 @@
 .deploy-panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
   margin-top: 8px;
 }
@@ -326,11 +332,11 @@
   display: flex;
   gap: 1rem;
   justify-content: space-between;
-  padding: 0.72rem;
+  padding: 0.64rem;
 }
 
 .deploy-head h2 {
-  font-size: 0.98rem;
+  font-size: 0.92rem;
   margin: 0 0 0.35rem;
 }
 
@@ -348,17 +354,17 @@
   display: grid;
   gap: 0.52rem;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding: 0.72rem;
+  padding: 0.64rem;
 }
 
 .detail-grid span {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   display: grid;
   gap: 0.18rem;
   min-width: 0;
-  padding: 0.52rem;
+  padding: 0.46rem;
 }
 
 .detail-grid strong,

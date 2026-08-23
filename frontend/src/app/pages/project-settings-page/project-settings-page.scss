@@ -1,16 +1,16 @@
 .page-head {
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.72rem;
 }
 
 h2 {
-  font-size: 1.18rem;
+  font-size: 1.05rem;
   font-weight: 600;
   margin: 0;
 }
 
 p {
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   margin: 0.35rem 0 0;
 }
 
@@ -29,14 +29,15 @@ p {
 
 .settings-form {
   display: grid;
-  gap: 0.72rem;
+  gap: 0.64rem;
 }
 
 .form-panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.72rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  padding: 0.64rem;
 }
 
 .panel-head {
@@ -44,8 +45,8 @@ p {
   display: flex;
   gap: 1rem;
   justify-content: space-between;
-  margin: -0.72rem -0.72rem 0.72rem;
-  padding: 0.72rem;
+  margin: -0.64rem -0.64rem 0.64rem;
+  padding: 0.64rem;
 }
 
 .panel-head.split {
@@ -53,19 +54,19 @@ p {
 }
 
 h3 {
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   margin: 0;
 }
 
 .panel-head span,
 label span {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
 }
 
 .field-grid {
   display: grid;
-  gap: 0.72rem;
+  gap: 0.64rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -84,12 +85,12 @@ label span {
 .strategy-summary {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   display: grid;
   gap: 0.75rem;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 0.95fr);
   margin-top: 0.72rem;
-  padding: 0.58rem 0.68rem;
+  padding: 0.54rem 0.62rem;
 }
 
 .notification-summary {
@@ -145,11 +146,11 @@ select,
 textarea {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--ink);
   font: inherit;
-  min-height: 34px;
-  padding: 0.46rem 0.6rem;
+  min-height: 32px;
+  padding: 0.42rem 0.56rem;
   width: 100%;
 }
 
@@ -157,7 +158,7 @@ input:focus,
 select:focus,
 textarea:focus {
   border-color: var(--accent);
-  outline: 3px solid color-mix(in srgb, var(--accent), transparent 78%);
+  outline: 2px solid color-mix(in srgb, var(--accent), transparent 80%);
 }
 
 textarea {
@@ -176,7 +177,7 @@ textarea {
 .compose-tabs {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   display: inline-flex;
   gap: 0.25rem;
   margin-bottom: 0.72rem;
@@ -187,11 +188,11 @@ textarea {
 .compose-tabs button {
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   font-weight: 520;
-  min-height: 28px;
-  padding: 0 0.62rem;
+  min-height: 27px;
+  padding: 0 0.58rem;
 }
 
 .compose-tabs button.active {
@@ -232,7 +233,7 @@ textarea {
 .validation-warnings {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   margin: 0;
   overflow: auto;
@@ -253,7 +254,7 @@ textarea {
 .compose-service {
   align-items: center;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   display: flex;
   gap: 0.75rem;
   justify-content: space-between;
@@ -288,10 +289,10 @@ textarea {
 .project-secrets-panel {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   display: grid;
   gap: 0.75rem;
-  padding: 0.68rem;
+  padding: 0.62rem;
 }
 
 .project-secrets-head,
@@ -344,15 +345,15 @@ textarea {
 .empty-builder-section {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
-  padding: 0.8rem;
+  padding: 0.72rem;
 }
 
 .builder-rail {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   display: grid;
   gap: 0.25rem;
   padding: 0.35rem;
@@ -364,12 +365,12 @@ textarea {
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   display: flex;
   justify-content: space-between;
-  min-height: 32px;
-  padding: 0 0.55rem;
+  min-height: 30px;
+  padding: 0 0.5rem;
   text-align: left;
 }
 
@@ -392,21 +393,21 @@ textarea {
 .builder-diagnostics {
   background: color-mix(in srgb, var(--danger), transparent 92%);
   border: 1px solid color-mix(in srgb, var(--danger), transparent 62%);
-  border-radius: 7px;
+  border-radius: var(--radius);
   color: var(--danger);
   display: grid;
   gap: 0.35rem;
-  padding: 0.65rem 0.75rem;
+  padding: 0.58rem 0.68rem;
 }
 
 .builder-note {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius);
   color: var(--muted);
   display: grid;
   gap: 0.2rem;
-  padding: 0.65rem 0.75rem;
+  padding: 0.58rem 0.68rem;
 }
 
 .builder-note strong {
@@ -451,10 +452,10 @@ textarea {
 .builder-service {
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius);
   display: grid;
   gap: 0.75rem;
-  padding: 0.75rem;
+  padding: 0.68rem;
 }
 
 .choice-grid {
@@ -465,11 +466,11 @@ textarea {
 
 fieldset {
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius);
   display: grid;
   gap: 0.5rem;
   margin: 0;
-  padding: 0.7rem;
+  padding: 0.64rem;
 }
 
 legend {
@@ -495,10 +496,10 @@ fieldset small {
 .list-editor {
   align-content: start;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius);
   display: grid;
   gap: 0.55rem;
-  padding: 0.65rem;
+  padding: 0.58rem;
 }
 
 .list-editor-head,

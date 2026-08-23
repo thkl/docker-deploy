@@ -1,38 +1,41 @@
 :root {
   color-scheme: light dark;
-  --bg: #f8fafc;
+  --bg: #f6f7f9;
   --sidebar: #ffffff;
-  --sidebar-ink: #1f2937;
-  --sidebar-muted: #6b7280;
+  --sidebar-ink: #1e293b;
+  --sidebar-muted: #748094;
   --panel: #ffffff;
-  --panel-soft: #f9fafb;
-  --ink: #111827;
-  --muted: #6b7280;
-  --line: #e5e7eb;
-  --line-strong: #d1d5db;
-  --accent: #3b82f6;
-  --accent-strong: #2563eb;
-  --accent-soft: #eff6ff;
-  --button-subtle: #f3f6fb;
-  --button-subtle-hover: #edf2f8;
+  --panel-soft: #f8fafc;
+  --ink: #172033;
+  --muted: #687588;
+  --line: #e6eaf0;
+  --line-strong: #d8dee8;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-soft: #eef5ff;
+  --button-subtle: #f4f7fb;
+  --button-subtle-hover: #eef3f9;
   --danger: #dc2626;
-  --warning: #b7791f;
-  --running: #15803d;
-  --shadow: 0 10px 28px rgba(15, 23, 42, 0.055);
+  --warning: #a8660d;
+  --running: #13803b;
+  --radius: 7px;
+  --radius-sm: 5px;
+  --shadow: 0 12px 34px rgba(15, 23, 42, 0.055);
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f141b;
-    --sidebar: #111827;
-    --sidebar-ink: #eef2f7;
-    --sidebar-muted: #9ca3af;
-    --panel: #151c26;
-    --panel-soft: #111821;
-    --ink: #e5e7eb;
-    --muted: #9ca3af;
-    --line: #273244;
-    --line-strong: #374151;
+    --bg: #0d1219;
+    --sidebar: #111821;
+    --sidebar-ink: #edf2f8;
+    --sidebar-muted: #9aa6b6;
+    --panel: #151d28;
+    --panel-soft: #111923;
+    --ink: #e8edf4;
+    --muted: #9aa6b6;
+    --line: #263142;
+    --line-strong: #334155;
     --accent: #60a5fa;
     --accent-strong: #93c5fd;
     --accent-soft: #172235;
@@ -42,6 +45,7 @@
     --warning: #fbbf24;
     --running: #137c05;
     --shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.22);
   }
 }
 
@@ -58,21 +62,23 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 13px;
+  font-size: 12.5px;
   letter-spacing: 0;
-  line-height: 1.42;
+  line-height: 1.45;
   margin: 0;
+  text-rendering: optimizeLegibility;
 }
 
 strong,
 b {
-  font-weight: 540;
+  font-weight: 560;
 }
 
 h1,
 h2,
 h3 {
   font-weight: 560;
+  letter-spacing: 0;
 }
 
 a {
@@ -85,16 +91,17 @@ a[role='button'] {
   align-items: center;
   background: transparent;
   border: 1px solid var(--line-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--accent-strong);
   cursor: pointer;
   display: inline-flex;
   font: inherit;
   justify-content: center;
-  min-height: 32px;
-  padding: 0 0.72rem;
+  min-height: 30px;
+  padding: 0 0.68rem;
   transition:
     background-color 140ms ease,
+    border-color 140ms ease,
     box-shadow 140ms ease,
     transform 140ms ease;
 }
@@ -105,14 +112,15 @@ a[role='button']:hover {
   border-color: color-mix(in srgb, var(--accent), transparent 34%);
   color: var(--accent);
   box-shadow: none;
-  transform: translateY(-1px);
+  transform: translateY(-0.5px);
 }
 
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent), transparent 74%);
+  outline: 2px solid color-mix(in srgb, var(--accent), transparent 76%);
   outline-offset: 2px;
 }
 
@@ -123,6 +131,33 @@ button:disabled {
 
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+input,
+select,
+textarea {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  min-height: 32px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--muted), transparent 22%);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: color-mix(in srgb, var(--accent), transparent 18%);
+  outline: 2px solid color-mix(in srgb, var(--accent), transparent 80%);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent), transparent 78%);
 }
 
 .danger-action {
