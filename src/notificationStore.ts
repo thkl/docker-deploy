@@ -15,12 +15,13 @@ export class NotificationStore {
         this.database
             .prepare(
                 `INSERT INTO notification_events
-                 (id, event, channel_id, channel_name, channel_type, project_id, project_name, service, title, body, status, error, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                 (id, event, deployment_id, channel_id, channel_name, channel_type, project_id, project_name, service, title, body, status, error, dedupe_key, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             )
             .run(
                 record.id,
                 record.event,
+                record.deploymentId ?? null,
                 record.channelId ?? null,
                 record.channelName ?? null,
                 record.channelType ?? null,
@@ -31,6 +32,7 @@ export class NotificationStore {
                 record.body,
                 record.status,
                 record.error ?? null,
+                record.dedupeKey ?? null,
                 record.createdAt
             );
 
@@ -41,9 +43,9 @@ export class NotificationStore {
     list(limit = 100) {
         const rows = this.database
             .prepare(
-                `SELECT id, event, channel_id AS channelId, channel_name AS channelName, channel_type AS channelType,
+                `SELECT id, event, deployment_id AS deploymentId, channel_id AS channelId, channel_name AS channelName, channel_type AS channelType,
                         project_id AS projectId, project_name AS projectName, service, title, body, status, error,
-                        created_at AS createdAt
+                        dedupe_key AS dedupeKey, created_at AS createdAt
                  FROM notification_events
                  ORDER BY created_at DESC
                  LIMIT ?`
@@ -51,6 +53,13 @@ export class NotificationStore {
             .all(Math.max(1, Math.min(limit, 500))) as unknown as NotificationDeliveryRecord[];
 
         return rows;
+    }
+
+    hasDedupeKey(dedupeKey: string) {
+        const row = this.database
+            .prepare("SELECT id FROM notification_events WHERE dedupe_key = ? AND status = 'sent' LIMIT 1")
+            .get(dedupeKey) as { id: string } | undefined;
+        return Boolean(row);
     }
 
     private prune() {

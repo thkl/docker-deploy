@@ -18,6 +18,13 @@ interface NotificationPlugin {
     send(channel: NotificationChannelSettings, message: NotificationMessage): Promise<void>;
 }
 
+interface NotificationContext {
+    deploymentId?: string;
+    projectId?: string;
+    projectName?: string;
+    service?: string;
+}
+
 export class NotificationService {
     private readonly controllerStartedAt = Date.now();
     private readonly deploymentStatus = new Map<string, DeploymentRecord["status"]>();
@@ -74,16 +81,19 @@ export class NotificationService {
                 return;
             }
             await this.notify("deployment.started", `Deployment started: ${projectName}`, `${projectName} deployment started by ${deployment.trigger}.`, {
+                deploymentId: deployment.id,
                 projectId: deployment.projectId,
                 projectName
             });
         } else if (deployment.status === "succeeded") {
             await this.notify("deployment.succeeded", `Deployment finished: ${projectName}`, `${projectName} deployment completed successfully.`, {
+                deploymentId: deployment.id,
                 projectId: deployment.projectId,
                 projectName
             });
         } else if (deployment.status === "failed") {
             await this.notify("deployment.failed", `Deployment failed: ${projectName}`, `${projectName} deployment failed${deployment.error ? `: ${deployment.error}` : "."}`, {
+                deploymentId: deployment.id,
                 projectId: deployment.projectId,
                 projectName
             });
@@ -113,7 +123,7 @@ export class NotificationService {
         }
     }
 
-    private async notify(event: NotificationEventType, title: string, body: string, context: { projectId?: string; projectName?: string; service?: string } = {}) {
+    private async notify(event: NotificationEventType, title: string, body: string, context: NotificationContext = {}) {
         const settings = this.effectiveSettings(context.projectId ?? context.projectName);
         await this.dispatch(settings, { event, title, body }, undefined, context);
     }
@@ -122,7 +132,7 @@ export class NotificationService {
         settings: NotificationSettings,
         message: NotificationMessage,
         channels = activeChannels(settings),
-        context: { projectId?: string; projectName?: string; service?: string } = {}
+        context: NotificationContext = {}
     ) {
         if (!settings.enabled || !isEventEnabled(settings, message.event)) {
             return;
@@ -142,6 +152,10 @@ export class NotificationService {
 
         await Promise.all(channels.map(async (channel) => {
             const plugin = this.plugins.get(channel.type);
+            const dedupeKey = notificationDedupeKey(message.event, context, channel.id);
+            if (dedupeKey && this.notificationStore.hasDedupeKey(dedupeKey)) {
+                return;
+            }
             try {
                 if (!plugin) {
                     throw new Error(`Notification plugin ${channel.type} is not available.`);
@@ -155,7 +169,8 @@ export class NotificationService {
                     channelType: channel.type,
                     title: message.title,
                     body: message.body,
-                    status: "sent"
+                    status: "sent",
+                    dedupeKey
                 });
             } catch (error) {
                 const messageText = readErrorMessage(error);
@@ -169,7 +184,8 @@ export class NotificationService {
                     title: message.title,
                     body: message.body,
                     status: "failed",
-                    error: messageText
+                    error: messageText,
+                    dedupeKey
                 });
             }
         }));
@@ -273,6 +289,13 @@ function isEventEnabled(settings: NotificationSettings, event: NotificationEvent
         case "service.down":
             return settings.events.serviceDown;
     }
+}
+
+function notificationDedupeKey(event: NotificationEventType, context: NotificationContext, channelId: string) {
+    if (!context.deploymentId || !event.startsWith("deployment.")) {
+        return undefined;
+    }
+    return `${event}:${context.deploymentId}:${channelId}`;
 }
 
 function isServiceUp(service: RuntimeServiceStatus) {

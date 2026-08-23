@@ -231,6 +231,7 @@ export class AppDatabase {
             CREATE TABLE IF NOT EXISTS notification_events (
                 id TEXT PRIMARY KEY,
                 event TEXT NOT NULL,
+                deployment_id TEXT,
                 channel_id TEXT,
                 channel_name TEXT,
                 channel_type TEXT,
@@ -241,6 +242,7 @@ export class AppDatabase {
                 body TEXT NOT NULL,
                 status TEXT NOT NULL,
                 error TEXT,
+                dedupe_key TEXT,
                 created_at TEXT NOT NULL
             );
 
@@ -286,6 +288,10 @@ export class AppDatabase {
         this.ensureColumn("deployments", "phase", "TEXT NOT NULL DEFAULT 'running'");
         this.ensureColumn("deployments", "agent_job_id", "TEXT");
         this.ensureColumn("deployments", "agent_stream_token", "TEXT");
+        this.ensureColumn("notification_events", "deployment_id", "TEXT");
+        this.ensureColumn("notification_events", "dedupe_key", "TEXT");
+        this.connection.exec("DROP INDEX IF EXISTS notification_events_dedupe_key_idx;");
+        this.connection.exec("CREATE UNIQUE INDEX IF NOT EXISTS notification_events_sent_dedupe_key_idx ON notification_events(dedupe_key) WHERE dedupe_key IS NOT NULL AND status = 'sent';");
         this.recreateReleaseSnapshotsWithoutDeploymentForeignKey();
         this.migrateProjectsToStableIds();
         this.backfillDeploymentRuns();

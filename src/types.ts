@@ -153,6 +153,7 @@ export type NotificationDeliveryStatus = "sent" | "failed" | "skipped";
 export interface NotificationDeliveryRecord {
     id: string;
     event: NotificationEventType;
+    deploymentId?: string;
     channelId?: string;
     channelName?: string;
     channelType?: NotificationChannelType;
@@ -163,6 +164,7 @@ export interface NotificationDeliveryRecord {
     body: string;
     status: NotificationDeliveryStatus;
     error?: string;
+    dedupeKey?: string;
     createdAt: string;
 }
 
