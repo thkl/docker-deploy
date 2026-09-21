@@ -27,6 +27,7 @@ export interface ComposeBuilderService {
   dockerfile: string;
   buildTarget: string;
   containerName: string;
+  user: string;
   command: string;
   restart: string;
   networkMode: string;

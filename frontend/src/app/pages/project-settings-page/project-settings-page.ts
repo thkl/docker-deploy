@@ -17,6 +17,7 @@ interface ComposeBuilderService {
   dockerfile: string;
   buildTarget: string;
   containerName: string;
+  user: string;
   command: string;
   restart: string;
   networkMode: string;
@@ -728,6 +729,7 @@ export class ProjectSettingsPage implements OnInit {
         dockerfile: '',
         buildTarget: '',
         containerName: '',
+        user: '',
         command: '',
         restart: 'unless-stopped',
         networkMode: '',
@@ -1767,6 +1769,9 @@ function renderComposeBuilder(
     }
     if (!useSwarmStack && service.containerName.trim()) {
       lines.push(`    container_name: ${yamlScalar(service.containerName.trim())}`);
+    }
+    if (service.user.trim()) {
+      lines.push(`    user: ${yamlScalar(service.user.trim())}`);
     }
     if (service.command.trim()) {
       lines.push(`    command: ${yamlScalar(service.command.trim())}`);
@@ -2811,6 +2816,7 @@ function blankBuilderService(name: string, build: string, networks: string, rest
     dockerfile: '',
     buildTarget: '',
     containerName: '',
+    user: '',
     command: '',
     restart,
     networkMode: '',
@@ -2952,7 +2958,7 @@ function shellArg(value: string) {
 }
 
 function applyParsedServiceScalar(service: Omit<ComposeBuilderService, 'id'>, key: string, value: string) {
-  if (key === 'image' || key === 'build' || key === 'dockerfile' || key === 'buildTarget' || key === 'command' || key === 'restart' || key === 'networkMode' || key === 'containerName') {
+  if (key === 'image' || key === 'build' || key === 'dockerfile' || key === 'buildTarget' || key === 'command' || key === 'restart' || key === 'networkMode' || key === 'containerName' || key === 'user') {
     service[key] = value;
   } else if (key === 'network_mode') {
     service.networkMode = value;
@@ -2964,7 +2970,7 @@ function applyParsedServiceScalar(service: Omit<ComposeBuilderService, 'id'>, ke
 }
 
 function isSupportedServiceScalar(key: string) {
-  return ['image', 'build', 'command', 'restart', 'network_mode', 'networkMode', 'container_name', 'containerName', 'init'].includes(key);
+  return ['image', 'build', 'command', 'restart', 'network_mode', 'networkMode', 'container_name', 'containerName', 'user', 'init'].includes(key);
 }
 
 function appendRawLine(value: string, line: string) {

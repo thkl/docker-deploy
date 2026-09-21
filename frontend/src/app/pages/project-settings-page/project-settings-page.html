@@ -348,6 +348,11 @@
                 }
               </label>
               <label>
+                <span>Run as user</span>
+                <input [value]="service.user" (input)="updateBuilderService(service.id, 'user', $event)"
+                  placeholder="${PUID:-1000}:${PGID:-1000}" />
+              </label>
+              <label>
                 <span>Restart policy</span>
                 <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)"
                   [disabled]="isSwarmMode()">
