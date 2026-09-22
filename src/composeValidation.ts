@@ -28,7 +28,7 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
     const composeSearch = composeFileNames.map(shellQuote).join(" ");
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(Boolean(composeOverride), composeSearch);
-    const projectRootEnvFileScript = renderProjectRootEnvFileScript();
+    const projectRootEnvFileScript = renderProjectRootEnvFileScript(appSettings.envFilePath);
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
     const projectRootStorageOverlayScript = renderProjectRootStorageOverlayScript();
     const traefikOverrideScript = renderTraefikOverrideScript(projectName, appSettings, globalSettings);

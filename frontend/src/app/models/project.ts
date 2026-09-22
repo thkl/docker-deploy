@@ -91,6 +91,7 @@ export interface ProjectSummary {
   serverIds?: string[];
   repositoryUrl: string;
   path: string;
+  envFilePath?: string;
   token: string;
   deployToken: string;
   composeOverride: string;
@@ -119,6 +120,7 @@ export interface ProjectSummary {
   };
   compose?: {
     override: string;
+    envFilePath?: string;
     envSecrets?: ProjectEnvironmentSecret[];
     hasOverride: boolean;
   };
@@ -164,6 +166,7 @@ export interface ProjectPayload {
   token: string;
   deployToken: string;
   path: string;
+  envFilePath?: string;
   composeOverride: string;
   envSecrets?: ProjectEnvironmentSecret[];
   deploymentStrategy: DeploymentStrategy;
@@ -200,6 +203,7 @@ export interface ProjectPayload {
   notifications?: ProjectNotificationSettings;
   compose?: {
     override: string;
+    envFilePath?: string;
     envSecrets?: ProjectEnvironmentSecret[];
   };
   traefik?: TraefikSettings;

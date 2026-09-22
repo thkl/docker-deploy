@@ -2,12 +2,38 @@
  * Makes a project-root .env available to Docker Compose commands executed from
  * a Deploy-managed temporary checkout.
  */
-export function renderProjectRootEnvFileScript() {
+export function renderProjectRootEnvFileScript(envFilePath?: string) {
+    const configuredEnvFilePath = envFilePath?.trim() ?? "";
+    const configuredEnvFile = configuredEnvFilePath ? shellQuoteForScript(configuredEnvFilePath) : "''";
     return `
-                if [ -f "$PROJECT_ROOT/.env" ] && [ ! -e .env ]; then
+                CONFIGURED_ENV_FILE=${configuredEnvFile}
+                if [ -n "$CONFIGURED_ENV_FILE" ]; then
+                    case "$CONFIGURED_ENV_FILE" in
+                        /*) ENV_FILE="$CONFIGURED_ENV_FILE" ;;
+                        *) ENV_FILE="$PROJECT_ROOT/$CONFIGURED_ENV_FILE" ;;
+                    esac
+                    if [ ! -f "$ENV_FILE" ]; then
+                        echo "--> CRITICAL: Configured Compose env file does not exist: $ENV_FILE"
+                        exit 1
+                    fi
+                    if [ "$PWD" != "$PROJECT_ROOT" ]; then
+                        rm -f .env
+                        ln -s "$ENV_FILE" .env
+                    elif [ ! -e .env ]; then
+                        ln -s "$ENV_FILE" .env
+                    fi
+                    if [ ! -e "$PROJECT_ROOT/.env" ]; then
+                        ln -s "$ENV_FILE" "$PROJECT_ROOT/.env"
+                    fi
+                    echo "--> Using configured Compose env file: $ENV_FILE"
+                elif [ -f "$PROJECT_ROOT/.env" ] && [ ! -e .env ]; then
                     echo "--> Using project-root .env for Compose."
                     ln -s "$PROJECT_ROOT/.env" .env
                 fi`;
+}
+
+function shellQuoteForScript(value: string) {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /**

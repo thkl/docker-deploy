@@ -28,6 +28,7 @@ export interface ProjectSettings {
     repositoryUrl?: string;
     deployToken?: string;
     path?: string;
+    envFilePath?: string;
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
     deploymentStrategy?: DeploymentStrategy;
@@ -283,6 +284,7 @@ export interface ProjectPayload {
     repositoryUrl?: string;
     deployToken?: string;
     path?: string;
+    envFilePath?: string;
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
     deploymentStrategy?: DeploymentStrategy;
@@ -320,6 +322,7 @@ export interface ProjectPayload {
     notifications?: Partial<ProjectNotificationSettings>;
     compose?: {
         override?: string;
+        envFilePath?: string;
         envSecrets?: ProjectEnvironmentSecret[];
     };
     traefik?: Partial<TraefikSettings> & {

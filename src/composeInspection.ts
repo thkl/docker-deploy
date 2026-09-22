@@ -30,7 +30,7 @@ async function inspectStoredOverride(projectName: string, appSettings: ProjectSe
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
     const quotedProjectRoot = shellQuote(projectRoot);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
-    const projectRootEnvFileScript = renderProjectRootEnvFileScript();
+    const projectRootEnvFileScript = renderProjectRootEnvFileScript(appSettings.envFilePath);
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
     const projectRootBindMountRewriteScript = renderProjectRootBindMountRewriteScript();
 
@@ -87,7 +87,7 @@ async function inspectRepositoryCompose(projectName: string, appSettings: Projec
     const quotedProjectRoot = shellQuote(projectRoot);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
     const composeSearch = composeFileNames.map(shellQuote).join(" ");
-    const projectRootEnvFileScript = renderProjectRootEnvFileScript();
+    const projectRootEnvFileScript = renderProjectRootEnvFileScript(appSettings.envFilePath);
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
     const projectRootBindMountRewriteScript = renderProjectRootBindMountRewriteScript();
 

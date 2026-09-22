@@ -665,6 +665,10 @@ function payloadComposeOverride(payload: ProjectPayload) {
     return payload.compose?.override?.trim() || payload.composeOverride?.trim();
 }
 
+function payloadEnvFilePath(payload: ProjectPayload) {
+    return payload.compose?.envFilePath?.trim() || payload.envFilePath?.trim() || "";
+}
+
 function payloadEnvSecrets(payload: ProjectPayload) {
     return payload.compose?.envSecrets ?? payload.envSecrets;
 }
@@ -776,6 +780,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const repositoryUrl = normalizeRepositoryUrl(payloadRepositoryUrl(payload));
             const deployToken = payloadDeployToken(payload);
             const repoPath = payloadProjectPath(payload);
+            const envFilePath = payloadEnvFilePath(payload);
             const composeOverride = payloadComposeOverride(payload);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload));
             const globalSettings = globalSettingsStore.readSettings();
@@ -794,6 +799,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(repositoryUrl ? { repositoryUrl } : {}),
                 ...(deployToken ? { deployToken } : {}),
                 ...(repoPath ? { path: repoPath } : {}),
+                ...(envFilePath ? { envFilePath } : {}),
                 ...(composeOverride ? { composeOverride } : {}),
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload),
@@ -821,6 +827,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const nextRepositoryUrl = normalizeRepositoryUrl(payloadRepositoryUrl(payload));
             const nextDeployToken = payloadDeployToken(payload);
             const nextPath = payloadProjectPath(payload);
+            const envFilePath = payloadEnvFilePath(payload);
             const composeOverride = payloadComposeOverride(payload);
             const globalSettings = globalSettingsStore.readSettings();
             const traefik = normalizeTraefikSettings(payload, globalSettings);
@@ -852,6 +859,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(nextRepositoryUrl ? { repositoryUrl: nextRepositoryUrl } : {}),
                 ...(nextDeployToken || existing.deployToken ? { deployToken: nextDeployToken || existing.deployToken } : {}),
                 ...(nextPath ? { path: nextPath } : {}),
+                envFilePath: envFilePath || undefined,
                 composeOverride: composeOverride || undefined,
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
@@ -1558,6 +1566,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
     const serverId = serverIds[0] ?? "local";
     const repositoryUrl = settings.repositoryUrl ?? "";
     const path = settings.path ?? defaultProjectPath(globalSettings, name);
+    const envFilePath = settings.envFilePath ?? "";
     const token = settings.token ? maskToken(settings.token) : "";
     const deployToken = settings.deployToken ? maskToken(settings.deployToken) : "";
     const composeOverride = settings.composeOverride ?? "";
@@ -1574,6 +1583,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         serverIds,
         repositoryUrl,
         path,
+        envFilePath,
         token,
         deployToken,
         composeOverride,
@@ -1602,6 +1612,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         },
         compose: {
             override: composeOverride,
+            envFilePath,
             envSecrets,
             hasOverride: Boolean(composeOverride)
         }

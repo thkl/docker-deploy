@@ -257,6 +257,8 @@ On startup, the controller also sweeps stale `.updater/tmpdeploy` folders for co
 
 If a Compose file references `env_file: .env`, the worker uses `.env` from the persistent project root when the cloned repository does not contain one. The persisted deploy compose is rewritten to reference that project-root `.env`, so later runtime actions still work after temporary checkout cleanup.
 
+Projects can override that fallback with **Compose .env file path** in project settings. The path may be absolute under the project root or relative to the project root (for example `.env.production`); it is made available as the checkout's `.env` before Compose renders variables such as `${MAILER_URL:-}`. The file must be readable by the deployment agent.
+
 If a Compose file uses an absolute build context that points at the project root, for example `build.context: /root/docker-apps/my-project`, the worker rewrites only that build context to `.updater/tmpdeploy`. Relative bind mounts such as `./data:/app/data` are rewritten to the persistent project root, for example `/root/docker-apps/my-project/data:/app/data`.
 
 Deploy writes those data-path rewrites as a separate generated overlay at:

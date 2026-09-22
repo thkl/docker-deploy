@@ -101,7 +101,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
     const secretOverlayScript = renderSecretComposeOverlayScript(appSettings.envSecrets, deploymentStrategy, composeProjectName);
-    const projectRootEnvFileScript = renderProjectRootEnvFileScript();
+    const projectRootEnvFileScript = renderProjectRootEnvFileScript(appSettings.envFilePath);
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const persistedStorageRewriteScript = renderPersistedStorageRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
@@ -973,8 +973,23 @@ const tag = sanitizeTag(process.argv[6] || "latest");
 const projectName = sanitizeName(process.argv[7] || "project");
 const data = JSON.parse(fs.readFileSync(inputPath, "utf8") || "{}");
 const services = data && typeof data === "object" && data.services && typeof data.services === "object" ? data.services : {};
+const networks = data && typeof data === "object" && data.networks && typeof data.networks === "object" ? data.networks : {};
 let changed = 0;
 const registryServices = [];
+
+// Compose may materialize an external network without an explicit name as
+// <project>_<network> when its normalized JSON is written back out. That
+// changes the meaning of external: true: the deployment then joins/creates
+// the prefixed network instead of the pre-existing network named by the key.
+for (const [networkKey, network] of Object.entries(networks)) {
+  if (!network || typeof network !== "object" || network.external !== true) {
+    continue;
+  }
+
+  if (!network.name || network.name === projectName + "_" + networkKey) {
+    network.name = networkKey;
+  }
+}
 
 for (const [serviceName, service] of Object.entries(services)) {
   if (!service || typeof service !== "object" || service.build == null) {

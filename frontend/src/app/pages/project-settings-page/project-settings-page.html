@@ -183,6 +183,12 @@
     <div class="panel-head split">
       <div>
         <h3>Docker Compose</h3>
+        <label class="compose-field">
+          <span>Compose .env file path</span>
+          <input formControlName="envFilePath" autocomplete="off"
+            placeholder=".env.production" />
+          <small>Optional host path used for {{ '${MAILER_URL:-}' }} interpolation. Relative paths are resolved from the project root.</small>
+        </label>
         <span>Stored compose file for projects that should not use the repository file</span>
       </div>
 

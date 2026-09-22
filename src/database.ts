@@ -130,6 +130,7 @@ export class AppDatabase {
                 repository_url TEXT,
                 deploy_token TEXT,
                 path TEXT,
+                env_file_path TEXT,
                 compose_override TEXT,
                 env_secrets_json TEXT,
                 deployment_strategy TEXT NOT NULL DEFAULT 'compose',
@@ -277,6 +278,7 @@ export class AppDatabase {
         this.ensureColumn("servers", "last_health_error", "TEXT");
         this.ensureColumn("servers", "capabilities_json", "TEXT");
         this.ensureColumn("projects", "env_secrets_json", "TEXT");
+        this.ensureColumn("projects", "env_file_path", "TEXT");
         this.ensureColumn("projects", "server_ids_json", "TEXT");
         this.ensureColumn("projects", "deployment_strategy", "TEXT NOT NULL DEFAULT 'compose'");
         this.ensureColumn("projects", "registry_publish", "INTEGER NOT NULL DEFAULT 0");
@@ -884,8 +886,8 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
     database
         .prepare(
             `INSERT INTO projects
-             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, deployment_strategy, registry_publish, registry_deploy_from_registry, registry_image_namespace, registry_image_tag, notification_settings_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, env_file_path, compose_override, env_secrets_json, deployment_strategy, registry_publish, registry_deploy_from_registry, registry_image_namespace, registry_image_tag, notification_settings_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 server_id = excluded.server_id,
@@ -894,6 +896,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
                 repository_url = excluded.repository_url,
                 deploy_token = excluded.deploy_token,
                 path = excluded.path,
+                env_file_path = excluded.env_file_path,
                 compose_override = excluded.compose_override,
                 env_secrets_json = excluded.env_secrets_json,
                 deployment_strategy = excluded.deployment_strategy,
@@ -913,6 +916,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
             settings.repositoryUrl ?? null,
             encryptSecret(settings.deployToken),
             settings.path ?? null,
+            settings.envFilePath ?? null,
             settings.composeOverride ?? null,
             encryptedProjectEnvSecretsJson(settings.envSecrets),
             normalizeDeploymentStrategy(settings.deploymentStrategy),
