@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { ComposeValidation, GlobalSettings, ProjectSettings } from "./types.js";
-import { renderProjectRootEnvFileScript, renderProjectRootStorageOverlayScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { renderEnvFileVolume, renderProjectRootEnvFileScript, renderProjectRootStorageOverlayScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 const composeFileNames = ["docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml"];
@@ -24,6 +24,8 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
     const quotedProjectVolume = shellQuote(`${projectRoot}:${projectRoot}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
     const quotedProjectRoot = shellQuote(projectRoot);
+    const envFileVolume = renderEnvFileVolume(appSettings.envFilePath, projectRoot);
+    const envFileVolumeMount = envFileVolume ? `            -v ${shellQuote(envFileVolume)} \\\n` : "";
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
     const composeSearch = composeFileNames.map(shellQuote).join(" ");
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
@@ -36,7 +38,7 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
     const dockerRunCommand = `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${quotedProjectVolume} \
-            -v ${quotedSshKeyPath} \
+${envFileVolumeMount}            -v ${quotedSshKeyPath} \
             node:24.16.0-alpine sh << 'EOF'
                 apk add --no-cache docker-cli docker-cli-compose git openssh-client > /dev/null 2>&1
 

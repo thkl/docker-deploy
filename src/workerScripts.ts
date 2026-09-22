@@ -32,6 +32,21 @@ export function renderProjectRootEnvFileScript(envFilePath?: string) {
                 fi`;
 }
 
+/**
+ * Makes an absolute env file outside the project-root bind mount visible to a
+ * temporary Compose worker. Relative paths already live inside the project
+ * root mount and do not need an additional volume.
+ */
+export function renderEnvFileVolume(envFilePath: string | undefined, projectRoot: string) {
+    const envPath = envFilePath?.trim() ?? "";
+    const root = projectRoot.replace(/\/+$/, "");
+    if (!envPath.startsWith("/") || envPath === root || envPath.startsWith(`${root}/`)) {
+        return "";
+    }
+
+    return envPath + ":" + envPath + ":ro";
+}
+
 function shellQuoteForScript(value: string) {
     return `'${value.replace(/'/g, `'\\''`)}'`;
 }

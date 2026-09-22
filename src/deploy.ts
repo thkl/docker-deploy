@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { CapturedReleaseSnapshot, CheckoutBindMountInspection, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
-import { renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { renderEnvFileVolume, renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 
@@ -108,7 +108,9 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const persistedStorageGuardScript = renderPersistedStorageGuardScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const registryRewriteScript = renderRegistryComposeRewriteScript();
     const registryStripBuildScript = renderRegistryStripBuildScript();
+    const externalNetworkEnsureScript = renderExternalNetworkEnsureScript();
     const quotedHostAppsPath = shellQuote(hostAppsPath);
+    const envFileVolume = renderEnvFileVolume(appSettings.envFilePath, hostAppsPath);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
     const registryAddress = globalSettings.registryAddress.trim();
     const registryUsername = globalSettings.registryUsername.trim();
@@ -398,6 +400,7 @@ DEPLOY_SWARM_VALIDATE_JS
                         exit 1
                     fi
                 else
+${externalNetworkEnsureScript}
                     if [ "$REGISTRY_DEPLOY_FROM_REGISTRY" = "true" ]; then
                         echo "--> Pulling images from registry..."
                         REGISTRY_SERVICES="$(cat /tmp/deploy-registry-services 2>/dev/null || true)"
@@ -442,6 +445,7 @@ DEPLOY_SWARM_VALIDATE_JS
         "/var/run/docker.sock:/var/run/docker.sock",
         "-v",
         `${hostAppsPath}:${hostAppsPath}`,
+        ...(envFileVolume ? ["-v", envFileVolume] : []),
         "-v",
         `${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`,
         "node:24.16.0-alpine",
@@ -1049,6 +1053,36 @@ for (const service of Object.values(services)) {
 
 fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
 DEPLOY_REGISTRY_PULL_JS`;
+}
+
+function renderExternalNetworkEnsureScript() {
+    return `
+                    echo "--> Checking external Compose networks..."
+                    docker compose -p "$PROJECT_NAME" $COMPOSE_FILES config --format json > /tmp/deploy-compose-external-networks.json
+                    node - /tmp/deploy-compose-external-networks.json << 'DEPLOY_EXTERNAL_NETWORKS_JS'
+const fs = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const data = JSON.parse(fs.readFileSync(process.argv[2], "utf8") || "{}");
+const networks = data && typeof data === "object" && data.networks && typeof data.networks === "object" ? data.networks : {};
+
+for (const [key, network] of Object.entries(networks)) {
+  if (!network || typeof network !== "object" || network.external !== true) {
+    continue;
+  }
+
+  const name = typeof network.name === "string" && network.name.trim() ? network.name.trim() : key;
+  const inspected = spawnSync("docker", ["network", "inspect", name], { stdio: "ignore" });
+  if (inspected.status === 0) {
+    continue;
+  }
+
+  console.log("--> Creating missing external network " + name + ".");
+  const created = spawnSync("docker", ["network", "create", name], { stdio: "inherit" });
+  if (created.status !== 0) {
+    process.exit(created.status || 1);
+  }
+}
+DEPLOY_EXTERNAL_NETWORKS_JS`;
 }
 
 function composeSecretMountTarget(service: string, key: string) {
