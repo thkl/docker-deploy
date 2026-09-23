@@ -29,7 +29,7 @@ import { collectSystemMetrics } from "./systemMetrics.js";
 import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
-import { resolveWebhookProject, webhookProjectCandidates } from "./webhookResolver.js";
+import { resolveWebhookProject, webhookProjectCandidates, webhookRequestsSkipDeploy } from "./webhookResolver.js";
 import { WebhookStore } from "./webhookStore.js";
 
 /**
@@ -1499,6 +1499,20 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
                 candidates
             });
             res.status(signature.statusCode).send(signature.response);
+            return;
+        }
+
+        if (webhookRequestsSkipDeploy(req.body)) {
+            webhookStore.record({
+                projectId: appSettings.id,
+                projectName,
+                source,
+                eventType: event,
+                status: "ignored",
+                reason: "Deployment skipped because a commit message contains [skip-deploy].",
+                candidates
+            });
+            res.status(202).send("Deployment skipped");
             return;
         }
 

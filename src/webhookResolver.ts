@@ -60,6 +60,8 @@ export function webhookProjectCandidates(body: unknown) {
         readString(project?.path),
         readIdentifier(project?.id),
         readString(project?.path_with_namespace),
+        readString(project?.http_url),
+        readString(project?.web_url),
         readString(repository?.git_http_url),
         readString(repository?.git_ssh_url),
         readString(repository?.url),
@@ -67,6 +69,31 @@ export function webhookProjectCandidates(body: unknown) {
     ];
 
     return [...new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))];
+}
+
+/**
+ * Returns the commit messages included in a GitLab Push Hook payload.
+ */
+export function webhookCommitMessages(body: unknown): string[] {
+    if (!body || typeof body !== "object") {
+        return [];
+    }
+
+    const commits = (body as Record<string, unknown>).commits;
+    if (!Array.isArray(commits)) {
+        return [];
+    }
+
+    return commits
+        .map((commit) => readRecord(commit)?.message)
+        .filter((message): message is string => typeof message === "string");
+}
+
+/**
+ * Checks whether any commit in a GitLab Push Hook requests a skipped deployment.
+ */
+export function webhookRequestsSkipDeploy(body: unknown): boolean {
+    return webhookCommitMessages(body).some((message) => message.toLowerCase().includes("[skip-deploy]"));
 }
 
 /**
