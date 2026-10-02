@@ -92,6 +92,7 @@ export interface ProjectSummary {
   repositoryUrl: string;
   path: string;
   envFilePath?: string;
+  deploymentOnHold?: boolean;
   token: string;
   deployToken: string;
   composeOverride: string;
@@ -116,6 +117,7 @@ export interface ProjectSummary {
   deployment?: {
     deployToken: string;
     strategy?: DeploymentStrategy;
+    onHold?: boolean;
     lastDeployment?: DeploymentRecord | null;
   };
   compose?: {
@@ -167,6 +169,7 @@ export interface ProjectPayload {
   deployToken: string;
   path: string;
   envFilePath?: string;
+  deploymentOnHold?: boolean;
   composeOverride: string;
   envSecrets?: ProjectEnvironmentSecret[];
   deploymentStrategy: DeploymentStrategy;
@@ -198,6 +201,7 @@ export interface ProjectPayload {
   deployment?: {
     deployToken: string;
     strategy?: DeploymentStrategy;
+    onHold?: boolean;
   };
   registry?: ProjectRegistrySettings;
   notifications?: ProjectNotificationSettings;

@@ -27,6 +27,7 @@ export class ConfigStore {
                     p.deploy_token AS deployToken,
                     p.path,
                     p.env_file_path AS envFilePath,
+                    p.deployment_on_hold AS deploymentOnHold,
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
                     p.deployment_strategy AS deploymentStrategy,
@@ -108,6 +109,7 @@ export class ConfigStore {
                     p.deploy_token AS deployToken,
                     p.path,
                     p.env_file_path AS envFilePath,
+                    p.deployment_on_hold AS deploymentOnHold,
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
                     p.deployment_strategy AS deploymentStrategy,
@@ -148,6 +150,7 @@ interface ProjectRow {
     deployToken: string | null;
     path: string | null;
     envFilePath: string | null;
+    deploymentOnHold: number | null;
     composeOverride: string | null;
     envSecretsJson: string | null;
     deploymentStrategy: string | null;
@@ -183,6 +186,7 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
         ...(row.deployToken ? { deployToken: decryptSecret(row.deployToken) } : {}),
         ...(row.path ? { path: row.path } : {}),
         ...(row.envFilePath ? { envFilePath: row.envFilePath } : {}),
+        deploymentOnHold: Boolean(row.deploymentOnHold),
         ...(row.composeOverride ? { composeOverride: row.composeOverride } : {}),
         ...(row.envSecretsJson ? { envSecrets: parseProjectEnvSecrets(row.envSecretsJson) } : {}),
         deploymentStrategy: row.deploymentStrategy === "swarm" ? "swarm" : "compose",

@@ -603,6 +603,10 @@ function payloadDeploymentStrategy(payload: ProjectPayload, fallback: "compose" 
     return fallback;
 }
 
+function payloadDeploymentOnHold(payload: ProjectPayload, fallback = false) {
+    return Boolean(payload.deployment?.onHold ?? payload.deploymentOnHold ?? fallback);
+}
+
 function payloadRegistrySettings(payload: ProjectPayload, fallback?: ProjectSettings["registry"]) {
     const registry = payload.registry ?? {};
     const publish = Boolean(registry.publish ?? payload.registryPublish ?? fallback?.publish);
@@ -781,6 +785,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const deployToken = payloadDeployToken(payload);
             const repoPath = payloadProjectPath(payload);
             const envFilePath = payloadEnvFilePath(payload);
+            const deploymentOnHold = payloadDeploymentOnHold(payload);
             const composeOverride = payloadComposeOverride(payload);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload));
             const globalSettings = globalSettingsStore.readSettings();
@@ -800,6 +805,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(deployToken ? { deployToken } : {}),
                 ...(repoPath ? { path: repoPath } : {}),
                 ...(envFilePath ? { envFilePath } : {}),
+                deploymentOnHold,
                 ...(composeOverride ? { composeOverride } : {}),
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload),
@@ -834,6 +840,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const config = configStore.readConfig();
             const existingProject = configStore.resolveProject(currentRef);
             const existing = existingProject?.settings;
+            const deploymentOnHold = payloadDeploymentOnHold(payload, existing?.deploymentOnHold ?? false);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), existing?.envSecrets);
             const currentName = existingProject?.name ?? currentRef;
 
@@ -860,6 +867,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(nextDeployToken || existing.deployToken ? { deployToken: nextDeployToken || existing.deployToken } : {}),
                 ...(nextPath ? { path: nextPath } : {}),
                 envFilePath: envFilePath || undefined,
+                deploymentOnHold,
                 composeOverride: composeOverride || undefined,
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
@@ -1502,6 +1510,20 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             return;
         }
 
+        if (appSettings.deploymentOnHold) {
+            webhookStore.record({
+                projectId: appSettings.id,
+                projectName,
+                source,
+                eventType: event,
+                status: "ignored",
+                reason: "Deployment skipped because this project is on hold.",
+                candidates
+            });
+            res.status(202).send("Deployment on hold");
+            return;
+        }
+
         if (webhookRequestsSkipDeploy(req.body)) {
             webhookStore.record({
                 projectId: appSettings.id,
@@ -1581,6 +1603,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
     const repositoryUrl = settings.repositoryUrl ?? "";
     const path = settings.path ?? defaultProjectPath(globalSettings, name);
     const envFilePath = settings.envFilePath ?? "";
+    const deploymentOnHold = Boolean(settings.deploymentOnHold);
     const token = settings.token ? maskToken(settings.token) : "";
     const deployToken = settings.deployToken ? maskToken(settings.deployToken) : "";
     const composeOverride = settings.composeOverride ?? "";
@@ -1598,6 +1621,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         repositoryUrl,
         path,
         envFilePath,
+        deploymentOnHold,
         token,
         deployToken,
         composeOverride,
@@ -1622,6 +1646,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         deployment: {
             deployToken,
             strategy: deploymentStrategy,
+            onHold: deploymentOnHold,
             lastDeployment
         },
         compose: {

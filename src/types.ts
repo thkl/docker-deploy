@@ -29,6 +29,7 @@ export interface ProjectSettings {
     deployToken?: string;
     path?: string;
     envFilePath?: string;
+    deploymentOnHold?: boolean;
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
     deploymentStrategy?: DeploymentStrategy;
@@ -285,6 +286,7 @@ export interface ProjectPayload {
     deployToken?: string;
     path?: string;
     envFilePath?: string;
+    deploymentOnHold?: boolean;
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
     deploymentStrategy?: DeploymentStrategy;
@@ -317,6 +319,7 @@ export interface ProjectPayload {
         deployToken?: string;
         strategy?: DeploymentStrategy;
         deploymentStrategy?: DeploymentStrategy;
+        onHold?: boolean;
     };
     registry?: Partial<ProjectRegistrySettings>;
     notifications?: Partial<ProjectNotificationSettings>;
