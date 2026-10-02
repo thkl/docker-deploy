@@ -889,7 +889,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
         .prepare(
             `INSERT INTO projects
              (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, env_file_path, deployment_on_hold, compose_override, env_secrets_json, deployment_strategy, registry_publish, registry_deploy_from_registry, registry_image_namespace, registry_image_tag, notification_settings_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 server_id = excluded.server_id,
