@@ -345,11 +345,8 @@ if (isObject(data.secrets)) {
 }
 
 fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
-process.exit(changed ? 0 : 1);
 DEPLOY_SECRET_PATH_REWRITE_JS
-                        then
-                            docker compose -f /tmp/deploy-compose-secret-after.json config --no-interpolate > ${targetFile}
-                        fi
+                        docker compose -f /tmp/deploy-compose-secret-after.json config --no-interpolate > ${targetFile}
                     else
                         cat /tmp/deploy-compose-secret-rewrite-error.txt >&2
                     fi
