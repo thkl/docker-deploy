@@ -303,3 +303,55 @@ export function renderPersistedEnvFileRewriteScript(targetFile: string) {
                     sed -i "s|$TMP_DEPLOY/.env|$PROJECT_ROOT/.env|g" ${targetFile}
                 fi`;
 }
+
+/**
+ * Keeps generated or repository-declared Compose secret files independent
+ * from the temporary checkout used during deployment.
+ */
+export function renderPersistedSecretFileRewriteScript(targetFile: string) {
+    return `
+                if [ -f ${targetFile} ] && [ -n "$TMP_DEPLOY" ] && [ -n "$COMPOSE_WORKSPACE" ]; then
+                    TMP_DEPLOY_NO_SLASH="\${TMP_DEPLOY%/}"
+                    COMPOSE_WORKSPACE_NO_SLASH="\${COMPOSE_WORKSPACE%/}"
+                    # Rewrite the rendered YAML directly first. Docker Compose
+                    # may emit either one or two slashes after the checkout
+                    # path when resolving a relative secret file.
+                    sed -i "s|$TMP_DEPLOY_NO_SLASH//secrets/|$COMPOSE_WORKSPACE_NO_SLASH/secrets/|g" ${targetFile}
+                    sed -i "s|$TMP_DEPLOY_NO_SLASH/secrets/|$COMPOSE_WORKSPACE_NO_SLASH/secrets/|g" ${targetFile}
+                    if docker compose -f ${targetFile} config --format json > /tmp/deploy-compose-secret-source.json 2> /tmp/deploy-compose-secret-rewrite-error.txt; then
+                        node - "$TMP_DEPLOY_NO_SLASH" "$COMPOSE_WORKSPACE_NO_SLASH" /tmp/deploy-compose-secret-source.json /tmp/deploy-compose-secret-after.json << 'DEPLOY_SECRET_PATH_REWRITE_JS'
+const fs = require("node:fs");
+
+const [tmp, workspace, inputPath, outputPath] = process.argv.slice(2);
+const data = JSON.parse(fs.readFileSync(inputPath, "utf8") || "{}");
+const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+const isTmpPath = (value) => typeof value === "string" && (value === tmp || value.startsWith(tmp + "/"));
+let changed = false;
+
+if (isObject(data.secrets)) {
+  for (const secret of Object.values(data.secrets)) {
+    if (!isObject(secret) || typeof secret.file !== "string" || !isTmpPath(secret.file)) {
+      continue;
+    }
+
+    const relative = secret.file.slice(tmp.length).replace(/^\\/+/, "");
+    if (!relative.startsWith("secrets/")) {
+      continue;
+    }
+
+    secret.file = workspace + "/" + relative;
+    changed = true;
+  }
+}
+
+fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
+process.exit(changed ? 0 : 1);
+DEPLOY_SECRET_PATH_REWRITE_JS
+                        then
+                            docker compose -f /tmp/deploy-compose-secret-after.json config --no-interpolate > ${targetFile}
+                        fi
+                    else
+                        cat /tmp/deploy-compose-secret-rewrite-error.txt >&2
+                    fi
+                fi`;
+}

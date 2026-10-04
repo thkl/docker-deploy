@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { CapturedReleaseSnapshot, CheckoutBindMountInspection, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
-import { renderEnvFileVolume, renderPersistedEnvFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { renderEnvFileVolume, renderPersistedEnvFileRewriteScript, renderPersistedSecretFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
 
@@ -104,6 +104,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const projectRootEnvFileScript = renderProjectRootEnvFileScript(appSettings.envFilePath);
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
+    const persistedSecretFileRewriteScript = renderPersistedSecretFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const persistedStorageRewriteScript = renderPersistedStorageRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const persistedStorageGuardScript = renderPersistedStorageGuardScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
     const registryRewriteScript = renderRegistryComposeRewriteScript();
@@ -187,6 +188,7 @@ ${secretOverlayScript}
                 docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES config --no-interpolate > "$COMPOSE_WORKSPACE/docker-compose.deploy.yml"
                 rm -f "$COMPOSE_WORKSPACE/docker-compose.secrets.yml"
 ${persistedEnvFileRewriteScript}
+${persistedSecretFileRewriteScript}
 ${persistedStorageRewriteScript}
 ${persistedStorageGuardScript}
                 cleanup_release_if_unused() {
@@ -909,6 +911,17 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
             } else {
                 lines.push(`    file: ${yamlScalar(`${secretDir}/${secretName}`)}`);
             }
+
+            // Compose files sometimes refer to the same resource using the
+            // project-prefixed name that Docker assigns to stack secrets.
+            // Keep that name available in Compose mode as an alias too.
+            if (!useSwarmSecrets) {
+                const projectSecretName = dockerSecretBaseName(projectName, secret);
+                if (projectSecretName !== secretName) {
+                    lines.push(`  ${yamlKey(projectSecretName)}:`);
+                    lines.push(`    file: ${yamlScalar(`${secretDir}/${projectSecretName}`)}`);
+                }
+            }
         }
     }
 
@@ -926,6 +939,14 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
         lines.push(secret.value);
         lines.push("DEPLOY_SECRET_VALUE_EOF");
         lines.push(`                chmod 600 "$COMPOSE_WORKSPACE/secrets/${secretName}"`);
+
+        const projectSecretName = dockerSecretBaseName(projectName, secret);
+        if (projectSecretName !== secretName) {
+            lines.push(`                cat > "$COMPOSE_WORKSPACE/secrets/${projectSecretName}" << 'DEPLOY_SECRET_VALUE_EOF'`);
+            lines.push(secret.value);
+            lines.push("DEPLOY_SECRET_VALUE_EOF");
+            lines.push(`                chmod 600 "$COMPOSE_WORKSPACE/secrets/${projectSecretName}"`);
+        }
     }
 
     lines.push("                COMPOSE_FILES=\"$COMPOSE_FILES -f $COMPOSE_WORKSPACE/docker-compose.secrets.yml\"");
