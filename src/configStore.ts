@@ -1,4 +1,4 @@
-import { AppDatabase, runDatabaseTransaction, upsertProject } from "./database.js";
+import { AppDatabase, parseScaleToZeroJson, runDatabaseTransaction, upsertProject } from "./database.js";
 import { decryptSecret } from "./secretStore.js";
 import { ProjectConfig, ProjectSettings } from "./types.js";
 
@@ -28,6 +28,7 @@ export class ConfigStore {
                     p.path,
                     p.env_file_path AS envFilePath,
                     p.deployment_on_hold AS deploymentOnHold,
+                    p.scale_to_zero_json AS scaleToZeroJson,
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
                     p.deployment_strategy AS deploymentStrategy,
@@ -110,6 +111,7 @@ export class ConfigStore {
                     p.path,
                     p.env_file_path AS envFilePath,
                     p.deployment_on_hold AS deploymentOnHold,
+                    p.scale_to_zero_json AS scaleToZeroJson,
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
                     p.deployment_strategy AS deploymentStrategy,
@@ -151,6 +153,7 @@ interface ProjectRow {
     path: string | null;
     envFilePath: string | null;
     deploymentOnHold: number | null;
+    scaleToZeroJson: string | null;
     composeOverride: string | null;
     envSecretsJson: string | null;
     deploymentStrategy: string | null;
@@ -177,6 +180,7 @@ interface ProjectRow {
  */
 function rowToProjectSettings(row: ProjectRow): ProjectSettings {
     const serverIds = parseServerIds(row.serverIdsJson, row.serverId);
+    const scaleToZero = parseScaleToZeroJson(row.scaleToZeroJson);
     return {
         id: row.id,
         serverId: serverIds[0] || "local",
@@ -187,6 +191,7 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
         ...(row.path ? { path: row.path } : {}),
         ...(row.envFilePath ? { envFilePath: row.envFilePath } : {}),
         deploymentOnHold: Boolean(row.deploymentOnHold),
+        ...(scaleToZero ? { scaleToZero } : {}),
         ...(row.composeOverride ? { composeOverride: row.composeOverride } : {}),
         ...(row.envSecretsJson ? { envSecrets: parseProjectEnvSecrets(row.envSecretsJson) } : {}),
         deploymentStrategy: row.deploymentStrategy === "swarm" ? "swarm" : "compose",

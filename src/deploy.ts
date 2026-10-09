@@ -3047,6 +3047,18 @@ function renderRuntimeServiceActionScript(service: string, action: RuntimeServic
                 docker compose -p "$PROJECT_NAME" $COMPOSE_FILES stop ${quotedService}`;
     }
 
+    if (action === "pause") {
+        return `
+                echo "--> Pausing ${service} for scale-to-zero..."
+                docker compose -p "$PROJECT_NAME" $COMPOSE_FILES pause ${quotedService}`;
+    }
+
+    if (action === "unpause") {
+        return `
+                echo "--> Unpausing ${service} for scale-to-zero..."
+                docker compose -p "$PROJECT_NAME" $COMPOSE_FILES unpause ${quotedService}`;
+    }
+
     if (action === "recreate") {
         return `
                 echo "--> Recreating ${service}..."
@@ -3066,7 +3078,7 @@ function renderSwarmServiceActionScript(projectName: string, service: string, ac
                 docker service update --force ${serviceRef}`;
     }
 
-    if (action === "start") {
+    if (action === "start" || action === "unpause") {
         return `
                 echo "--> Scaling Swarm service ${service} to 1..."
                 docker service scale ${serviceRef}=1`;
@@ -3078,7 +3090,7 @@ function renderSwarmServiceActionScript(projectName: string, service: string, ac
 }
 
 function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {
-    return ["restart", "start", "stop", "recreate", "pull"].includes(value);
+    return ["restart", "start", "stop", "pause", "unpause", "recreate", "pull"].includes(value);
 }
 
 /**

@@ -131,5 +131,5 @@ export class RuntimeOperationStreamHub {
 }
 
 function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {
-    return ["restart", "start", "stop", "recreate", "pull"].includes(value);
+    return ["restart", "start", "stop", "pause", "unpause", "recreate", "pull"].includes(value);
 }

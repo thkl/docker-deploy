@@ -181,6 +181,16 @@ labels:
 
 For Traefik to reach the app, the Traefik container and the app container must share the selected Docker network. Avoid `network_mode: host` for services that should be proxied by Traefik.
 
+### Scale to zero
+
+Projects can optionally use Traefik `ForwardAuth` to wake application services on the first request and pause them after an idle timeout. Enable **Scale to zero via Traefik** in project settings, list only stateless application services, and configure a wake URL reachable from Traefik, for example:
+
+```text
+http://updater:3999/internal/scale-to-zero/wake
+```
+
+The updater appends the configured wake token to that URL. Compose deployments use `docker compose pause/unpause` so the existing Traefik route remains present; Swarm deployments scale the selected services between zero and one replica. Databases and other stateful services should not be listed. The first request waits for the configured startup timeout while the service becomes ready.
+
 ## Traefik Diagnostics
 
 Open Project settings -> Docker Compose -> Builder -> Traefik and click **Run diagnostics**.

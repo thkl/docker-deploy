@@ -96,6 +96,38 @@
       </label>
 
       <fieldset class="target-server-list">
+        <legend>Scale to zero via Traefik</legend>
+        <label class="check-row">
+          <input type="checkbox" formControlName="scaleToZeroEnabled" />
+          <span>Stop application services when idle and wake them on request</span>
+        </label>
+        <label>
+          <span>Application services</span>
+          <input formControlName="scaleToZeroServices" placeholder="web, api" />
+          <small>Comma-separated services to start and stop. Databases are not included.</small>
+        </label>
+        <div class="field-grid">
+          <label>
+            <span>Idle timeout (seconds)</span>
+            <input type="number" min="30" formControlName="scaleToZeroIdleTimeout" />
+          </label>
+          <label>
+            <span>Startup timeout (seconds)</span>
+            <input type="number" min="1" formControlName="scaleToZeroStartupTimeout" />
+          </label>
+        </div>
+        <label>
+          <span>Updater wake URL</span>
+          <input formControlName="scaleToZeroWakeAddress" placeholder="http://updater:3999/internal/scale-to-zero/wake" />
+          <small>Must be reachable from Traefik. A token query parameter is added automatically.</small>
+        </label>
+        <label>
+          <span>Wake token</span>
+          <input type="password" formControlName="scaleToZeroWakeToken" placeholder="leave blank to keep current token" />
+        </label>
+      </fieldset>
+
+      <fieldset class="target-server-list">
         <legend>Registry deployment</legend>
         <label class="check-row">
           <input type="checkbox" formControlName="registryPublish" />

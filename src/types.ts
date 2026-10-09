@@ -18,6 +18,15 @@ export interface TraefikSettings {
     removePublishedPorts?: boolean;
 }
 
+export interface ScaleToZeroSettings {
+    enabled: boolean;
+    services: string[];
+    idleTimeoutSeconds: number;
+    startupTimeoutSeconds: number;
+    wakeAddress?: string;
+    wakeToken?: string;
+}
+
 export type DeploymentStrategy = "compose" | "swarm";
 
 export interface ProjectSettings {
@@ -33,6 +42,7 @@ export interface ProjectSettings {
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
     deploymentStrategy?: DeploymentStrategy;
+    scaleToZero?: ScaleToZeroSettings;
     registry?: ProjectRegistrySettings;
     notifications?: ProjectNotificationSettings;
     traefik?: TraefikSettings;
@@ -290,6 +300,7 @@ export interface ProjectPayload {
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
     deploymentStrategy?: DeploymentStrategy;
+    scaleToZero?: Partial<ScaleToZeroSettings>;
     registryPublish?: boolean;
     registryDeployFromRegistry?: boolean;
     registryImageNamespace?: string;
@@ -575,7 +586,7 @@ export interface RuntimeLogs {
     output: string;
 }
 
-export type RuntimeServiceAction = "restart" | "start" | "stop" | "recreate" | "pull";
+export type RuntimeServiceAction = "restart" | "start" | "stop" | "pause" | "unpause" | "recreate" | "pull";
 
 export interface RuntimeActionResult {
     service: string;

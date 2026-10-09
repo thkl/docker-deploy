@@ -12,6 +12,15 @@ export interface TraefikSettings {
   removePublishedPorts?: boolean;
 }
 
+export interface ScaleToZeroSettings {
+  enabled: boolean;
+  services: string[];
+  idleTimeoutSeconds: number;
+  startupTimeoutSeconds: number;
+  wakeAddress?: string;
+  wakeToken?: string;
+}
+
 export type DeploymentStatus = 'running' | 'succeeded' | 'failed';
 export type DeploymentTrigger = 'webhook' | 'ci' | 'manual' | 'rollback';
 export type DeploymentPhase = 'queued' | 'dispatching' | 'running' | 'reconnecting' | 'reconciling' | 'cleanup' | 'succeeded' | 'failed' | 'canceled';
@@ -98,6 +107,7 @@ export interface ProjectSummary {
   composeOverride: string;
   envSecrets?: ProjectEnvironmentSecret[];
   deploymentStrategy?: DeploymentStrategy;
+  scaleToZero?: ScaleToZeroSettings;
   registry?: ProjectRegistrySettings;
   notifications?: ProjectNotificationSettings;
   hasComposeOverride: boolean;
@@ -118,6 +128,7 @@ export interface ProjectSummary {
     deployToken: string;
     strategy?: DeploymentStrategy;
     onHold?: boolean;
+    scaleToZero?: ScaleToZeroSettings;
     lastDeployment?: DeploymentRecord | null;
   };
   compose?: {
@@ -173,6 +184,7 @@ export interface ProjectPayload {
   composeOverride: string;
   envSecrets?: ProjectEnvironmentSecret[];
   deploymentStrategy: DeploymentStrategy;
+  scaleToZero?: Partial<ScaleToZeroSettings>;
   registryPublish?: boolean;
   registryDeployFromRegistry?: boolean;
   registryImageNamespace?: string;
@@ -567,7 +579,7 @@ export interface RuntimeLogs {
   output: string;
 }
 
-export type RuntimeServiceAction = 'restart' | 'start' | 'stop' | 'recreate' | 'pull';
+export type RuntimeServiceAction = 'restart' | 'start' | 'stop' | 'pause' | 'unpause' | 'recreate' | 'pull';
 
 export interface RuntimeActionResult {
   service: string;

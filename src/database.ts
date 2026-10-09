@@ -4,9 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { GlobalSettings, GlobalSettingsPayload, NotificationSettings, ProjectConfig, ProjectSettings, ServerActiveJob, ServerRecord } from "./types.js";
 import type { DeploymentRecord } from "./deploymentStore.js";
-import { encryptSecret, isEncryptedSecret } from "./secretStore.js";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secretStore.js";
 
-const schemaVersion = 6;
+const schemaVersion = 7;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     defaultTraefikNetwork: "proxy",
@@ -135,6 +135,7 @@ export class AppDatabase {
                 compose_override TEXT,
                 env_secrets_json TEXT,
                 deployment_strategy TEXT NOT NULL DEFAULT 'compose',
+                scale_to_zero_json TEXT,
                 registry_publish INTEGER NOT NULL DEFAULT 0,
                 registry_deploy_from_registry INTEGER NOT NULL DEFAULT 0,
                 registry_image_namespace TEXT,
@@ -283,6 +284,7 @@ export class AppDatabase {
         this.ensureColumn("projects", "deployment_on_hold", "INTEGER NOT NULL DEFAULT 0");
         this.ensureColumn("projects", "server_ids_json", "TEXT");
         this.ensureColumn("projects", "deployment_strategy", "TEXT NOT NULL DEFAULT 'compose'");
+        this.ensureColumn("projects", "scale_to_zero_json", "TEXT");
         this.ensureColumn("projects", "registry_publish", "INTEGER NOT NULL DEFAULT 0");
         this.ensureColumn("projects", "registry_deploy_from_registry", "INTEGER NOT NULL DEFAULT 0");
         this.ensureColumn("projects", "registry_image_namespace", "TEXT");
@@ -360,7 +362,7 @@ export class AppDatabase {
         const projects = this.connection
             .prepare(
                 `SELECT name, server_id AS serverId, token, repository_url AS repositoryUrl, deploy_token AS deployToken,
-                        path, compose_override AS composeOverride, created_at AS createdAt, updated_at AS updatedAt
+                        path, scale_to_zero_json AS scaleToZeroJson, compose_override AS composeOverride, created_at AS createdAt, updated_at AS updatedAt
                  FROM projects`
             )
             .all() as unknown as LegacyProjectRow[];
@@ -384,6 +386,7 @@ export class AppDatabase {
                         compose_override TEXT,
                         env_secrets_json TEXT,
                         deployment_strategy TEXT NOT NULL DEFAULT 'compose',
+                        scale_to_zero_json TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
@@ -429,8 +432,8 @@ export class AppDatabase {
                     this.connection
                         .prepare(
                             `INSERT INTO projects_next
-                             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, compose_override, env_secrets_json, deployment_strategy, created_at, updated_at)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, scale_to_zero_json, compose_override, env_secrets_json, deployment_strategy, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                         )
                         .run(
                             projectId,
@@ -441,6 +444,7 @@ export class AppDatabase {
                             project.repositoryUrl,
                             project.deployToken,
                             project.path,
+                            project.scaleToZeroJson,
                             project.composeOverride,
                             null,
                             "compose",
@@ -888,8 +892,8 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
     database
         .prepare(
             `INSERT INTO projects
-             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, env_file_path, deployment_on_hold, compose_override, env_secrets_json, deployment_strategy, registry_publish, registry_deploy_from_registry, registry_image_namespace, registry_image_tag, notification_settings_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, env_file_path, deployment_on_hold, scale_to_zero_json, compose_override, env_secrets_json, deployment_strategy, registry_publish, registry_deploy_from_registry, registry_image_namespace, registry_image_tag, notification_settings_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 server_id = excluded.server_id,
@@ -900,6 +904,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
                 path = excluded.path,
                 env_file_path = excluded.env_file_path,
                 deployment_on_hold = excluded.deployment_on_hold,
+                scale_to_zero_json = excluded.scale_to_zero_json,
                 compose_override = excluded.compose_override,
                 env_secrets_json = excluded.env_secrets_json,
                 deployment_strategy = excluded.deployment_strategy,
@@ -921,6 +926,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
             settings.path ?? null,
             settings.envFilePath ?? null,
             settings.deploymentOnHold ? 1 : 0,
+            encryptedScaleToZeroJson(settings.scaleToZero),
             settings.composeOverride ?? null,
             encryptedProjectEnvSecretsJson(settings.envSecrets),
             normalizeDeploymentStrategy(settings.deploymentStrategy),
@@ -1046,9 +1052,50 @@ interface LegacyProjectRow {
     repositoryUrl: string | null;
     deployToken: string | null;
     path: string | null;
+    scaleToZeroJson: string | null;
     composeOverride: string | null;
     createdAt: string;
     updatedAt: string;
+}
+
+function encryptedScaleToZeroJson(value: ProjectSettings["scaleToZero"]) {
+    if (!value) {
+        return null;
+    }
+
+    return encryptSecret(JSON.stringify({
+        enabled: Boolean(value.enabled),
+        services: [...new Set((value.services ?? []).map((service) => service.trim()).filter(Boolean))],
+        idleTimeoutSeconds: normalizeScaleToZeroNumber(value.idleTimeoutSeconds, 900),
+        startupTimeoutSeconds: normalizeScaleToZeroNumber(value.startupTimeoutSeconds, 120),
+        ...(value.wakeAddress?.trim() ? { wakeAddress: value.wakeAddress.trim() } : {}),
+        ...(value.wakeToken ? { wakeToken: encryptSecret(value.wakeToken) } : {})
+    }));
+}
+
+export function parseScaleToZeroJson(value: string | null | undefined) {
+    if (!value) {
+        return undefined;
+    }
+
+    try {
+        const parsed = JSON.parse(decryptSecret(value) ?? value) as Partial<NonNullable<ProjectSettings["scaleToZero"]>>;
+        return {
+            enabled: Boolean(parsed.enabled),
+            services: Array.isArray(parsed.services) ? parsed.services.map(String).map((service) => service.trim()).filter(Boolean) : [],
+            idleTimeoutSeconds: normalizeScaleToZeroNumber(parsed.idleTimeoutSeconds, 900),
+            startupTimeoutSeconds: normalizeScaleToZeroNumber(parsed.startupTimeoutSeconds, 120),
+            ...(typeof parsed.wakeAddress === "string" && parsed.wakeAddress.trim() ? { wakeAddress: parsed.wakeAddress.trim() } : {}),
+            ...(typeof parsed.wakeToken === "string" && parsed.wakeToken ? { wakeToken: decryptSecret(parsed.wakeToken) ?? parsed.wakeToken } : {})
+        } satisfies NonNullable<ProjectSettings["scaleToZero"]>;
+    } catch {
+        return undefined;
+    }
+}
+
+function normalizeScaleToZeroNumber(value: unknown, fallback: number) {
+    const number = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(number) && number > 0 ? Math.min(Math.trunc(number), 86400) : fallback;
 }
 
 function normalizeDeploymentStrategy(value: ProjectSettings["deploymentStrategy"]) {

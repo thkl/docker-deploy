@@ -29,6 +29,18 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
     const network = traefik.network || globalSettings.defaultTraefikNetwork;
     const deploymentStrategy = settings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const rule = `Host(\`${traefik.hostname}\`)`;
+    const scaleToZero = settings.scaleToZero;
+    const wakeAddress = scaleToZero?.wakeAddress?.trim();
+    const wakeToken = scaleToZero?.wakeToken?.trim();
+    if (scaleToZero?.enabled && (!wakeAddress || !wakeToken)) {
+        return `
+                echo "--> CRITICAL: Scale-to-zero requires Traefik wake address and wake token."
+                exit 1`;
+    }
+    const wakeMiddleware = `${routerName}-wake`;
+    const wakeUrl = wakeAddress
+        ? `${wakeAddress}${wakeAddress.includes("?") ? "&" : "?"}token=${encodeURIComponent(wakeToken ?? "")}`
+        : "";
     const labels: Array<[string, string | number | boolean]> = [
         ["traefik.enable", "true"],
         ...(deploymentStrategy === "swarm"
@@ -40,6 +52,11 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
         [`traefik.http.routers.${routerName}.tls.certresolver`, traefik.certResolver || globalSettings.defaultTraefikCertResolver],
         [`traefik.http.services.${routerName}.loadbalancer.server.port`, traefik.port || 80]
     ];
+
+    if (scaleToZero?.enabled && wakeUrl) {
+        labels.push([`traefik.http.middlewares.${wakeMiddleware}.forwardauth.address`, wakeUrl]);
+        labels.push([`traefik.http.middlewares.${wakeMiddleware}.forwardauth.authRequestHeaders`, "X-Forwarded-Host,X-Forwarded-Proto,X-Forwarded-Port"]);
+    }
 
     // Wildcard certificate labels follow Traefik's domains[0] syntax.
     if (traefik.wildcardCertificate && traefik.wildcardDomain) {
@@ -53,8 +70,10 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
         labels.push(
             [`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Connection`, "Upgrade"],
             [`traefik.http.middlewares.${routerName}-websocket.headers.customrequestheaders.Upgrade`, "websocket"],
-            [`traefik.http.routers.${routerName}.middlewares`, `${routerName}-websocket`]
+            [`traefik.http.routers.${routerName}.middlewares`, scaleToZero?.enabled ? `${wakeMiddleware},${routerName}-websocket` : `${routerName}-websocket`]
         );
+    } else if (scaleToZero?.enabled) {
+        labels.push([`traefik.http.routers.${routerName}.middlewares`, wakeMiddleware]);
     }
   
     // When Traefik fronts the service, published host ports usually create

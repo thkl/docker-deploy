@@ -26,7 +26,8 @@ import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
-import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
+import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ScaleToZeroSettings, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
+import { ScaleToZeroController } from "./scaleToZero.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject, webhookProjectCandidates, webhookRequestsSkipDeploy } from "./webhookResolver.js";
@@ -54,6 +55,7 @@ export interface RouteDependencies {
     agentHealth: AgentHealthService;
     eventBus: EventBus;
     notificationService: NotificationService;
+    scaleToZeroController: ScaleToZeroController;
 }
 
 /**
@@ -61,6 +63,8 @@ export interface RouteDependencies {
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     const { adminAuth, database, configStore, deploymentService, deploymentStore, releaseStore, webhookStore, notificationStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, vaultSecretStore, runtimeStatusStreams, agentHealth, eventBus, notificationService } = dependencies;
+
+    registerScaleToZeroWakeRoute(app, { configStore, globalSettingsStore, scaleToZeroController: dependencies.scaleToZeroController });
 
     app.get("/health", (req: Request, res: Response) => {
         res.status(200).send("I am alive");
@@ -607,6 +611,34 @@ function payloadDeploymentOnHold(payload: ProjectPayload, fallback = false) {
     return Boolean(payload.deployment?.onHold ?? payload.deploymentOnHold ?? fallback);
 }
 
+function payloadScaleToZero(payload: ProjectPayload, fallback?: ProjectSettings["scaleToZero"]): ProjectSettings["scaleToZero"] {
+    const value = payload.scaleToZero;
+    if (!value && !fallback) {
+        return undefined;
+    }
+
+    const current = fallback ?? {
+        enabled: false,
+        services: [],
+        idleTimeoutSeconds: 900,
+        startupTimeoutSeconds: 120
+    } satisfies ScaleToZeroSettings;
+    const services = Array.isArray(value?.services) ? value.services.map(String).map((service) => service.trim()).filter(Boolean) : current.services;
+    return {
+        enabled: value?.enabled ?? current.enabled,
+        services: [...new Set(services)],
+        idleTimeoutSeconds: positiveSeconds(value?.idleTimeoutSeconds, current.idleTimeoutSeconds),
+        startupTimeoutSeconds: positiveSeconds(value?.startupTimeoutSeconds, current.startupTimeoutSeconds),
+        ...(value?.wakeAddress?.trim() || current.wakeAddress ? { wakeAddress: value?.wakeAddress?.trim() || current.wakeAddress } : {}),
+        ...(value?.wakeToken?.trim() || current.wakeToken ? { wakeToken: value?.wakeToken?.trim() || current.wakeToken } : {})
+    };
+}
+
+function positiveSeconds(value: unknown, fallback: number) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? Math.min(Math.trunc(number), 86400) : fallback;
+}
+
 function payloadRegistrySettings(payload: ProjectPayload, fallback?: ProjectSettings["registry"]) {
     const registry = payload.registry ?? {};
     const publish = Boolean(registry.publish ?? payload.registryPublish ?? fallback?.publish);
@@ -786,6 +818,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const repoPath = payloadProjectPath(payload);
             const envFilePath = payloadEnvFilePath(payload);
             const deploymentOnHold = payloadDeploymentOnHold(payload);
+            const scaleToZero = payloadScaleToZero(payload);
             const composeOverride = payloadComposeOverride(payload);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload));
             const globalSettings = globalSettingsStore.readSettings();
@@ -806,6 +839,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(repoPath ? { path: repoPath } : {}),
                 ...(envFilePath ? { envFilePath } : {}),
                 deploymentOnHold,
+                ...(scaleToZero ? { scaleToZero } : {}),
                 ...(composeOverride ? { composeOverride } : {}),
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload),
@@ -841,6 +875,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const existingProject = configStore.resolveProject(currentRef);
             const existing = existingProject?.settings;
             const deploymentOnHold = payloadDeploymentOnHold(payload, existing?.deploymentOnHold ?? false);
+            const scaleToZero = payloadScaleToZero(payload, existing?.scaleToZero);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), existing?.envSecrets);
             const currentName = existingProject?.name ?? currentRef;
 
@@ -868,6 +903,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(nextPath ? { path: nextPath } : {}),
                 envFilePath: envFilePath || undefined,
                 deploymentOnHold,
+                ...(scaleToZero ? { scaleToZero } : {}),
                 composeOverride: composeOverride || undefined,
                 ...(envSecrets.length ? { envSecrets } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
@@ -1433,6 +1469,36 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 /**
  * Registers the GitLab webhook endpoint.
  */
+function registerScaleToZeroWakeRoute(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "globalSettingsStore" | "scaleToZeroController">) {
+    const { configStore, globalSettingsStore, scaleToZeroController } = dependencies;
+
+    app.all("/internal/scale-to-zero/wake", async (req: Request, res: Response) => {
+        try {
+            const forwardedHost = readHeader(req.headers["x-forwarded-host"]).split(",")[0].trim().split(":")[0].toLowerCase();
+            const host = forwardedHost || req.hostname.toLowerCase();
+            const project = Object.entries(configStore.readConfig()).find(([, settings]) => settings.scaleToZero?.enabled && settings.traefik?.hostname?.toLowerCase() === host);
+            if (!project) {
+                res.status(404).send("No scale-to-zero project matches this host.");
+                return;
+            }
+
+            const [projectName, settings] = project;
+            const expectedToken = settings.scaleToZero?.wakeToken ?? "";
+            const suppliedToken = typeof req.query.token === "string" ? req.query.token : readHeader(req.headers["x-updater-wake-token"]);
+            if (!expectedToken || suppliedToken !== expectedToken) {
+                res.status(401).send("Invalid wake token.");
+                return;
+            }
+
+            await scaleToZeroController.wake(projectName, settings, globalSettingsStore.readSettings());
+            res.status(204).end();
+        } catch (error) {
+            console.error("[scale-to-zero] Wake request failed:", error);
+            res.status(504).send(error instanceof Error ? error.message : "Application did not become ready.");
+        }
+    });
+}
+
 function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "webhookStore">) {
     const { configStore, deploymentService, webhookStore } = dependencies;
 
@@ -1590,7 +1656,7 @@ function registerCiDeployRoute(app: Express, dependencies: Pick<RouteDependencie
 }
 
 function isRuntimeServiceAction(value: string): value is RuntimeServiceAction {
-    return ["restart", "start", "stop", "recreate", "pull"].includes(value);
+    return ["restart", "start", "stop", "pause", "unpause", "recreate", "pull"].includes(value);
 }
 
 function readHeader(value: string | string[] | undefined) {
@@ -1604,6 +1670,12 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
     const path = settings.path ?? defaultProjectPath(globalSettings, name);
     const envFilePath = settings.envFilePath ?? "";
     const deploymentOnHold = Boolean(settings.deploymentOnHold);
+    const scaleToZero = settings.scaleToZero
+        ? {
+              ...settings.scaleToZero,
+              wakeToken: settings.scaleToZero.wakeToken ? maskToken(settings.scaleToZero.wakeToken) : ""
+          }
+        : undefined;
     const token = settings.token ? maskToken(settings.token) : "";
     const deployToken = settings.deployToken ? maskToken(settings.deployToken) : "";
     const composeOverride = settings.composeOverride ?? "";
@@ -1622,6 +1694,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         path,
         envFilePath,
         deploymentOnHold,
+        ...(scaleToZero ? { scaleToZero } : {}),
         token,
         deployToken,
         composeOverride,
@@ -1647,6 +1720,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
             deployToken,
             strategy: deploymentStrategy,
             onHold: deploymentOnHold,
+            ...(scaleToZero ? { scaleToZero } : {}),
             lastDeployment
         },
         compose: {
