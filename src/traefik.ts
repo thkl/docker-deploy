@@ -116,14 +116,13 @@ networks:
                 cat > docker-compose.traefik.yml << 'TRAEFIK_EOF'
 ${overrideContent}TRAEFIK_EOF
                 if [ -f docker-compose.updater.source.yml ]; then
-                    if grep -q "# updater-traefik-start" docker-compose.updater.source.yml; then
-                        echo "--> Stored Docker Compose override already contains Traefik settings."
-                        COMPOSE_FILES="-f docker-compose.updater.yml"
-                    else
-                        echo "--> Merging Traefik settings into stored Docker Compose override..."
-                        docker compose -f docker-compose.updater.source.yml -f docker-compose.traefik.yml config --no-interpolate > docker-compose.updater.yml
-                        COMPOSE_FILES="-f docker-compose.updater.yml"
-                    fi
+                    echo "--> Merging generated Traefik settings into stored Docker Compose override..."
+                    # The UI may have written a managed Traefik block already,
+                    # but it cannot contain the current scale-to-zero token and
+                    # updater URL. Always apply this runtime overlay so those
+                    # labels are present in the effective deployment file.
+                    docker compose -f docker-compose.updater.source.yml -f docker-compose.traefik.yml config --no-interpolate > docker-compose.updater.yml
+                    COMPOSE_FILES="-f docker-compose.updater.yml"
                 else
                     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.traefik.yml"
                 fi`;

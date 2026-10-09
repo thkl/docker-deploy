@@ -579,6 +579,7 @@ export interface ScaleToZeroRuntimeStatus {
   state: ScaleToZeroRuntimeState;
   checkedAt: string;
   idleSince?: string;
+  lastRequestAt?: string;
   suspendedSince?: string;
   lastWakeAt?: string;
   error?: string;

@@ -577,7 +577,9 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
       return 'Scale-to-zero status unavailable.';
     }
     if (scale.state === 'idle' && scale.idleSince) {
-      return `Idle since ${this.formatDate(scale.idleSince)}.`;
+      return scale.lastRequestAt
+        ? `Idle since ${this.formatDate(scale.idleSince)}. Last request observed ${this.formatDate(scale.lastRequestAt)}.`
+        : `Idle since ${this.formatDate(scale.idleSince)}. No request has reached the wake endpoint yet.`;
     }
     if (scale.state === 'suspended' && scale.suspendedSince) {
       return `Suspended since ${this.formatDate(scale.suspendedSince)}. The next request will wake it.`;

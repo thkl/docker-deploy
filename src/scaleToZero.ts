@@ -8,6 +8,7 @@ import { GlobalSettings, ProjectSettings, RuntimeStatus, ScaleToZeroRuntimeStatu
  */
 export class ScaleToZeroController {
     private readonly locks = new Map<string, Promise<void>>();
+    private readonly lastActivityAt = new Map<string, number>();
     private readonly lastRequestAt = new Map<string, number>();
     private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
     private readonly waking = new Set<string>();
@@ -28,7 +29,7 @@ export class ScaleToZeroController {
         }
 
         if (globalSettings && !this.timers.has(projectName) && !this.waking.has(projectName) && this.isRunningTarget(projectName, settings, status)) {
-            this.lastRequestAt.set(projectName, Date.now());
+            this.lastActivityAt.set(projectName, Date.now());
             this.scheduleIdleStop(projectName, settings, globalSettings);
         }
 
@@ -39,11 +40,12 @@ export class ScaleToZeroController {
                     ? "error"
                     : this.isSuspended(projectName, settings, status)
                         ? "suspended"
-                        : this.lastRequestAt.has(projectName)
+                        : this.lastActivityAt.has(projectName)
                             ? "idle"
                             : "running",
             checkedAt: status.checkedAt,
-            ...(this.lastRequestAt.has(projectName) ? { idleSince: new Date(this.lastRequestAt.get(projectName)!).toISOString() } : {}),
+            ...(this.lastActivityAt.has(projectName) ? { idleSince: new Date(this.lastActivityAt.get(projectName)!).toISOString() } : {}),
+            ...(this.lastRequestAt.has(projectName) ? { lastRequestAt: new Date(this.lastRequestAt.get(projectName)!).toISOString() } : {}),
             ...(this.suspendedAt.has(projectName) ? { suspendedSince: this.suspendedAt.get(projectName) } : {}),
             ...(this.lastWakeAt.has(projectName) ? { lastWakeAt: this.lastWakeAt.get(projectName) } : {}),
             ...(this.errors.has(projectName) ? { error: this.errors.get(projectName) } : {})
@@ -58,7 +60,9 @@ export class ScaleToZeroController {
             throw new Error("Scale-to-zero is not enabled for this project.");
         }
 
-        this.lastRequestAt.set(projectName, Date.now());
+        const requestAt = Date.now();
+        this.lastActivityAt.set(projectName, requestAt);
+        this.lastRequestAt.set(projectName, requestAt);
         this.errors.delete(projectName);
         this.waking.add(projectName);
         this.notifyStateChanged(projectName);
@@ -72,16 +76,15 @@ export class ScaleToZeroController {
             const wokeAt = new Date().toISOString();
             this.lastWakeAt.set(projectName, wokeAt);
             this.suspendedAt.delete(projectName);
-            this.notifyStateChanged(projectName);
         } catch (error) {
             this.errors.set(projectName, error instanceof Error ? error.message : "Application wake failed.");
-            this.notifyStateChanged(projectName);
             throw error;
         } finally {
             this.waking.delete(projectName);
             if (this.locks.get(projectName) === tracked) {
                 this.locks.delete(projectName);
             }
+            this.notifyStateChanged(projectName);
         }
 
         this.scheduleIdleStop(projectName, settings, globalSettings);
@@ -132,16 +135,16 @@ export class ScaleToZeroController {
     }
 
     private async stopIfIdle(projectName: string, settings: ProjectSettings, globalSettings: GlobalSettings) {
-        const lastRequest = this.lastRequestAt.get(projectName) ?? 0;
+        const lastActivity = this.lastActivityAt.get(projectName) ?? 0;
         const idleTimeout = Math.max(30, settings.scaleToZero?.idleTimeoutSeconds ?? 900) * 1000;
-        if (Date.now() - lastRequest < idleTimeout) {
+        if (Date.now() - lastActivity < idleTimeout) {
             this.scheduleIdleStop(projectName, settings, globalSettings);
             return;
         }
 
         const previous = this.locks.get(projectName) ?? Promise.resolve();
         const operation = previous.then(async () => {
-            if (Date.now() - (this.lastRequestAt.get(projectName) ?? 0) < idleTimeout) {
+            if (Date.now() - (this.lastActivityAt.get(projectName) ?? 0) < idleTimeout) {
                 return;
             }
             const client = this.agentManager.getClient(settings.serverId ?? "local");
