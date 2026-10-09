@@ -189,7 +189,7 @@ Projects can optionally use Traefik `ForwardAuth` to wake application services o
 http://192.168.1.20:3999/internal/scale-to-zero/wake
 ```
 
-The updater appends the configured wake token to that URL. Compose deployments use `docker compose pause/unpause` so the existing Traefik route remains present; Swarm deployments scale the selected services between zero and one replica. Databases and other stateful services should not be listed. The first request waits for the configured startup timeout while the service becomes ready.
+The updater appends the configured wake token and project identifier to that URL. For Compose deployments, the updater adds a small always-running gateway service carrying the Traefik router and ForwardAuth labels; its backend URL points to the paused application service, so the router remains available while the app is suspended. Swarm deployments keep the labels on the service and scale the selected services between zero and one replica. Databases and other stateful services should not be listed. The first request waits for the configured startup timeout while the service becomes ready.
 
 ## Traefik Diagnostics
 

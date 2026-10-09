@@ -99,7 +99,34 @@ ${deployLabelContent}`
         : `    labels:
 ${serviceLabelContent}`;
 
-    const overrideContent = `services:
+    const composeScaleToZero = deploymentStrategy === "compose" && scaleToZero?.enabled;
+    const gatewayServiceName = `${routerName}-scale-to-zero-gateway`;
+    const gatewayLabels = labels
+        .filter(([key]) => key !== `traefik.http.services.${routerName}.loadbalancer.server.port`)
+        .concat([[`traefik.http.services.${routerName}.loadbalancer.server.url`, `http://${serviceName}:${traefik.port || 80}`]]);
+    const gatewayLabelContent = gatewayLabels.map(([key, value]) => `      ${yamlQuote(key)}: ${yamlQuote(value)}`).join("\n");
+
+    const overrideContent = composeScaleToZero
+        ? `services:
+  ${yamlQuote(serviceName)}:
+    labels: !reset []
+    networks:
+      - ${yamlQuote(network)}
+${resetPorts}
+  ${yamlQuote(gatewayServiceName)}:
+    image: "alpine:3.20"
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    restart: "unless-stopped"
+    labels:
+${gatewayLabelContent}
+    networks:
+      - ${yamlQuote(network)}
+
+networks:
+  ${yamlQuote(network)}:
+    external: true
+`
+        : `services:
   ${yamlQuote(serviceName)}:
 ${labelContent}
     networks:
