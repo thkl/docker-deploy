@@ -7,7 +7,9 @@ import { GlobalSettings, ProjectSettings, RuntimeStatus, ScaleToZeroRuntimeStatu
  * calls `wake()`, then forwards the original request after it returns.
  */
 export class ScaleToZeroController {
+    private static readonly runningCacheTtlMs = 10_000;
     private readonly locks = new Map<string, Promise<void>>();
+    private readonly runningCacheUntil = new Map<string, number>();
     private readonly lastActivityAt = new Map<string, number>();
     private readonly lastRequestAt = new Map<string, number>();
     private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -30,6 +32,9 @@ export class ScaleToZeroController {
 
         if (globalSettings && !this.timers.has(projectName) && !this.waking.has(projectName) && this.isRunningTarget(projectName, settings, status)) {
             this.lastActivityAt.set(projectName, Date.now());
+            if (!this.suspendedAt.has(projectName)) {
+                this.markRunning(projectName);
+            }
             this.scheduleIdleStop(projectName, settings, globalSettings);
         }
 
@@ -64,6 +69,16 @@ export class ScaleToZeroController {
         this.lastActivityAt.set(projectName, requestAt);
         this.lastRequestAt.set(projectName, requestAt);
         this.errors.delete(projectName);
+
+        // ForwardAuth runs before every request. Avoid a Docker API round trip
+        // for normal traffic; only the first request after the short cache
+        // expires needs to verify or start the workload.
+        if (!this.waking.has(projectName) && !this.suspendedAt.has(projectName) && this.isRunningCached(projectName)) {
+            this.scheduleIdleStop(projectName, settings, globalSettings);
+            this.notifyStateChanged(projectName);
+            return;
+        }
+
         this.waking.add(projectName);
         this.notifyStateChanged(projectName);
         const previous = this.locks.get(projectName) ?? Promise.resolve();
@@ -76,8 +91,10 @@ export class ScaleToZeroController {
             const wokeAt = new Date().toISOString();
             this.lastWakeAt.set(projectName, wokeAt);
             this.suspendedAt.delete(projectName);
+            this.markRunning(projectName);
         } catch (error) {
             this.errors.set(projectName, error instanceof Error ? error.message : "Application wake failed.");
+            this.runningCacheUntil.delete(projectName);
             throw error;
         } finally {
             this.waking.delete(projectName);
@@ -155,6 +172,7 @@ export class ScaleToZeroController {
                 }
             }
             this.suspendedAt.set(projectName, new Date().toISOString());
+            this.runningCacheUntil.delete(projectName);
             this.notifyStateChanged(projectName);
         });
         const tracked = operation.catch(() => undefined);
@@ -181,6 +199,19 @@ export class ScaleToZeroController {
     private isRunningTarget(projectName: string, settings: ProjectSettings, status: RuntimeStatus) {
         const services = targetServices(projectName, settings);
         return services.length > 0 && services.every((service) => isRunning(findService(status, service)));
+    }
+
+    private isRunningCached(projectName: string) {
+        const expiresAt = this.runningCacheUntil.get(projectName) ?? 0;
+        if (expiresAt > Date.now()) {
+            return true;
+        }
+        this.runningCacheUntil.delete(projectName);
+        return false;
+    }
+
+    private markRunning(projectName: string) {
+        this.runningCacheUntil.set(projectName, Date.now() + ScaleToZeroController.runningCacheTtlMs);
     }
 
     private notifyStateChanged(projectName: string) {
