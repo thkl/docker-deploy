@@ -1477,8 +1477,22 @@ function registerScaleToZeroWakeRoute(app: Express, dependencies: Pick<RouteDepe
         try {
             const forwardedHost = readHeader(req.headers["x-forwarded-host"]).split(",")[0].trim().split(":")[0].toLowerCase();
             const host = forwardedHost || req.hostname.toLowerCase();
-            const project = Object.entries(configStore.readConfig()).find(([, settings]) => settings.scaleToZero?.enabled && settings.traefik?.hostname?.toLowerCase() === host);
+            const projectRef = typeof req.query.project === "string" ? req.query.project.trim() : "";
+            console.log(`[scale-to-zero] Wake request received: method=${req.method} host=${forwardedHost || "(not forwarded)"} project=${projectRef || "(not provided)"}`);
+            const project = projectRef
+                ? (() => {
+                    const resolved = configStore.resolveProject(projectRef);
+                    if (!resolved?.settings.scaleToZero?.enabled) {
+                        return undefined;
+                    }
+                    const configuredHost = resolved.settings.traefik?.hostname?.toLowerCase();
+                    return configuredHost && forwardedHost && configuredHost !== forwardedHost
+                        ? undefined
+                        : [resolved.name, resolved.settings] as const;
+                })()
+                : Object.entries(configStore.readConfig()).find(([, settings]) => settings.scaleToZero?.enabled && settings.traefik?.hostname?.toLowerCase() === host);
             if (!project) {
+                console.warn(`[scale-to-zero] Wake request could not resolve a project: host=${host} project=${projectRef || "(not provided)"}`);
                 res.status(404).send("No scale-to-zero project matches this host.");
                 return;
             }
@@ -1487,11 +1501,13 @@ function registerScaleToZeroWakeRoute(app: Express, dependencies: Pick<RouteDepe
             const expectedToken = settings.scaleToZero?.wakeToken ?? "";
             const suppliedToken = typeof req.query.token === "string" ? req.query.token : readHeader(req.headers["x-updater-wake-token"]);
             if (!expectedToken || suppliedToken !== expectedToken) {
+                console.warn(`[scale-to-zero] Wake request rejected: project=${projectName} reason=invalid-token`);
                 res.status(401).send("Invalid wake token.");
                 return;
             }
 
             await scaleToZeroController.wake(projectName, settings, globalSettingsStore.readSettings());
+            console.log(`[scale-to-zero] Wake request accepted: project=${projectName}`);
             res.status(204).end();
         } catch (error) {
             console.error("[scale-to-zero] Wake request failed:", error);

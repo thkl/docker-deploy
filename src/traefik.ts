@@ -43,7 +43,7 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
     }
     const wakeMiddleware = `${routerName}-wake`;
     const wakeUrl = wakeAddress
-        ? `${wakeAddress}${wakeAddress.includes("?") ? "&" : "?"}token=${encodeURIComponent(wakeToken ?? "")}`
+        ? `${wakeAddress}${wakeAddress.includes("?") ? "&" : "?"}project=${encodeURIComponent(repoName)}&token=${encodeURIComponent(wakeToken ?? "")}`
         : "";
     const labels: Array<[string, string | number | boolean]> = [
         ["traefik.enable", "true"],
