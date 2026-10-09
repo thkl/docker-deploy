@@ -28,6 +28,7 @@ export class GlobalSettingsPage implements OnInit {
   protected readonly error = signal('');
   protected readonly form = this.fb.group({
     dataRoot: ['/root/docker-apps', [Validators.required]],
+    updaterInternalUrl: [''],
     defaultTraefikNetwork: ['proxy', [Validators.required]],
     defaultTraefikEntryPoints: ['websecure', [Validators.required]],
     defaultTraefikCertResolver: ['letsencrypt', [Validators.required]],
@@ -302,6 +303,7 @@ export class GlobalSettingsPage implements OnInit {
   private applySettings(settings: GlobalSettings) {
     this.form.reset({
       dataRoot: settings.dataRoot,
+      updaterInternalUrl: settings.updaterInternalUrl ?? '',
       defaultTraefikNetwork: settings.defaultTraefikNetwork,
       defaultTraefikEntryPoints: settings.defaultTraefikEntryPoints,
       defaultTraefikCertResolver: settings.defaultTraefikCertResolver,
@@ -329,6 +331,7 @@ export class GlobalSettingsPage implements OnInit {
     const value = this.form.getRawValue();
     return {
       dataRoot: value.dataRoot,
+      updaterInternalUrl: value.updaterInternalUrl.trim(),
       defaultTraefikNetwork: value.defaultTraefikNetwork,
       defaultTraefikEntryPoints: value.defaultTraefikEntryPoints,
       defaultTraefikCertResolver: value.defaultTraefikCertResolver,

@@ -558,6 +558,39 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
             : 'Unknown';
   }
 
+  protected scaleToZeroLabel(status: RuntimeStatus | null) {
+    const state = status?.scaleToZero?.state;
+    return state === 'idle'
+      ? 'Idle'
+      : state === 'suspended'
+        ? 'Suspended'
+        : state === 'waking'
+          ? 'Waking'
+          : state === 'error'
+            ? 'Wake error'
+            : 'Running';
+  }
+
+  protected scaleToZeroDetail(status: RuntimeStatus | null) {
+    const scale = status?.scaleToZero;
+    if (!scale) {
+      return 'Scale-to-zero status unavailable.';
+    }
+    if (scale.state === 'idle' && scale.idleSince) {
+      return `Idle since ${this.formatDate(scale.idleSince)}.`;
+    }
+    if (scale.state === 'suspended' && scale.suspendedSince) {
+      return `Suspended since ${this.formatDate(scale.suspendedSince)}. The next request will wake it.`;
+    }
+    if (scale.state === 'waking') {
+      return 'Starting services and waiting for health checks.';
+    }
+    if (scale.state === 'error') {
+      return scale.error || 'The application could not be woken.';
+    }
+    return 'Application services are running.';
+  }
+
   protected webhookStatusLabel(webhook: WebhookEventRecord | null) {
     if (!webhook) {
       return 'No webhook yet';

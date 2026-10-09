@@ -40,6 +40,12 @@
           <span>Release snapshots per project</span>
           <input type="number" formControlName="releaseSnapshotLimit" min="1" max="200" />
         </label>
+
+        <label>
+          <span>Updater internal access URL</span>
+          <input formControlName="updaterInternalUrl" placeholder="http://192.168.1.20:3999" />
+          <small>Reachable by Traefik. Used to generate scale-to-zero wake URLs.</small>
+        </label>
       </div>
 
       <label class="check-row">

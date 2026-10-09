@@ -85,6 +85,7 @@ export interface VaultSecretPayload {
 
 export interface GlobalSettings {
     dataRoot: string;
+    updaterInternalUrl: string;
     defaultTraefikNetwork: string;
     defaultTraefikEntryPoints: string;
     defaultTraefikCertResolver: string;
@@ -102,6 +103,7 @@ export interface GlobalSettings {
 
 export interface GlobalSettingsPayload {
     dataRoot?: string;
+    updaterInternalUrl?: string;
     defaultTraefikNetwork?: string;
     defaultTraefikEntryPoints?: string;
     defaultTraefikCertResolver?: string;
@@ -575,6 +577,18 @@ export interface RuntimeStatus {
     status: RuntimeProjectStatus;
     checkedAt: string;
     services: RuntimeServiceStatus[];
+    scaleToZero?: ScaleToZeroRuntimeStatus;
+    error?: string;
+}
+
+export type ScaleToZeroRuntimeState = "running" | "idle" | "suspended" | "waking" | "error";
+
+export interface ScaleToZeroRuntimeStatus {
+    state: ScaleToZeroRuntimeState;
+    checkedAt: string;
+    idleSince?: string;
+    suspendedSince?: string;
+    lastWakeAt?: string;
     error?: string;
 }
 

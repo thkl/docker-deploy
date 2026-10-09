@@ -544,6 +544,7 @@ export class HttpAgentClient implements AgentClient {
 function defaultGlobalSettingsForRemoteJobs(): GlobalSettings {
     return {
         dataRoot: "/root/docker-apps",
+        updaterInternalUrl: "",
         defaultTraefikNetwork: "proxy",
         defaultTraefikEntryPoints: "websecure",
         defaultTraefikCertResolver: "letsencrypt",

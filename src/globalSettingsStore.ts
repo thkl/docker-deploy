@@ -5,6 +5,7 @@ import { GlobalSettings, GlobalSettingsPayload, NotificationChannelSettings, Not
 
 export const defaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
+    updaterInternalUrl: "",
     defaultTraefikNetwork: "proxy",
     defaultTraefikEntryPoints: "websecure",
     defaultTraefikCertResolver: "letsencrypt",
@@ -88,6 +89,7 @@ export class GlobalSettingsStore {
  */
 export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalSettings {
     const dataRoot = normalizeAbsolutePath(payload.dataRoot, "Data root") || defaultGlobalSettings.dataRoot;
+    const updaterInternalUrl = normalizeInternalUrl(payload.updaterInternalUrl);
     const sshKeyPath = payload.sshKeyPath?.trim() || defaultGlobalSettings.sshKeyPath;
     const defaultTraefikNetwork = normalizeName(payload.defaultTraefikNetwork, "Default Traefik network") || defaultGlobalSettings.defaultTraefikNetwork;
     const defaultTraefikEntryPoints = normalizeCsvNames(payload.defaultTraefikEntryPoints, "Default Traefik entry points") || defaultGlobalSettings.defaultTraefikEntryPoints;
@@ -110,6 +112,7 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
 
     return {
         dataRoot,
+        updaterInternalUrl,
         defaultTraefikNetwork,
         defaultTraefikEntryPoints,
         defaultTraefikCertResolver,
@@ -124,6 +127,29 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
         releaseSnapshotLimit,
         notifications
     };
+}
+
+function normalizeInternalUrl(value: string | undefined) {
+    const trimmed = value?.trim() ?? "";
+    if (!trimmed) {
+        return "";
+    }
+
+    let parsed: URL;
+    try {
+        parsed = new URL(trimmed);
+    } catch {
+        throw new Error("Updater internal access URL must be a valid http:// or https:// URL.");
+    }
+
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error("Updater internal access URL must use http:// or https://.");
+    }
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+        throw new Error("Updater internal access URL must not contain credentials, query parameters, or a fragment.");
+    }
+
+    return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, "");
 }
 
 /**

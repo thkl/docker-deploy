@@ -29,6 +29,12 @@
         <strong>{{ targetServerLabel() }}</strong>
         <small>target</small>
       </span>
+      @if (project.scaleToZero?.enabled) {
+        <span>
+          <strong>{{ scaleToZeroLabel(runtimeStatus()) }}</strong>
+          <small>scale to zero</small>
+        </span>
+      }
     </div>
   </section>
 
@@ -304,6 +310,15 @@
             <span class="error-text">{{ status.error }}</span>
           }
         </div>
+
+        @if (status.scaleToZero; as scale) {
+          <div class="scale-to-zero-status" [class.running-status]="scale.state === 'running' || scale.state === 'idle'" [class.suspended-status]="scale.state === 'suspended'" [class.waking-status]="scale.state === 'waking'" [class.error-status]="scale.state === 'error'">
+            <span class="status-chip" [class.running]="scale.state === 'running' || scale.state === 'idle'" [class.failed]="scale.state === 'error'">
+              {{ scaleToZeroLabel(status) }}
+            </span>
+            <span>{{ scaleToZeroDetail(status) }}</span>
+          </div>
+        }
 
         @if (status.services.length > 0) {
           <div class="service-list">

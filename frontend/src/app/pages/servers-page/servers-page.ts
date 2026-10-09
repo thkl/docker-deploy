@@ -55,6 +55,7 @@ export class ServersPage implements OnInit, OnDestroy {
   protected readonly traefikImpact = signal<Record<string, TraefikImpactPreview>>({});
   protected readonly globalDefaults = signal<GlobalSettings>({
     dataRoot: '',
+    updaterInternalUrl: '',
     defaultTraefikNetwork: 'proxy',
     defaultTraefikEntryPoints: 'websecure',
     defaultTraefikCertResolver: 'letsencrypt',

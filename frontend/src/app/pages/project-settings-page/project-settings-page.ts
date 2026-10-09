@@ -282,6 +282,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly builderDiagnostics = computed(() => this.buildBuilderDiagnostics());
   protected readonly globalDefaults = signal<GlobalSettings>({
     dataRoot: '/root/docker-apps',
+    updaterInternalUrl: '',
     defaultTraefikNetwork: 'proxy',
     defaultTraefikEntryPoints: 'websecure',
     defaultTraefikCertResolver: 'letsencrypt',
@@ -405,6 +406,7 @@ export class ProjectSettingsPage implements OnInit {
     this.api.getGlobalSettings().subscribe({
       next: (settings) => {
         this.globalDefaults.set(settings);
+        this.form.controls.scaleToZeroWakeAddress.setValue(this.generatedWakeAddress(), { emitEvent: false });
         if (this.isNew()) {
           this.resetForNewProject();
         }
@@ -1295,7 +1297,7 @@ export class ProjectSettingsPage implements OnInit {
       scaleToZeroServices: (payload.scaleToZero?.services ?? []).join(', '),
       scaleToZeroIdleTimeout: payload.scaleToZero?.idleTimeoutSeconds ?? 900,
       scaleToZeroStartupTimeout: payload.scaleToZero?.startupTimeoutSeconds ?? 120,
-      scaleToZeroWakeAddress: payload.scaleToZero?.wakeAddress ?? '',
+      scaleToZeroWakeAddress: this.generatedWakeAddress(),
       scaleToZeroWakeToken: '',
       composeOverride,
       traefikEnabled: Boolean(traefik.enabled),
@@ -1412,7 +1414,7 @@ export class ProjectSettingsPage implements OnInit {
       scaleToZeroServices: (project.scaleToZero?.services ?? project.deployment?.scaleToZero?.services ?? []).join(', '),
       scaleToZeroIdleTimeout: project.scaleToZero?.idleTimeoutSeconds ?? project.deployment?.scaleToZero?.idleTimeoutSeconds ?? 900,
       scaleToZeroStartupTimeout: project.scaleToZero?.startupTimeoutSeconds ?? project.deployment?.scaleToZero?.startupTimeoutSeconds ?? 120,
-      scaleToZeroWakeAddress: project.scaleToZero?.wakeAddress ?? project.deployment?.scaleToZero?.wakeAddress ?? '',
+      scaleToZeroWakeAddress: this.generatedWakeAddress(),
       scaleToZeroWakeToken: '',
       composeOverride: composeSection?.override ?? project.composeOverride ?? '',
       traefikEnabled: Boolean(traefik.enabled),
@@ -1573,7 +1575,7 @@ export class ProjectSettingsPage implements OnInit {
         services: value.scaleToZeroServices.split(',').map((service) => service.trim()).filter(Boolean),
         idleTimeoutSeconds: Number(value.scaleToZeroIdleTimeout),
         startupTimeoutSeconds: Number(value.scaleToZeroStartupTimeout),
-        wakeAddress: value.scaleToZeroWakeAddress.trim(),
+        wakeAddress: this.generatedWakeAddress(),
         wakeToken: value.scaleToZeroWakeToken.trim(),
       },
       registry: {
@@ -1609,6 +1611,17 @@ export class ProjectSettingsPage implements OnInit {
       removePublishedPorts: value.traefikRemovePublishedPorts,
       deploymentStrategy: value.deploymentStrategy === 'swarm' ? 'swarm' : 'compose',
     };
+  }
+
+  protected generateScaleToZeroToken() {
+    const bytes = new Uint8Array(32);
+    window.crypto.getRandomValues(bytes);
+    this.form.controls.scaleToZeroWakeToken.setValue(Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(''));
+  }
+
+  protected generatedWakeAddress() {
+    const base = this.globalDefaults().updaterInternalUrl.trim().replace(/\/+$/, '');
+    return base ? `${base}/internal/scale-to-zero/wake` : '';
   }
 
   private normalizeBuilderTraefikRefs() {

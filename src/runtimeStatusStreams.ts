@@ -5,6 +5,7 @@ import { AdminAuth } from "./auth.js";
 import { ConfigStore } from "./configStore.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { RuntimeStatus } from "./types.js";
+import { ScaleToZeroController } from "./scaleToZero.js";
 
 /**
  * Pushes project runtime status snapshots to browser clients.
@@ -21,6 +22,7 @@ export class RuntimeStatusStreamHub {
         private readonly globalSettingsStore: GlobalSettingsStore,
         private readonly agentManager: AgentManager,
         private readonly adminAuth: AdminAuth,
+        private readonly scaleToZeroController?: ScaleToZeroController,
         private readonly publishRuntimeStatus: (projectId: string | undefined, projectName: string, status: RuntimeStatus) => void = () => {}
     ) {}
 
@@ -57,7 +59,7 @@ export class RuntimeStatusStreamHub {
             return;
         }
 
-        const status = await this.inspectProject(project.name, project.settings);
+        const status = this.decorateStatus(project.name, project.settings, await this.inspectProject(project.name, project.settings));
         this.statusCache.set(project.settings.id ?? project.name, status);
         this.broadcast({
             type: "runtime-status",
@@ -95,7 +97,7 @@ export class RuntimeStatusStreamHub {
                 return;
             }
 
-            const status = await this.inspectProject(projectName, appSettings);
+            const status = this.decorateStatus(projectName, appSettings, await this.inspectProject(projectName, appSettings));
             this.statusCache.set(appSettings.id ?? projectName, status);
             this.send(webSocket, {
                 type: "runtime-status",
@@ -117,6 +119,10 @@ export class RuntimeStatusStreamHub {
                 error: error instanceof Error ? error.message : "Could not inspect runtime status."
             } satisfies RuntimeStatus;
         }
+    }
+
+    private decorateStatus(projectName: string, settings: NonNullable<ReturnType<ConfigStore["resolveProject"]>>["settings"], status: RuntimeStatus) {
+        return this.scaleToZeroController?.decorateStatus(projectName, settings, status, this.globalSettingsStore.readSettings()) ?? status;
     }
 
     private broadcast(payload: unknown) {

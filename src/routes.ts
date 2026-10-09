@@ -92,7 +92,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     registerSettingsRoutes(app, { database, globalSettingsStore, eventBus, notificationService, notificationStore });
     registerSecretRoutes(app, { vaultSecretStore });
     registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, eventBus });
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, scaleToZeroController: dependencies.scaleToZeroController, eventBus });
     registerWebhookRoute(app, { configStore, deploymentService, webhookStore });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
@@ -773,8 +773,8 @@ async function readResponseError(response: globalThis.Response) {
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "releaseStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "vaultSecretStore" | "runtimeStatusStreams" | "eventBus">) {
-    const { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, eventBus } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "releaseStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "vaultSecretStore" | "runtimeStatusStreams" | "scaleToZeroController" | "eventBus">) {
+    const { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, scaleToZeroController, eventBus } = dependencies;
 
     app.get("/api/projects", async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -1275,7 +1275,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 return;
             }
 
-            const status = await agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettingsStore.readSettings());
+            const globalSettings = globalSettingsStore.readSettings();
+            const status = scaleToZeroController.decorateStatus(projectName, appSettings, await agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettings), globalSettings);
             eventBus.publish({ type: "runtime.status", projectId: appSettings.id, projectName, status });
             res.json(status);
         } catch (error) {

@@ -118,12 +118,15 @@
         </div>
         <label>
           <span>Updater wake URL</span>
-          <input formControlName="scaleToZeroWakeAddress" placeholder="http://updater:3999/internal/scale-to-zero/wake" />
-          <small>Must be reachable from Traefik. A token query parameter is added automatically.</small>
+          <input formControlName="scaleToZeroWakeAddress" readonly placeholder="Configure the updater internal access URL in Global settings" />
+          <small>Generated from Global settings. It must be reachable from Traefik.</small>
         </label>
         <label>
           <span>Wake token</span>
-          <input type="password" formControlName="scaleToZeroWakeToken" placeholder="leave blank to keep current token" />
+          <div class="path-field">
+            <input type="password" formControlName="scaleToZeroWakeToken" placeholder="leave blank to keep current token" />
+            <button type="button" class="secondary" (click)="generateScaleToZeroToken()">Generate token</button>
+          </div>
         </label>
       </fieldset>
 

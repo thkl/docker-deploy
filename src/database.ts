@@ -9,6 +9,7 @@ import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secretStore.j
 const schemaVersion = 7;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
+    updaterInternalUrl: "",
     defaultTraefikNetwork: "proxy",
     defaultTraefikEntryPoints: "websecure",
     defaultTraefikCertResolver: "letsencrypt",
@@ -1200,6 +1201,7 @@ function normalizeLegacyDeploymentRecord(projectName: string, record: Deployment
 function normalizeLegacyGlobalSettings(payload: GlobalSettingsPayload): GlobalSettings {
     return {
         dataRoot: payload.dataRoot?.trim() || legacyDefaultGlobalSettings.dataRoot,
+        updaterInternalUrl: payload.updaterInternalUrl?.trim() || "",
         defaultTraefikNetwork: payload.defaultTraefikNetwork?.trim() || legacyDefaultGlobalSettings.defaultTraefikNetwork,
         defaultTraefikEntryPoints: payload.defaultTraefikEntryPoints?.trim() || legacyDefaultGlobalSettings.defaultTraefikEntryPoints,
         defaultTraefikCertResolver: payload.defaultTraefikCertResolver?.trim() || legacyDefaultGlobalSettings.defaultTraefikCertResolver,

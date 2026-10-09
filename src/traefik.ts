@@ -30,7 +30,11 @@ export function renderTraefikOverrideScript(repoName: string, settings: ProjectS
     const deploymentStrategy = settings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const rule = `Host(\`${traefik.hostname}\`)`;
     const scaleToZero = settings.scaleToZero;
-    const wakeAddress = scaleToZero?.wakeAddress?.trim();
+    const globalWakeAddress = globalSettings.updaterInternalUrl?.trim();
+    const projectWakeAddress = scaleToZero?.wakeAddress?.trim();
+    const wakeAddress = globalWakeAddress
+        ? `${globalWakeAddress.replace(/\/+$/, "")}/internal/scale-to-zero/wake`
+        : projectWakeAddress || "";
     const wakeToken = scaleToZero?.wakeToken?.trim();
     if (scaleToZero?.enabled && (!wakeAddress || !wakeToken)) {
         return `

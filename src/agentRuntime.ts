@@ -107,6 +107,7 @@ export class AgentRuntime {
                     docker: await this.localAgent.inspectDocker(),
                     traefik: await this.localAgent.detectTraefik({
                         dataRoot: "/root/docker-apps",
+                        updaterInternalUrl: "",
                         defaultTraefikNetwork,
                         defaultTraefikEntryPoints: "websecure",
                         defaultTraefikCertResolver: "letsencrypt",

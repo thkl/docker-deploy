@@ -67,7 +67,12 @@ class App {
         this.configStore,
         this.globalSettingsStore,
         this.agentManager,
-        (event) => this.eventBus.publish(event)
+        (event) => {
+            const project = this.configStore.resolveProject(event.projectName);
+            this.eventBus.publish(project
+                ? { ...event, status: this.scaleToZeroController.decorateStatus(project.name, project.settings, event.status, this.globalSettingsStore.readSettings()) }
+                : event);
+        }
     );
     private readonly agentHealth = new AgentHealthService(
         this.serverStore,
@@ -83,6 +88,7 @@ class App {
         this.globalSettingsStore,
         this.agentManager,
         this.adminAuth,
+        this.scaleToZeroController,
         (projectId, projectName, status) => this.eventBus.publish({ type: "runtime.status", projectId, projectName, status })
     );
     private readonly runtimeOperationStreams = new RuntimeOperationStreamHub(
@@ -130,6 +136,9 @@ class App {
      * Warms local target metadata, configures Express, and starts listening.
      */
     private async start() {
+        this.scaleToZeroController.setStateChangedHandler((projectName) => {
+            void this.runtimeStatusStreams.refreshProject(projectName);
+        });
         await this.warmLocalCapabilities();
         this.eventBus.subscribe((event) => this.notificationService.handleEvent(event));
         const config = this.configStore.readConfig();
@@ -189,7 +198,7 @@ class App {
         const runtimeEvents = await Promise.all(
             Object.entries(config).map(async ([projectName, appSettings]) => {
                 try {
-                    const status = await this.agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettings);
+                    const status = this.scaleToZeroController.decorateStatus(projectName, appSettings, await this.agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettings), globalSettings);
                     return {
                         type: "runtime.status" as const,
                         projectId: appSettings.id,
