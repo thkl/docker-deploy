@@ -51,7 +51,8 @@ export class ContainersPage implements OnInit, OnDestroy {
       if (!query) return true;
       return [container.name, container.image, container.id, container.composeProject, container.composeService, container.serverName]
         .some((value) => value?.toLowerCase().includes(query));
-    });
+    }).sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' })
+      || left.serverName.localeCompare(right.serverName, undefined, { numeric: true, sensitivity: 'base' }));
   });
   protected readonly selectedContainer = computed(() => this.containers().find((container) => this.keyFor(container) === this.selectedContainerKey()) ?? null);
   protected readonly filteredLogOutput = computed(() => {
