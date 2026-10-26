@@ -2,7 +2,7 @@
   "name": "docker_deploy",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@11.6.0",
+  "packageManager": "pnpm@11.28.8",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:frontend": "pnpm --dir frontend build",
@@ -10,13 +10,13 @@
     "test": "pnpm run build && node --test test/*.test.mjs"
   },
   "dependencies": {
-    "express": "5.2.1",
-    "ws": "^8.21.1"
+    "express": "5.3.0",
+    "ws": "8.22.0"
   },
   "devDependencies": {
     "@types/express": "5.0.6",
-    "@types/node": "26.1.0",
-    "@types/ws": "^8.18.1",
+    "@types/node": "26.6.5",
+    "@types/ws": "8.18.2",
     "typescript": "6.0.3"
   }
 }

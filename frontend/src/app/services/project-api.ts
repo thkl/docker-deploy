@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, NotificationDeliveryRecord, PathBrowseResult, ProjectPayload, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, VaultSecret, VaultSecretPayload, WebhookEventRecord } from '../models/project';
+import { ComposeInspection, ComposeValidation, ContainerFleetInventory, ContainerLogs, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, NotificationDeliveryRecord, PathBrowseResult, ProjectPayload, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, VaultSecret, VaultSecretPayload, WebhookEventRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -70,6 +70,15 @@ export class ProjectApi {
 
   getProjectStatus(projectRef: string): Observable<RuntimeStatus> {
     return this.http.get<RuntimeStatus>(`/api/projects/${encodeURIComponent(projectRef)}/status`);
+  }
+
+  getContainerInventory(): Observable<ContainerFleetInventory> {
+    return this.http.get<ContainerFleetInventory>('/api/containers');
+  }
+
+  getContainerLogs(serverId: string, containerId: string, tail: number): Observable<ContainerLogs> {
+    const params = new URLSearchParams({ tail: String(tail) });
+    return this.http.get<ContainerLogs>(`/api/containers/${encodeURIComponent(serverId)}/${encodeURIComponent(containerId)}/logs?${params.toString()}`);
   }
 
   diagnoseTraefik(projectRef: string): Observable<TraefikDiagnostics> {

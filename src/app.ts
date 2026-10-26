@@ -8,6 +8,7 @@ import { AdminAuth } from "./auth.js";
 import { ConfigAutoBackupService } from "./configAutoBackup.js";
 import { AppDatabase } from "./database.js";
 import { ConfigStore } from "./configStore.js";
+import { ContainerLogStreamHub } from "./containerLogStreams.js";
 import { DeploymentService } from "./deploymentService.js";
 import { DeploymentStreamHub } from "./deploymentStreams.js";
 import { DeploymentRecord, DeploymentStore } from "./deploymentStore.js";
@@ -83,6 +84,7 @@ class App {
     );
     private readonly deploymentStreams = new DeploymentStreamHub(this.configStore, this.deploymentStore, this.adminAuth);
     private readonly runtimeLogStreams = new RuntimeLogStreamHub(this.configStore, this.globalSettingsStore, this.agentManager, this.adminAuth);
+    private readonly containerLogStreams = new ContainerLogStreamHub(this.serverStore, this.agentManager, this.adminAuth);
     private readonly runtimeStatusStreams = new RuntimeStatusStreamHub(
         this.configStore,
         this.globalSettingsStore,
@@ -171,6 +173,7 @@ class App {
         const server = createServer(this.app);
         this.deploymentStreams.register(server);
         this.runtimeLogStreams.register(server);
+        this.containerLogStreams.register(server);
         this.runtimeOperationStreams.register(server);
         this.runtimeStatusStreams.register(server);
         this.eventBus.register(server);

@@ -593,6 +593,48 @@ export interface RuntimeLogs {
   output: string;
 }
 
+export interface ContainerRecord {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  health?: string;
+  healthDetails?: string;
+  restartCount: number;
+  createdAt: string;
+  startedAt?: string;
+  ports?: string;
+  composeProject?: string;
+  composeService?: string;
+  cpuPercent?: number;
+  memoryUsage?: string;
+  memoryPercent?: number;
+  networkIo?: string;
+  blockIo?: string;
+  processCount?: number;
+}
+
+export interface ContainerFleetServer {
+  serverId: string;
+  serverName: string;
+  kind: 'local' | 'remote';
+  checkedAt: string;
+  containers: ContainerRecord[];
+  error?: string;
+}
+
+export interface ContainerFleetInventory {
+  checkedAt: string;
+  servers: ContainerFleetServer[];
+}
+
+export interface ContainerLogs {
+  containerId: string;
+  tail: number;
+  checkedAt: string;
+  output: string;
+}
+
 export type RuntimeServiceAction = 'restart' | 'start' | 'stop' | 'pause' | 'unpause' | 'recreate' | 'pull';
 
 export interface RuntimeActionResult {

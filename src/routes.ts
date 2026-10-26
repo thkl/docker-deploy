@@ -26,7 +26,7 @@ import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
-import { DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ScaleToZeroSettings, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
+import { ContainerLogs, DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ScaleToZeroSettings, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
 import { ScaleToZeroController } from "./scaleToZero.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
@@ -87,11 +87,13 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     app.use("/api/settings", adminAuth.requireAuth);
     app.use("/api/projects", adminAuth.requireAuth);
     app.use("/api/servers", adminAuth.requireAuth);
+    app.use("/api/containers", adminAuth.requireAuth);
     app.use("/api/secrets", adminAuth.requireAuth);
 
     registerSettingsRoutes(app, { database, globalSettingsStore, eventBus, notificationService, notificationStore });
     registerSecretRoutes(app, { vaultSecretStore });
     registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
+    registerContainerRoutes(app, { serverStore, agentManager });
     registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, scaleToZeroController: dependencies.scaleToZeroController, eventBus });
     registerWebhookRoute(app, { configStore, deploymentService, webhookStore });
     registerCiDeployRoute(app, { configStore, deploymentService });
@@ -496,6 +498,53 @@ function registerServerRoutes(app: Express, dependencies: Pick<RouteDependencies
             res.json(updated);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not pair server." });
+        }
+    });
+}
+
+function registerContainerRoutes(app: Express, dependencies: Pick<RouteDependencies, "serverStore" | "agentManager">) {
+    const { serverStore, agentManager } = dependencies;
+
+    app.get("/api/containers", async (req: Request, res: Response) => {
+        const servers = await Promise.all(serverStore.list().map(async (server) => {
+            try {
+                const inventory = await agentManager.getClient(server.id).inspectContainers();
+                return {
+                    serverId: server.id,
+                    serverName: server.name,
+                    kind: server.kind,
+                    checkedAt: inventory.checkedAt,
+                    containers: inventory.containers
+                };
+            } catch (error) {
+                return {
+                    serverId: server.id,
+                    serverName: server.name,
+                    kind: server.kind,
+                    checkedAt: new Date().toISOString(),
+                    containers: [],
+                    error: error instanceof Error ? error.message : "Could not inspect containers on this server."
+                };
+            }
+        }));
+
+        res.json({ checkedAt: new Date().toISOString(), servers });
+    });
+
+    app.get("/api/containers/:serverId/:containerId/logs", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.serverId) ? req.params.serverId[0] : req.params.serverId;
+            const containerId = Array.isArray(req.params.containerId) ? req.params.containerId[0] : req.params.containerId;
+            if (!serverStore.get(serverId)) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+
+            const requestedTail = typeof req.query.tail === "string" ? Number(req.query.tail) : 200;
+            const logs: ContainerLogs = await agentManager.getClient(serverId).containerLogs(containerId, requestedTail);
+            res.json(logs);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not read container logs." });
         }
     });
 }

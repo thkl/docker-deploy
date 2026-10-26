@@ -57,6 +57,7 @@
     <section class="nav-section">
       <div class="nav-heading">Global</div>
       <nav class="global-nav" aria-label="Global settings">
+        <a routerLink="/containers" routerLinkActive="active">Containers</a>
         <a routerLink="/activity" routerLinkActive="active">Activity</a>
         <a routerLink="/servers" routerLinkActive="active">Servers</a>
         <a routerLink="/settings" routerLinkActive="active">Settings</a>
@@ -70,9 +71,11 @@
   <div class="workspace">
     <header class="topbar">
       <div>
-        <span class="context-label">Current project</span>
+        <span class="context-label">{{ isContainersRoute() ? 'Docker fleet' : 'Current project' }}</span>
         <h1>
-          @if (store.selectedProject(); as project) {
+          @if (isContainersRoute()) {
+            Containers
+          } @else if (store.selectedProject(); as project) {
             {{ project.name }}
           } @else {
             Projects
@@ -80,7 +83,7 @@
         </h1>
       </div>
 
-      @if (store.selectedProject(); as project) {
+      @if (!isContainersRoute() && store.selectedProject(); as project) {
         <div class="topbar-meta">
           <span>{{ project.path || '/root/docker-apps/' + project.name }}</span>
           @if (project.traefik.enabled && project.traefik.hostname) {

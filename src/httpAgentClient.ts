@@ -1,11 +1,11 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowsePathJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, TestRegistryJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowsePathJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectContainersJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, TestRegistryJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
 import { ControllerKeyState } from "./keyStore.js";
-import { GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerRecord, TraefikDefaultsPayload } from "./types.js";
+import { ContainerInventory, ContainerLogs, GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerRecord, TraefikDefaultsPayload } from "./types.js";
 
 /**
  * Controller-side client for a remote Deploy agent.
@@ -241,6 +241,33 @@ export class HttpAgentClient implements AgentClient {
         const accepted = await this.postJob({
             jobType: "runtimeLogsFollow",
             payload: { projectName, appSettings, globalSettings, service, tail } satisfies RuntimeLogsJobPayload
+        });
+        return this.connectRuntimeLogStream(accepted, hooks);
+    }
+
+    /** Lists all containers through the paired agent on its Docker host. */
+    async inspectContainers(): Promise<ContainerInventory> {
+        const accepted = await this.postJob<{ result: ContainerInventory }>({
+            jobType: "inspectContainers",
+            payload: {} satisfies InspectContainersJobPayload
+        });
+        return accepted.result;
+    }
+
+    /** Reads container logs through the paired agent. */
+    async containerLogs(containerId: string, tail: number): Promise<ContainerLogs> {
+        const accepted = await this.postJob<{ result: ContainerLogs }>({
+            jobType: "containerLogs",
+            payload: { containerId, tail } satisfies ContainerLogsJobPayload
+        });
+        return accepted.result;
+    }
+
+    /** Streams container logs through the paired agent. */
+    async followContainerLogs(containerId: string, tail: number, hooks: RuntimeLogHooks = {}): Promise<RuntimeLogStream> {
+        const accepted = await this.postJob({
+            jobType: "containerLogsFollow",
+            payload: { containerId, tail } satisfies ContainerLogsJobPayload
         });
         return this.connectRuntimeLogStream(accepted, hooks);
     }

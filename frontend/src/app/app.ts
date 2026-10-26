@@ -50,4 +50,8 @@ export class App implements OnInit {
     this.auth.logout();
     void this.router.navigate(['/login']);
   }
+
+  protected isContainersRoute() {
+    return this.router.url.startsWith('/containers');
+  }
 }

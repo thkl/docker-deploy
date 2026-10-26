@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, resetAgentPairing, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
@@ -353,6 +353,29 @@ export class AgentRuntime {
             return { result: await this.localAgent.inspectStatus(payload.projectName, payload.appSettings, payload.globalSettings) };
         }
 
+        if (request.jobType === "inspectContainers") {
+            return { result: await this.localAgent.inspectContainers() };
+        }
+
+        if (request.jobType === "containerLogs") {
+            const payload = request.payload as ContainerLogsJobPayload;
+            return { result: await this.localAgent.containerLogs(payload.containerId, payload.tail) };
+        }
+
+        if (request.jobType === "containerLogsFollow") {
+            const payload = request.payload as ContainerLogsJobPayload;
+            const stream = await this.localAgent.followContainerLogs(payload.containerId, payload.tail, {
+                onOutput: (stream, chunk) => this.emitFrame(accepted.jobId, { stream, chunk }),
+                onClose: () => this.emitFrame(accepted.jobId, { stream: "status", chunk: "Container log stream closed.", done: true, success: true }),
+                onFailure: (error) => this.emitFrame(accepted.jobId, { stream: "status", chunk: error.message, done: true, success: false, error: error.message })
+            }) as RuntimeLogStream;
+            const job = this.jobs.get(accepted.jobId);
+            if (job) {
+                job.cancel = () => stream.stop();
+            }
+            return {};
+        }
+
         if (request.jobType === "runtimeLogs") {
             const payload = request.payload as RuntimeLogsJobPayload;
             return { result: await this.localAgent.runtimeLogs(payload.projectName, payload.appSettings, payload.globalSettings, payload.service, payload.tail) };
@@ -638,7 +661,7 @@ export class AgentRuntime {
 }
 
 function isStreamingJob(jobType: AgentJobRequest["jobType"]) {
-    return jobType === "deploy" || jobType === "runtimeLogsFollow" || jobType === "runtimeActionFollow";
+    return jobType === "deploy" || jobType === "runtimeLogsFollow" || jobType === "containerLogsFollow" || jobType === "runtimeActionFollow";
 }
 
 function isPairingResetRequested() {

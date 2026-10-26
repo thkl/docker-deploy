@@ -2,7 +2,7 @@ import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js"
 import { inspectCompose } from "./composeInspection.js";
 import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { applyTraefikDefaults, backupTraefikConfig, captureProjectReleaseSnapshot, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, dispatchReleaseRollbackWorker, followRuntimeLogs, inspectCheckoutBindMounts, inspectDockerTopology, inspectProjectStatus, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, testRegistryLogin, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { applyTraefikDefaults, backupTraefikConfig, captureProjectReleaseSnapshot, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, dispatchReleaseRollbackWorker, followContainerLogs, followRuntimeLogs, inspectCheckoutBindMounts, inspectContainers, inspectDockerTopology, inspectProjectStatus, readContainerLogs, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, testRegistryLogin, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { browseDockerHostPath } from "./pathBrowser.js";
 import { GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, TraefikDefaultsPayload } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
@@ -153,6 +153,21 @@ export class LocalAgent implements AgentClient {
      */
     followRuntimeLogs(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number, hooks: RuntimeLogHooks = {}) {
         return followRuntimeLogs(projectName, appSettings, globalSettings, service, tail, hooks);
+    }
+
+    /** Lists all containers and current resource samples on this Docker host. */
+    inspectContainers() {
+        return inspectContainers();
+    }
+
+    /** Reads recent logs for a container on this Docker host. */
+    containerLogs(containerId: string, tail: number) {
+        return readContainerLogs(containerId, tail);
+    }
+
+    /** Follows a container log stream on this Docker host. */
+    followContainerLogs(containerId: string, tail: number, hooks: RuntimeLogHooks = {}) {
+        return followContainerLogs(containerId, tail, hooks);
     }
 
     /**

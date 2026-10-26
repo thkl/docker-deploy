@@ -15,6 +15,7 @@ Docker Deploy is a lightweight Docker Compose deployment panel. It connects a co
 - Traefik integration that writes labels and proxy-network membership into the stored override YAML.
 - Traefik availability checks, cached server capabilities, and on-demand routing diagnostics.
 - Runtime status, published/exposed ports, host-network detection, recent logs, and live log streaming.
+- Fleet-wide container dashboard with health, restart, CPU, memory, network and block I/O statistics, and live logs across configured Docker hosts.
 - Optional checkout cleanup after deploy, guarded by Compose inspection so checkout-local data bind mounts must be externalized first.
 
 ## Run The Controller
@@ -247,6 +248,12 @@ Project overview can inspect the deployed Compose runtime and show:
 - live log stream
 
 Status and logs are requested through the selected target agent.
+
+## Container Dashboard
+
+Open **Containers** in the global navigation to inspect all containers across the local Docker host and paired remote agents. The dashboard refreshes container state and resource samples every 10 seconds and supports host, state, and text filters. Select a container to view recent log output and follow new lines live; log lines can be filtered in the browser.
+
+Container logs are read directly by the controller or target agent through its existing Docker CLI and socket access. Viewing logs does not start a helper container. Docker health is shown when a container defines a healthcheck; containers without one still show their running state and resource usage.
 
 ## Cleanup After Deploy
 

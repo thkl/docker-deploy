@@ -2155,7 +2155,12 @@ function appendList(lines: string[], key: string, value: string) {
 }
 
 function appendEnvironment(lines: string[], value: string) {
-  const entries = splitLines(value)
+  // Environment values are scalar strings. Unlike ports, networks, and
+  // volume lists, commas are valid data here (for example TRUST_PROXY
+  // allowlists), so only newlines separate environment entries.
+  const entries = value.split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
     .map((entry) => entry.split('='))
     .map(([key, ...rest]) => ({ key: key.trim(), value: rest.join('=').trim() }))
     .filter((entry) => entry.key);

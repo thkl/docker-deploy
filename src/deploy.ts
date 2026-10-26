@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CapturedReleaseSnapshot, CheckoutBindMountInspection, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
+import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ContainerInventory, ContainerLogs, ContainerRecord, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderEnvFileVolume, renderPersistedEnvFileRewriteScript, renderPersistedSecretFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -2564,6 +2564,122 @@ export async function inspectProjectStatus(repoName: string, appSettings: Projec
     }
 }
 
+/**
+ * Lists every container on the current Docker host with its health and latest
+ * resource sample. The local agent and remote agent both run this against the
+ * Docker socket already mounted into their process container.
+ */
+export async function inspectContainers(): Promise<ContainerInventory> {
+    const checkedAt = new Date().toISOString();
+    const { stdout: idsOutput, stderr: idsError } = await execAsync("docker ps -aq --no-trunc", { maxBuffer: 2 * 1024 * 1024 });
+    if (idsError.trim()) {
+        throw new Error(idsError.trim());
+    }
+
+    const ids = idsOutput.split(/\s+/).map((id) => id.trim()).filter(Boolean);
+    if (!ids.length) {
+        return { checkedAt, containers: [] };
+    }
+
+    const { stdout: inspectOutput, stderr: inspectError } = await execAsync(
+        `docker inspect ${ids.map(shellQuote).join(" ")}`,
+        { maxBuffer: 16 * 1024 * 1024 }
+    );
+    if (inspectError.trim()) {
+        throw new Error(inspectError.trim());
+    }
+
+    const inspected = JSON.parse(inspectOutput.trim()) as DockerInspectContainer[];
+    const runningIds = inspected.filter((container) => container.State?.Status === "running" && container.Id).map((container) => container.Id!);
+    const stats = new Map<string, DockerContainerStats>();
+    if (runningIds.length) {
+        try {
+            const { stdout: statsOutput } = await execAsync(
+                `docker stats --no-stream --format '{{json .}}' ${runningIds.map(shellQuote).join(" ")}`,
+                { maxBuffer: 4 * 1024 * 1024 }
+            );
+            for (const line of statsOutput.split(/\r?\n/).filter(Boolean)) {
+                const stat = JSON.parse(line) as DockerContainerStats;
+                if (stat.ID) {
+                    stats.set(stat.ID.toLowerCase(), stat);
+                }
+                if (stat.Name) {
+                    stats.set(stat.Name, stat);
+                }
+            }
+        } catch {
+            // Keep the inventory useful if one daemon cannot provide stats.
+        }
+    }
+
+    const containers: ContainerRecord[] = inspected.map((container) => {
+        const id = container.Id ?? "";
+        const name = container.Name?.replace(/^\/+/, "") || id.slice(0, 12);
+        const labels = container.Config?.Labels ?? {};
+        const stat = stats.get(id.toLowerCase()) ?? stats.get(id.slice(0, 12).toLowerCase()) ?? stats.get(name);
+        const cpuPercent = parseDockerPercent(stat?.CPUPerc);
+        const memoryPercent = parseDockerPercent(stat?.MemPerc);
+        const processCount = Number(stat?.PIDs);
+
+        return {
+            id,
+            name,
+            image: container.Config?.Image || "unknown",
+            state: container.State?.Status || "unknown",
+            ...(container.State?.Health?.Status ? { health: container.State.Health.Status } : {}),
+            ...(container.State?.Health?.Log?.at(-1)?.Output?.trim() ? { healthDetails: container.State.Health.Log.at(-1)!.Output!.trim().slice(-1000) } : {}),
+            restartCount: container.RestartCount ?? 0,
+            createdAt: container.Created || "",
+            ...(container.State?.StartedAt && container.State.StartedAt !== "0001-01-01T00:00:00Z" ? { startedAt: container.State.StartedAt } : {}),
+            ...(formatPublishedPorts(container.NetworkSettings?.Ports) ? { ports: formatPublishedPorts(container.NetworkSettings?.Ports) } : {}),
+            ...(labels["com.docker.compose.project"] ? { composeProject: labels["com.docker.compose.project"] } : {}),
+            ...(labels["com.docker.compose.service"] ? { composeService: labels["com.docker.compose.service"] } : {}),
+            ...(cpuPercent !== undefined ? { cpuPercent } : {}),
+            ...(stat?.MemUsage ? { memoryUsage: stat.MemUsage } : {}),
+            ...(memoryPercent !== undefined ? { memoryPercent } : {}),
+            ...(stat?.NetIO ? { networkIo: stat.NetIO } : {}),
+            ...(stat?.BlockIO ? { blockIo: stat.BlockIO } : {}),
+            ...(Number.isFinite(processCount) ? { processCount } : {})
+        };
+    });
+
+    containers.sort((left, right) => {
+        if (left.state === "running" && right.state !== "running") return -1;
+        if (right.state === "running" && left.state !== "running") return 1;
+        return left.name.localeCompare(right.name);
+    });
+
+    return { checkedAt, containers };
+}
+
+/**
+ * Reads logs for any container on the current Docker host.
+ */
+export async function readContainerLogs(containerId: string, tail: number): Promise<ContainerLogs> {
+    const id = normalizeContainerId(containerId);
+    const safeTail = Math.min(Math.max(Math.trunc(tail) || 200, 10), 5000);
+    const { stdout, stderr } = await execAsync(
+        `docker logs --timestamps --tail ${safeTail} ${shellQuote(id)}`,
+        { maxBuffer: 8 * 1024 * 1024 }
+    );
+    return {
+        containerId: id,
+        tail: safeTail,
+        checkedAt: new Date().toISOString(),
+        output: `${stdout}${stderr ? `${stdout ? "\n" : ""}${stderr}` : ""}`
+    };
+}
+
+/**
+ * Follows logs for any container directly through the current Docker socket.
+ */
+export async function followContainerLogs(containerId: string, tail: number, hooks: RuntimeLogHooks = {}): Promise<RuntimeLogStream> {
+    const id = normalizeContainerId(containerId);
+    const safeTail = Math.min(Math.max(Math.trunc(tail) || 200, 10), 5000);
+    const worker = spawn("docker", ["logs", "--timestamps", "--follow", "--tail", String(safeTail), id], { stdio: ["ignore", "pipe", "pipe"] });
+    return wireRuntimeLogWorker(worker, hooks);
+}
+
 async function inspectSwarmProjectStatus(composeProjectName: string): Promise<RuntimeStatus> {
     try {
         const { stdout: idsOutput, stderr: idsError } = await execAsync(
@@ -2815,13 +2931,7 @@ export async function readRuntimeLogs(repoName: string, appSettings: ProjectSett
     if (appSettings.deploymentStrategy === "swarm") {
         const serviceName = normalizeRuntimeActionInput(service, "restart");
         const serviceRef = `${composeProjectName}_${serviceName}`;
-        const dockerRunCommand = `docker run -i --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            alpine:latest sh << 'EOF'
-                apk add --no-cache docker-cli > /dev/null 2>&1
-                docker service logs --tail ${safeTail} ${shellQuote(serviceRef)}
-EOF`;
-        const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 4 * 1024 * 1024 });
+        const { stdout, stderr } = await execAsync(`docker service logs --timestamps --tail ${safeTail} ${shellQuote(serviceRef)}`, { maxBuffer: 8 * 1024 * 1024 });
         return {
             service: serviceName,
             containerId: serviceRef,
@@ -2837,13 +2947,7 @@ EOF`;
         throw new Error("Service container was not found.");
     }
 
-    const dockerRunCommand = `docker run -i --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            alpine:latest sh << 'EOF'
-                apk add --no-cache docker-cli > /dev/null 2>&1
-                docker logs --tail ${safeTail} ${shellQuote(match.containerId)}
-EOF`;
-    const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 4 * 1024 * 1024 });
+    const { stdout, stderr } = await execAsync(`docker logs --timestamps --tail ${safeTail} ${shellQuote(match.containerId)}`, { maxBuffer: 8 * 1024 * 1024 });
 
     return {
         service: match.service,
@@ -2864,17 +2968,7 @@ export async function followRuntimeLogs(repoName: string, appSettings: ProjectSe
     if (appSettings.deploymentStrategy === "swarm") {
         const serviceName = normalizeRuntimeActionInput(service, "restart");
         const serviceRef = `${composeProjectName}_${serviceName}`;
-        const worker = spawn("docker", [
-            "run",
-            "-i",
-            "--rm",
-            "-v",
-            "/var/run/docker.sock:/var/run/docker.sock",
-            "alpine:latest",
-            "sh",
-            "-c",
-            `apk add --no-cache docker-cli > /dev/null 2>&1 && docker service logs --follow --tail ${safeTail} ${shellQuote(serviceRef)}`
-        ], { stdio: ["ignore", "pipe", "pipe"] });
+        const worker = spawn("docker", ["service", "logs", "--timestamps", "--follow", "--tail", String(safeTail), serviceRef], { stdio: ["ignore", "pipe", "pipe"] });
         return wireRuntimeLogWorker(worker, hooks);
     }
 
@@ -2884,17 +2978,7 @@ export async function followRuntimeLogs(repoName: string, appSettings: ProjectSe
         throw new Error("Service container was not found.");
     }
 
-    const worker = spawn("docker", [
-        "run",
-        "-i",
-        "--rm",
-        "-v",
-        "/var/run/docker.sock:/var/run/docker.sock",
-        "alpine:latest",
-        "sh",
-        "-c",
-        `apk add --no-cache docker-cli > /dev/null 2>&1 && docker logs --follow --tail ${safeTail} ${shellQuote(match.containerId)}`
-    ], { stdio: ["ignore", "pipe", "pipe"] });
+    const worker = spawn("docker", ["logs", "--timestamps", "--follow", "--tail", String(safeTail), match.containerId], { stdio: ["ignore", "pipe", "pipe"] });
 
     return wireRuntimeLogWorker(worker, hooks);
 }
@@ -2934,6 +3018,22 @@ function normalizeRuntimeActionInput(service: string, action: RuntimeServiceActi
     }
 
     return serviceName;
+}
+
+function normalizeContainerId(value: string) {
+    const id = value.trim().toLowerCase();
+    if (!/^[a-f0-9]{12,64}$/.test(id)) {
+        throw new Error("A valid container ID is required.");
+    }
+    return id;
+}
+
+function parseDockerPercent(value?: string) {
+    if (!value) {
+        return undefined;
+    }
+    const parsed = Number.parseFloat(value.replace("%", ""));
+    return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function renderRuntimeServiceActionCommand(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, serviceName: string, action: RuntimeServiceAction) {
@@ -3156,6 +3256,8 @@ type DockerServicePorts = Array<{ Protocol?: string; TargetPort?: number; Publis
 interface DockerInspectContainer {
     Id?: string;
     Name?: string;
+    Created?: string;
+    RestartCount?: number;
     Args?: string[];
     Config?: {
         Image?: string;
@@ -3167,7 +3269,9 @@ interface DockerInspectContainer {
         Status?: string;
         Health?: {
             Status?: string;
+            Log?: Array<{ Output?: string; ExitCode?: number; End?: string }>;
         };
+        StartedAt?: string;
     };
     HostConfig?: {
         NetworkMode?: string;
@@ -3176,6 +3280,17 @@ interface DockerInspectContainer {
         Ports?: DockerPortBindings;
         Networks?: Record<string, unknown>;
     };
+}
+
+interface DockerContainerStats {
+    ID?: string;
+    Name?: string;
+    CPUPerc?: string;
+    MemUsage?: string;
+    MemPerc?: string;
+    NetIO?: string;
+    BlockIO?: string;
+    PIDs?: string;
 }
 
 interface DockerInspectContainerWithMounts extends DockerInspectContainer {

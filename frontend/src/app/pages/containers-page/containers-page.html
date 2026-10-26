@@ -1,0 +1,188 @@
+<section class="page-head">
+  <div>
+    <h2>Containers</h2>
+    <p>Health, resource use, and live logs from every connected Docker host.</p>
+  </div>
+  <div class="head-actions">
+    <span class="refresh-state">{{ refreshing() ? 'Updating…' : 'Refreshes every 10 seconds' }}</span>
+    <button type="button" class="secondary" (click)="refresh()" [disabled]="refreshing()">
+      {{ refreshing() ? 'Refreshing…' : 'Refresh now' }}
+    </button>
+  </div>
+</section>
+
+@if (error()) {
+  <p class="notice error">{{ error() }}</p>
+}
+
+<section class="summary-grid" aria-label="Container summary">
+  <article class="summary-card">
+    <span>All containers</span>
+    <strong>{{ containers().length }}</strong>
+  </article>
+  <article class="summary-card good-card">
+    <span>Running</span>
+    <strong>{{ runningCount() }}</strong>
+  </article>
+  <article class="summary-card bad-card">
+    <span>Unhealthy</span>
+    <strong>{{ unhealthyCount() }}</strong>
+  </article>
+  <article class="summary-card">
+    <span>Stopped</span>
+    <strong>{{ stoppedCount() }}</strong>
+  </article>
+</section>
+
+@if (failedServers().length) {
+  <section class="host-errors" aria-label="Hosts with errors">
+    @for (server of failedServers(); track server.serverId) {
+      <p><strong>{{ server.serverName }}</strong> · {{ server.error }}</p>
+    }
+  </section>
+}
+
+<section class="dashboard-panel">
+  <div class="toolbar">
+    <label>
+      <span>Docker host</span>
+      <select [value]="serverFilter()" (change)="selectServer($event)">
+        <option value="all">All connected hosts</option>
+        @for (server of inventory()?.servers ?? []; track server.serverId) {
+          <option [value]="server.serverId">{{ server.serverName }}</option>
+        }
+      </select>
+    </label>
+    <label>
+      <span>State</span>
+      <select [value]="stateFilter()" (change)="selectState($event)">
+        <option value="all">All states</option>
+        <option value="running">Running</option>
+        <option value="stopped">Stopped</option>
+        <option value="unhealthy">Unhealthy</option>
+      </select>
+    </label>
+    <label class="search-field">
+      <span>Find a container</span>
+      <input type="search" placeholder="Name, image, project, or host" [value]="query()" (input)="updateQuery($event)" />
+    </label>
+    @if (inventory(); as snapshot) {
+      <span class="checked-at">Updated {{ formatDate(snapshot.checkedAt) }}</span>
+    }
+  </div>
+
+  <div class="container-layout">
+    <section class="container-list" aria-label="Container inventory">
+      <div class="list-heading">
+        <strong>{{ visibleContainers().length }} containers</strong>
+        <span>Select a row to follow its logs</span>
+      </div>
+
+      @if (loading()) {
+        <div class="empty-state">Loading Docker hosts…</div>
+      } @else if (visibleContainers().length) {
+        <div class="container-rows">
+          @for (container of visibleContainers(); track keyFor(container)) {
+            <button
+              type="button"
+              class="container-row"
+              [class.selected]="selectedContainerKey() === keyFor(container)"
+              (click)="openLogs(container)"
+            >
+              <span class="container-main">
+                <span class="container-name-line">
+                  <strong>{{ container.name }}</strong>
+                  <span class="state-pill" [class.good]="stateTone(container) === 'good'" [class.bad]="stateTone(container) === 'bad'">{{ container.state }}</span>
+                  <span class="health-pill" [class.good]="healthTone(container.health) === 'good'" [class.bad]="healthTone(container.health) === 'bad'" [class.warning]="healthTone(container.health) === 'warning'">{{ healthLabel(container.health) }}</span>
+                </span>
+                <span class="container-image">{{ container.image }}</span>
+                <span class="container-host">
+                  {{ container.serverName }}
+                  @if (container.composeProject) { · {{ container.composeProject }} / {{ container.composeService || container.name }} }
+                  @if (container.ports) { · {{ container.ports }} }
+                </span>
+              </span>
+              <span class="resource-cell">
+                <small>CPU</small>
+                <strong>{{ formatPercent(container.cpuPercent) }}</strong>
+              </span>
+              <span class="resource-cell memory-cell">
+                <small>Memory</small>
+                <strong>{{ container.memoryUsage || '—' }}</strong>
+                <span>{{ formatPercent(container.memoryPercent) }}</span>
+              </span>
+              <span class="resource-cell restart-cell">
+                <small>Restarts</small>
+                <strong>{{ container.restartCount }}</strong>
+              </span>
+            </button>
+          }
+        </div>
+      } @else {
+        <div class="empty-state">
+          @if (containers().length) {
+            No containers match these filters.
+          } @else {
+            No container inventory is available from the connected hosts.
+          }
+        </div>
+      }
+    </section>
+
+    <aside class="logs-panel" aria-label="Container logs">
+      @if (selectedContainer(); as container) {
+        <header class="logs-header">
+          <div class="logs-title">
+            <div>
+              <span class="eyebrow">{{ container.serverName }} · {{ container.state }}</span>
+              <h3>{{ container.name }}</h3>
+            </div>
+            <span class="stream-pill" [class.live]="logState() === 'live'" [class.error]="logState() === 'error'">{{ logStateLabel() }}</span>
+          </div>
+          <p>{{ container.image }}</p>
+          @if (container.health) {
+            <p>Healthcheck: <span class="health-text" [class.bad-text]="container.health === 'unhealthy'">{{ container.health }}</span> · {{ container.restartCount }} restarts</p>
+          } @else {
+            <p>No Docker healthcheck configured · {{ container.restartCount }} restarts</p>
+          }
+          @if (container.healthDetails) {
+            <pre class="health-details">{{ container.healthDetails }}</pre>
+          }
+          <div class="resource-details" aria-label="Current container resources">
+            <span><small>CPU</small><strong>{{ formatPercent(container.cpuPercent) }}</strong></span>
+            <span><small>Memory</small><strong>{{ container.memoryUsage || '—' }}</strong><em>{{ formatPercent(container.memoryPercent) }}</em></span>
+            <span><small>Network I/O</small><strong>{{ container.networkIo || '—' }}</strong></span>
+            <span><small>Block I/O</small><strong>{{ container.blockIo || '—' }}</strong></span>
+            <span><small>Processes</small><strong>{{ container.processCount ?? '—' }}</strong></span>
+          </div>
+          <div class="log-tools">
+            <label>
+              <span>Initial lines</span>
+              <select [value]="logTail()" (change)="selectLogTail($event)">
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+                <option value="1000">1,000</option>
+              </select>
+            </label>
+            <label class="log-search">
+              <span>Search logs</span>
+              <input type="search" placeholder="Filter visible lines" [value]="logSearch()" (input)="updateLogSearch($event)" />
+            </label>
+            <button type="button" class="icon-button" (click)="closeLogs()" aria-label="Close logs">×</button>
+          </div>
+        </header>
+        @if (logError()) {
+          <p class="log-error">{{ logError() }}</p>
+        }
+        <pre class="log-output" aria-live="polite">{{ filteredLogOutput() || (logState() === 'connecting' ? 'Connecting to container logs…' : 'No log output for this container.') }}</pre>
+      } @else {
+        <div class="logs-empty">
+          <span class="logs-icon">›_</span>
+          <strong>Container logs</strong>
+          <p>Select any container to view its recent output and follow new log lines live.</p>
+        </div>
+      }
+    </aside>
+  </div>
+</section>
