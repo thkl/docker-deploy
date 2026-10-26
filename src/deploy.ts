@@ -2616,6 +2616,11 @@ export async function inspectContainers(): Promise<ContainerInventory> {
         const id = container.Id ?? "";
         const name = container.Name?.replace(/^\/+/, "") || id.slice(0, 12);
         const labels = container.Config?.Labels ?? {};
+        const swarmServiceName = labels["com.docker.swarm.service.name"];
+        const composeProject = labels["com.docker.compose.project"] || labels["com.docker.stack.namespace"];
+        const composeService = labels["com.docker.compose.service"] || (composeProject && swarmServiceName?.startsWith(`${composeProject}_`)
+            ? swarmServiceName.slice(composeProject.length + 1)
+            : swarmServiceName);
         const stat = stats.get(id.toLowerCase()) ?? stats.get(id.slice(0, 12).toLowerCase()) ?? stats.get(name);
         const cpuPercent = parseDockerPercent(stat?.CPUPerc);
         const memoryPercent = parseDockerPercent(stat?.MemPerc);
@@ -2632,8 +2637,8 @@ export async function inspectContainers(): Promise<ContainerInventory> {
             createdAt: container.Created || "",
             ...(container.State?.StartedAt && container.State.StartedAt !== "0001-01-01T00:00:00Z" ? { startedAt: container.State.StartedAt } : {}),
             ...(formatPublishedPorts(container.NetworkSettings?.Ports) ? { ports: formatPublishedPorts(container.NetworkSettings?.Ports) } : {}),
-            ...(labels["com.docker.compose.project"] ? { composeProject: labels["com.docker.compose.project"] } : {}),
-            ...(labels["com.docker.compose.service"] ? { composeService: labels["com.docker.compose.service"] } : {}),
+            ...(composeProject ? { composeProject } : {}),
+            ...(composeService ? { composeService } : {}),
             ...(cpuPercent !== undefined ? { cpuPercent } : {}),
             ...(stat?.MemUsage ? { memoryUsage: stat.MemUsage } : {}),
             ...(memoryPercent !== undefined ? { memoryPercent } : {}),

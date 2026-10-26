@@ -1,8 +1,10 @@
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { ContainerFleetInventory, ContainerRecord } from '../../models/project';
+import { ContainerFleetInventory, ContainerRecord, ProjectSummary } from '../../models/project';
 import { ContainerLogStreamService, ContainerLogStreamEvent } from '../../services/container-log-stream';
 import { ProjectApi } from '../../services/project-api';
+import { ProjectStore } from '../../state/project-store';
 
 interface ContainerRow extends ContainerRecord {
   serverId: string;
@@ -11,12 +13,14 @@ interface ContainerRow extends ContainerRecord {
 
 @Component({
   selector: 'app-containers-page',
+  imports: [RouterLink],
   templateUrl: './containers-page.html',
   styleUrl: './containers-page.scss',
 })
 export class ContainersPage implements OnInit, OnDestroy {
   private readonly api = inject(ProjectApi);
   private readonly logStream = inject(ContainerLogStreamService);
+  protected readonly store = inject(ProjectStore);
   private refreshTimer?: ReturnType<typeof setInterval>;
   private logSubscription?: Subscription;
 
@@ -143,6 +147,16 @@ export class ContainersPage implements OnInit, OnDestroy {
 
   protected keyFor(container: ContainerRow) {
     return `${container.serverId}:${container.id}`;
+  }
+
+  protected matchingProject(container: ContainerRow): ProjectSummary | null {
+    if (!container.composeProject) return null;
+    return this.store.projects().find((project) => {
+      const targetServerIds = project.serverIds?.length ? project.serverIds : [project.serverId || 'local'];
+      const projectPathName = project.path?.trim().replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+      const composeName = (projectPathName || project.name).toLowerCase();
+      return targetServerIds.includes(container.serverId) && composeName === container.composeProject?.toLowerCase();
+    }) ?? null;
   }
 
   protected stateTone(container: ContainerRecord) {

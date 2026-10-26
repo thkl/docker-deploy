@@ -1,3 +1,12 @@
+:host {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .page-head {
   align-items: center;
   display: flex;
@@ -97,6 +106,10 @@ p {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-soft);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -147,12 +160,16 @@ p {
 
 .container-layout {
   display: grid;
+  flex: 1;
   grid-template-columns: minmax(0, 1.15fr) minmax(335px, 0.85fr);
-  min-height: 490px;
+  min-height: 0;
 }
 
 .container-list {
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid var(--line);
+  min-height: 0;
   min-width: 0;
 }
 
@@ -175,7 +192,8 @@ p {
 }
 
 .container-rows {
-  max-height: min(68vh, 760px);
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -185,11 +203,10 @@ p {
   border: 0;
   border-bottom: 1px solid var(--line);
   color: var(--ink);
-  cursor: pointer;
   display: grid;
   font: inherit;
   gap: 0.48rem;
-  grid-template-columns: minmax(0, 1fr) 48px minmax(88px, 0.34fr) 48px;
+  grid-template-columns: minmax(0, 1fr) 48px minmax(88px, 0.34fr) 48px auto;
   padding: 0.58rem 0.65rem;
   text-align: left;
   width: 100%;
@@ -204,8 +221,54 @@ p {
   background: var(--panel-soft);
 }
 
+.container-row:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--accent), transparent 72%);
+  outline-offset: -2px;
+}
+
 .container-row.selected {
   box-shadow: inset 2px 0 var(--accent);
+}
+
+.container-main-select {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  display: block;
+  font: inherit;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.container-main-select:hover {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: inherit;
+  transform: none;
+}
+
+.project-link,
+.project-unmatched {
+  color: var(--muted);
+  font-size: 0.64rem;
+  justify-self: end;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-link {
+  color: var(--accent-strong);
+}
+
+.project-link:hover,
+.open-project-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 .container-main {
@@ -292,8 +355,9 @@ p {
 .logs-panel {
   display: flex;
   flex-direction: column;
-  min-height: 490px;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .logs-header {
@@ -323,6 +387,16 @@ p {
 
 .logs-header > p {
   overflow-wrap: anywhere;
+}
+
+.open-project-link {
+  color: var(--accent-strong);
+  font-size: 0.73rem;
+  overflow-wrap: anywhere;
+}
+
+.no-project-match {
+  font-size: 0.7rem;
 }
 
 .health-text {
@@ -419,7 +493,7 @@ p {
   font-size: 0.68rem;
   line-height: 1.48;
   margin: 0;
-  min-height: 320px;
+  min-height: 0;
   overflow: auto;
   padding: 0.72rem;
   white-space: pre-wrap;
@@ -473,15 +547,12 @@ p {
 @media (max-width: 1080px) {
   .container-layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1.1fr) minmax(0, 0.9fr);
   }
 
   .container-list {
     border-bottom: 1px solid var(--line);
     border-right: 0;
-  }
-
-  .container-rows {
-    max-height: 54vh;
   }
 }
 
@@ -512,7 +583,11 @@ p {
   }
 
   .container-row {
-    grid-template-columns: minmax(0, 1fr) 42px 84px;
+    grid-template-columns: minmax(0, 1fr) 42px 84px auto;
+  }
+
+  .container-layout {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .restart-cell {

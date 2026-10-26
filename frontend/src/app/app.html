@@ -3,7 +3,7 @@
 } @else if (!auth.authenticated()) {
   <router-outlet />
 } @else {
-<div class="shell">
+<div class="shell" [class.containers-shell]="isContainersRoute()">
   <aside class="sidebar">
     <a class="brand" routerLink="/projects">
       <span class="brand-mark">D</span>

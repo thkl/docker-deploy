@@ -83,12 +83,11 @@
       } @else if (visibleContainers().length) {
         <div class="container-rows">
           @for (container of visibleContainers(); track keyFor(container)) {
-            <button
-              type="button"
+            <article
               class="container-row"
               [class.selected]="selectedContainerKey() === keyFor(container)"
-              (click)="openLogs(container)"
             >
+              <button type="button" class="container-main-select" [attr.aria-label]="'View logs for ' + container.name" (click)="openLogs(container)">
               <span class="container-main">
                 <span class="container-name-line">
                   <strong>{{ container.name }}</strong>
@@ -102,6 +101,7 @@
                   @if (container.ports) { · {{ container.ports }} }
                 </span>
               </span>
+              </button>
               <span class="resource-cell">
                 <small>CPU</small>
                 <strong>{{ formatPercent(container.cpuPercent) }}</strong>
@@ -115,7 +115,12 @@
                 <small>Restarts</small>
                 <strong>{{ container.restartCount }}</strong>
               </span>
-            </button>
+              @if (matchingProject(container); as project) {
+                <a class="project-link" [routerLink]="['/projects', project.id, 'overview']" [attr.aria-label]="'Open project ' + project.name" [title]="project.name">Project ↗</a>
+              } @else {
+                <span class="project-unmatched" [title]="container.composeProject ? 'Compose project is not configured in this manager' : 'No Compose project label found'">—</span>
+              }
+            </article>
           }
         </div>
       } @else {
@@ -140,6 +145,11 @@
             <span class="stream-pill" [class.live]="logState() === 'live'" [class.error]="logState() === 'error'">{{ logStateLabel() }}</span>
           </div>
           <p>{{ container.image }}</p>
+          @if (matchingProject(container); as project) {
+            <a class="open-project-link" [routerLink]="['/projects', project.id, 'overview']">Open {{ project.name }} project ↗</a>
+          } @else if (container.composeProject) {
+            <p class="no-project-match">Compose project “{{ container.composeProject }}” is not configured here.</p>
+          }
           @if (container.health) {
             <p>Healthcheck: <span class="health-text" [class.bad-text]="container.health === 'unhealthy'">{{ container.health }}</span> · {{ container.restartCount }} restarts</p>
           } @else {
