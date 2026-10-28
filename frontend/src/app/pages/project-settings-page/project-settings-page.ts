@@ -192,6 +192,10 @@ export class ProjectSettingsPage implements OnInit {
   });
   protected readonly builderServiceNames = computed(() => this.builderServices().map((service) => service.name.trim()).filter(Boolean));
   protected readonly builderNetworkNames = computed(() => this.builderNetworks().map((network) => network.name.trim()).filter(Boolean));
+  protected readonly detectedTraefikProviderNetwork = computed(() => {
+    const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
+    return server?.capabilities?.traefik.dockerProviderNetwork || '';
+  });
   protected readonly detectedTraefikNetworkSuggestions = computed(() => {
     const known = new Set(this.builderNetworkNames());
     const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
@@ -713,7 +717,20 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   protected setComposeMode(mode: 'builder' | 'yaml') {
+    if (mode === 'builder' && this.composeMode() !== 'builder' && this.form.controls.composeOverride.value.trim()) {
+      if (!parseComposeBuilder(this.form.controls.composeOverride.value)) {
+        this.message.set('This Compose override contains options the builder cannot safely edit. Keep it in YAML mode to preserve all services and settings.');
+        return;
+      }
+      this.loadBuilderFromComposeOverride();
+    }
     this.composeMode.set(mode);
+  }
+
+  protected useDetectedTraefikNetwork() {
+    const network = this.detectedTraefikProviderNetwork();
+    if (!network) return;
+    this.form.controls.traefikNetwork.setValue(network);
   }
 
   protected setBuilderSection(section: 'services' | 'secrets' | 'networks' | 'volumes' | 'traefik') {
@@ -2558,10 +2575,45 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
   let extraKey = '';
   let resource: Omit<ComposeBuilderNetwork, 'id'> | Omit<ComposeBuilderVolume, 'id'> | undefined;
   let resourceObjectKey: 'driverOpts' | '' = '';
+  let longVolumeMount: { type: string; source: string; target: string; readOnly: boolean } | undefined;
+
+  const appendLongVolumeMount = () => {
+    if (!service || !longVolumeMount) return;
+    const mount = longVolumeMount.source
+      ? `${longVolumeMount.source}:${longVolumeMount.target}${longVolumeMount.readOnly ? ':ro' : ''}`
+      : `${longVolumeMount.target}${longVolumeMount.readOnly ? ':ro' : ''}`;
+    if (mount) appendParsedServiceListValue(service, 'volumes', mount);
+    longVolumeMount = undefined;
+  };
 
   for (const raw of lines) {
     const indent = raw.match(/^ */)?.[0].length ?? 0;
     const text = raw.trim();
+
+    if (longVolumeMount && section === 'services' && service && listKey === 'volumes' && indent === 8) {
+      const [rawKey, ...rest] = text.split(':');
+      const key = unquoteYaml(rawKey.trim());
+      const value = unquoteYaml(rest.join(':').trim());
+      if (key === 'source') {
+        longVolumeMount.source = value;
+        continue;
+      }
+      if (key === 'target') {
+        longVolumeMount.target = value;
+        continue;
+      }
+      if (key === 'read_only') {
+        longVolumeMount.readOnly = value === 'true';
+        continue;
+      }
+      if (key === 'type') {
+        longVolumeMount.type = value;
+        continue;
+      }
+      return null;
+    }
+
+    if (longVolumeMount) appendLongVolumeMount();
 
     if (indent === 0) {
       if (text === 'services:') {
@@ -2750,6 +2802,13 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
           continue;
         }
         if (service && indent === 6 && text.startsWith('- ') && listKey) {
+          if (listKey === 'volumes' && text.startsWith('- type:')) {
+            const [, ...typeRest] = text.slice(2).split(':');
+            const type = unquoteYaml(typeRest.join(':').trim());
+            if (type !== 'volume' && type !== 'bind') return null;
+            longVolumeMount = { type, source: '', target: '', readOnly: false };
+            continue;
+          }
           appendParsedServiceListValue(service, listKey, unquoteYaml(text.slice(2)));
           continue;
         }
@@ -2854,6 +2913,7 @@ function parseComposeBuilder(compose: string): { services: Omit<ComposeBuilderSe
     }
   }
 
+  if (longVolumeMount) appendLongVolumeMount();
   return { services: services.map(normalizeParsedHealthcheck), networks, volumes };
 }
 

@@ -88,6 +88,7 @@ export class ProjectSetupWizardPage implements OnInit, OnDestroy {
   protected readonly selectedDomain = signal('');
   protected readonly customHostname = signal(false);
   protected readonly traefikNetwork = signal('proxy');
+  protected readonly traefikNetworkCustomized = signal(false);
   protected readonly wildcardCertificate = signal(false);
   protected readonly wildcardDomain = signal('');
   protected readonly saving = signal(false);
@@ -98,6 +99,10 @@ export class ProjectSetupWizardPage implements OnInit, OnDestroy {
   protected readonly deployment = signal<DeploymentRecord | null>(null);
   protected readonly globalSettings = signal<GlobalSettings>(defaultGlobalSettings);
   protected readonly availableDomains = computed(() => this.globalSettings().traefikDomains ?? []);
+  protected readonly detectedTraefikNetwork = computed(() => {
+    const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
+    return server?.capabilities?.traefik.dockerProviderNetwork || server?.capabilities?.traefik.networks?.[0] || '';
+  });
   protected readonly publicUrl = computed(() => {
     const hostname = this.hostname().trim();
     return this.traefikEnabled() && hostname ? `https://${hostname}` : '';
@@ -141,6 +146,11 @@ export class ProjectSetupWizardPage implements OnInit, OnDestroy {
       if (servers.length && !servers.some((server) => server.id === selected)) {
         this.selectedServerId.set(servers[0].id);
       }
+      if (!this.traefikNetworkCustomized()) {
+        const server = servers.find((candidate) => candidate.id === this.selectedServerId());
+        const detected = server?.capabilities?.traefik.dockerProviderNetwork || server?.capabilities?.traefik.networks?.[0];
+        this.traefikNetwork.set(detected || this.globalSettings().defaultTraefikNetwork || 'proxy');
+      }
     });
   }
 
@@ -150,7 +160,6 @@ export class ProjectSetupWizardPage implements OnInit, OnDestroy {
     this.api.getGlobalSettings().subscribe({
       next: (settings) => {
         this.globalSettings.set(settings);
-        this.traefikNetwork.set(settings.defaultTraefikNetwork || 'proxy');
         const domains = settings.traefikDomains ?? [];
         if (domains.length && !this.customHostname()) {
           this.selectedDomain.set(domains[0].toLowerCase());
@@ -210,6 +219,13 @@ export class ProjectSetupWizardPage implements OnInit, OnDestroy {
 
   protected selectServer(event: Event) {
     this.selectedServerId.set((event.target as HTMLSelectElement).value || 'local');
+    this.traefikNetworkCustomized.set(false);
+  }
+
+  protected updateTraefikNetwork(event: Event) {
+    this.traefikNetwork.set((event.target as HTMLInputElement).value);
+    this.traefikNetworkCustomized.set(true);
+    this.error.set('');
   }
 
   protected toggleTraefik(event: Event) {

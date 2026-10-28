@@ -263,8 +263,8 @@
           </label>
           <label class="field">
             <span>Traefik Docker network</span>
-            <input [value]="traefikNetwork()" (input)="updateText(traefikNetwork, $event)" placeholder="proxy" />
-            <small>The network must exist on this host and be connected to Traefik.</small>
+            <input [value]="traefikNetwork()" (input)="updateTraefikNetwork($event)" placeholder="proxy" />
+            <small>{{ detectedTraefikNetwork() ? 'Detected Traefik provider network: ' + detectedTraefikNetwork() + '.' : 'Use a Docker network that exists on this host and is connected to Traefik.' }}</small>
           </label>
         </div>
         <label class="toggle-row">

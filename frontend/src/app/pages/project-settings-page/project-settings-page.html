@@ -884,11 +884,22 @@
                 @if (form.controls.traefikNetwork.value && !builderNetworkNames().includes(form.controls.traefikNetwork.value)) {
                 <option [value]="form.controls.traefikNetwork.value">{{ form.controls.traefikNetwork.value }} · external</option>
                 }
+                @for (networkName of detectedTraefikNetworkSuggestions(); track networkName) {
+                <option [value]="networkName">{{ networkName }} · detected</option>
+                }
                 @for (networkName of builderNetworkNames(); track networkName) {
                 <option [value]="networkName">{{ networkName }}</option>
                 }
               </select>
+              @if (detectedTraefikProviderNetwork()) {
+              <small>Traefik reports {{ detectedTraefikProviderNetwork() }} as its Docker provider network.</small>
+              }
             </label>
+            @if (detectedTraefikProviderNetwork() && form.controls.traefikNetwork.value !== detectedTraefikProviderNetwork()) {
+            <button type="button" class="secondary compact" (click)="useDetectedTraefikNetwork()">
+              Use detected network {{ detectedTraefikProviderNetwork() }}
+            </button>
+            }
           </div>
 
           <div class="toggle-grid">
