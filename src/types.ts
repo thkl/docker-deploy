@@ -89,6 +89,7 @@ export interface GlobalSettings {
     defaultTraefikNetwork: string;
     defaultTraefikEntryPoints: string;
     defaultTraefikCertResolver: string;
+    traefikDomains: string[];
     sshKeyPath: string;
     cleanupAfterDeploy: boolean;
     autoBackupEnabled: boolean;
@@ -107,6 +108,7 @@ export interface GlobalSettingsPayload {
     defaultTraefikNetwork?: string;
     defaultTraefikEntryPoints?: string;
     defaultTraefikCertResolver?: string;
+    traefikDomains?: string[];
     sshKeyPath?: string;
     cleanupAfterDeploy?: boolean;
     autoBackupEnabled?: boolean;

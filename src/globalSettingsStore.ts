@@ -9,6 +9,7 @@ export const defaultGlobalSettings: GlobalSettings = {
     defaultTraefikNetwork: "proxy",
     defaultTraefikEntryPoints: "websecure",
     defaultTraefikCertResolver: "letsencrypt",
+    traefikDomains: [],
     sshKeyPath: "~/.ssh",
     cleanupAfterDeploy: false,
     autoBackupEnabled: false,
@@ -94,6 +95,7 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
     const defaultTraefikNetwork = normalizeName(payload.defaultTraefikNetwork, "Default Traefik network") || defaultGlobalSettings.defaultTraefikNetwork;
     const defaultTraefikEntryPoints = normalizeCsvNames(payload.defaultTraefikEntryPoints, "Default Traefik entry points") || defaultGlobalSettings.defaultTraefikEntryPoints;
     const defaultTraefikCertResolver = normalizeName(payload.defaultTraefikCertResolver, "Default Traefik cert resolver") || defaultGlobalSettings.defaultTraefikCertResolver;
+    const traefikDomains = normalizeTraefikDomains(payload.traefikDomains);
     const autoBackupCron = payload.autoBackupCron?.trim() || defaultGlobalSettings.autoBackupCron;
     const autoBackupPath = normalizeAbsolutePath(payload.autoBackupPath, "Auto backup path") || defaultGlobalSettings.autoBackupPath;
     const registryAddress = normalizeRegistryAddress(payload.registryAddress);
@@ -116,6 +118,7 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
         defaultTraefikNetwork,
         defaultTraefikEntryPoints,
         defaultTraefikCertResolver,
+        traefikDomains,
         sshKeyPath,
         cleanupAfterDeploy: Boolean(payload.cleanupAfterDeploy),
         autoBackupEnabled: Boolean(payload.autoBackupEnabled),
@@ -127,6 +130,17 @@ export function normalizeGlobalSettings(payload: GlobalSettingsPayload): GlobalS
         releaseSnapshotLimit,
         notifications
     };
+}
+
+function normalizeTraefikDomains(values?: string[]) {
+    const domains = [...new Set((values ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean))];
+    for (const domain of domains) {
+        const labels = domain.split(".");
+        if (domain.length > 253 || labels.length < 2 || labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) {
+            throw new Error(`Available Traefik domain ${domain} is invalid. Enter a domain such as lab.network without a protocol or path.`);
+        }
+    }
+    return domains;
 }
 
 function normalizeInternalUrl(value: string | undefined) {

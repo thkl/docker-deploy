@@ -575,6 +575,7 @@ function defaultGlobalSettingsForRemoteJobs(): GlobalSettings {
         defaultTraefikNetwork: "proxy",
         defaultTraefikEntryPoints: "websecure",
         defaultTraefikCertResolver: "letsencrypt",
+        traefikDomains: [],
         sshKeyPath: "~/.ssh",
         cleanupAfterDeploy: false,
         autoBackupEnabled: false,

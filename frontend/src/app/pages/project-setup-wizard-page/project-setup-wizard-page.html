@@ -33,7 +33,7 @@
 
       <label class="field">
         <span>Project name</span>
-        <input [value]="projectName()" (input)="updateText(projectName, $event)" autocomplete="off" placeholder="my-app" />
+        <input [value]="projectName()" (input)="updateProjectName($event)" autocomplete="off" placeholder="my-app" />
         <small>Use letters, numbers, dots, underscores, or hyphens.</small>
       </label>
 
@@ -172,7 +172,45 @@
               <input [value]="databasePassword()" (input)="updateText(databasePassword, $event)" autocomplete="new-password" />
             </label>
           </div>
-          <p class="credential-note">The wizard adds <code>DATABASE_URL</code> to the app service. Your application or framework must read that variable. The database is reachable as <code>database</code> on port {{ database() === 'postgres' ? '5432' : '3306' }}.</p>
+          <label class="field">
+            <span>Connection URL variable name</span>
+            <input [value]="databaseUrlEnvName()" (input)="updateText(databaseUrlEnvName, $event)" autocomplete="off" placeholder="DATABASE_URL" />
+            <small>The app receives its connection URL in this variable. Your app or framework must read it.</small>
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" [checked]="separateDatabaseVariables()" (change)="toggleSeparateDatabaseVariables($event)" />
+            <span>
+              <strong>Also provide individual database variables</strong>
+              <small>Use these when your app expects separate host, port, database, user, and password settings.</small>
+            </span>
+          </label>
+          @if (separateDatabaseVariables()) {
+            <div class="field-grid">
+              <label class="field">
+                <span>Host variable name</span>
+                <input [value]="databaseHostEnvName()" (input)="updateText(databaseHostEnvName, $event)" autocomplete="off" placeholder="DB_HOST" />
+                <small>Value: database</small>
+              </label>
+              <label class="field">
+                <span>Port variable name</span>
+                <input [value]="databasePortEnvName()" (input)="updateText(databasePortEnvName, $event)" autocomplete="off" placeholder="DB_PORT" />
+                <small>Value: {{ database() === 'postgres' ? '5432' : '3306' }}</small>
+              </label>
+              <label class="field">
+                <span>Database variable name</span>
+                <input [value]="databaseNameEnvName()" (input)="updateText(databaseNameEnvName, $event)" autocomplete="off" placeholder="DB_DATABASE" />
+              </label>
+              <label class="field">
+                <span>User variable name</span>
+                <input [value]="databaseUserEnvName()" (input)="updateText(databaseUserEnvName, $event)" autocomplete="off" placeholder="DB_USER" />
+              </label>
+              <label class="field span-all">
+                <span>Password variable name</span>
+                <input [value]="databasePasswordEnvName()" (input)="updateText(databasePasswordEnvName, $event)" autocomplete="off" placeholder="DB_PASSWORD" />
+              </label>
+            </div>
+          }
+          <p class="credential-note">The database service is reachable from the app as <code>database</code> on port {{ database() === 'postgres' ? '5432' : '3306' }}. The wizard adds these environment variables to the app’s Compose service.</p>
         </section>
       }
     </div>
@@ -196,10 +234,29 @@
 
       @if (traefikEnabled()) {
         <div class="field-grid traffic-fields">
-          <label class="field span-all">
-            <span>Public hostname</span>
-            <input [value]="hostname()" (input)="updateText(hostname, $event)" autocomplete="url" placeholder="app.example.com" />
-          </label>
+          @if (availableDomains().length) {
+            <label class="field span-all">
+              <span>Public URL</span>
+              <select [value]="customHostname() ? '__custom__' : selectedDomain()" (change)="selectTrafficDomain($event)">
+                @for (domain of availableDomains(); track domain) {
+                  <option [value]="domain">{{ hostnameSuggestionLabel(domain) }}</option>
+                }
+                <option value="__custom__">Enter a custom hostname…</option>
+              </select>
+              @if (!customHostname()) {
+                <small>The project name forms the hostname. The wizard adds HTTPS automatically.</small>
+              }
+            </label>
+          }
+          @if (!availableDomains().length || customHostname()) {
+            <label class="field span-all">
+              <span>{{ availableDomains().length ? 'Custom hostname' : 'Public hostname' }}</span>
+              <input [value]="hostname()" (input)="updateHostname($event)" autocomplete="url" placeholder="app.example.com" />
+              <small>Enter only the hostname. The wizard adds https:// to the launch URL.</small>
+            </label>
+          } @else if (publicUrl()) {
+            <p class="url-preview span-all">Launch URL <a [href]="publicUrl()" target="_blank" rel="noopener noreferrer">{{ publicUrl() }}</a></p>
+          }
           <label class="field">
             <span>Application container port</span>
             <input [value]="containerPort() || 'Not set'" readonly />
@@ -221,7 +278,7 @@
           <label class="field">
             <span>Wildcard base domain</span>
             <input [value]="wildcardDomain()" (input)="updateText(wildcardDomain, $event)" placeholder="example.com" />
-            <small>The generated labels request a certificate for this domain and its subdomains.</small>
+            <small>The generated labels request a certificate for {{ wildcardDomain() ? '*.' + wildcardDomain() : 'this domain and its subdomains' }}.</small>
           </label>
         }
       } @else {
@@ -245,9 +302,9 @@
         <div><dt>Docker host</dt><dd>{{ selectedServerName() }}</dd></div>
         <div><dt>Database</dt><dd>{{ databaseLabel() }}</dd></div>
         <div><dt>Storage</dt><dd>{{ volumes().length ? volumes().length + ' mount(s)' : 'None' }}{{ database() !== 'none' ? ' · database volume included' : '' }}</dd></div>
-        <div><dt>Traffic</dt><dd>{{ traefikEnabled() ? hostname() + ' → ' + containerPort() + ' on ' + traefikNetwork() : 'No Traefik route' }}</dd></div>
+        <div><dt>Traffic</dt><dd>@if (traefikEnabled()) { <a [href]="publicUrl()" target="_blank" rel="noopener noreferrer">{{ publicUrl() }}</a> → {{ containerPort() }} on {{ traefikNetwork() }} } @else { No Traefik route }</dd></div>
         @if (traefikEnabled() && wildcardCertificate()) {
-          <div><dt>Certificate</dt><dd>Wildcard · {{ wildcardDomain() }}</dd></div>
+          <div><dt>Certificate</dt><dd>Wildcard · *.{{ wildcardDomain() }}</dd></div>
         }
       </dl>
 
@@ -256,6 +313,7 @@
           <h4>Database connection</h4>
           <p>These credentials are saved in the project’s Compose configuration.</p>
           <code>{{ connectionUri() }}</code>
+          <p>App variables: <code>{{ databaseUrlEnvName() }}</code>@if (separateDatabaseVariables()) {, <code>{{ databaseHostEnvName() }}</code>, <code>{{ databasePortEnvName() }}</code>, <code>{{ databaseNameEnvName() }}</code>, <code>{{ databaseUserEnvName() }}</code>, <code>{{ databasePasswordEnvName() }}</code>}</p>
         </section>
       }
 
@@ -263,22 +321,59 @@
         <summary>Review generated Compose configuration</summary>
         <pre>{{ composePreview() }}</pre>
       </details>
+
+      @if (savedProjectId()) {
+        <section class="deployment-progress" [class.failed]="deploymentState() === 'failed'" [class.success]="deploymentState() === 'succeeded'" aria-live="polite">
+          <div class="deployment-progress-heading">
+            <strong>{{ deploymentStatusLabel() }}</strong>
+            <span>{{ deploymentProgress() }}%</span>
+          </div>
+          <progress [value]="deploymentProgress()" max="100" aria-label="Deployment progress"></progress>
+          <p class="deploy-log-line">{{ lastLogLine() }}</p>
+          @if (deploymentError()) {
+            <p class="notice error" role="alert">{{ deploymentError() }}</p>
+          }
+          @if (deploymentState() === 'succeeded') {
+            @if (publicUrl()) {
+              <a class="launch-link" [href]="publicUrl()" target="_blank" rel="noopener noreferrer">Open {{ publicUrl() }} ↗</a>
+            } @else {
+              <p class="inline-empty">Deployment succeeded. No Traefik URL was configured.</p>
+            }
+          }
+        </section>
+      }
     </div>
   }
 
   <footer class="wizard-actions">
-    @if (step() > 0) {
+    @if (step() > 0 && !(step() === 3 && savedProjectId())) {
       <button type="button" class="secondary" (click)="back()" [disabled]="saving()">Back</button>
-    } @else {
+    } @else if (step() === 0) {
       <a class="secondary button-link" routerLink="/projects">Cancel</a>
     }
     <span class="action-spacer"></span>
     @if (step() < 3) {
       <button type="button" (click)="next()">Continue</button>
-    } @else {
-      <button type="button" (click)="createProject()" [disabled]="saving()">
-        {{ saving() ? 'Creating project…' : 'Create project' }}
+    } @else if (!savedProjectId()) {
+      <button type="button" class="secondary" (click)="saveProject()" [disabled]="saving()">
+        {{ saving() ? 'Saving…' : 'Save project' }}
       </button>
+      <button type="button" (click)="saveAndDeploy()" [disabled]="saving()">
+        {{ saving() ? 'Saving…' : 'Save & deploy' }}
+      </button>
+    } @else if (deploymentState() === 'failed') {
+      <a class="secondary button-link" [routerLink]="['/projects', savedProjectId(), 'overview']">Project overview</a>
+      <button type="button" (click)="deployAgain()" [disabled]="saving()">
+        {{ saving() ? 'Starting…' : 'Deploy again' }}
+      </button>
+    } @else if (deploymentState() === 'succeeded' && publicUrl()) {
+      <a class="secondary button-link" [routerLink]="['/projects', savedProjectId(), 'overview']">Project overview</a>
+      <a class="button-link launch-action" [href]="publicUrl()" target="_blank" rel="noopener noreferrer">Open app ↗</a>
+    } @else {
+      <a class="secondary button-link" [routerLink]="['/projects', savedProjectId(), 'overview']">Project overview</a>
+      @if (deploymentState() === 'running' || deploymentState() === 'starting') {
+        <button type="button" disabled>Deploying…</button>
+      }
     }
   </footer>
 </section>

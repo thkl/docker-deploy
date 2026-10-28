@@ -286,6 +286,7 @@ export class ProjectSettingsPage implements OnInit {
     defaultTraefikNetwork: 'proxy',
     defaultTraefikEntryPoints: 'websecure',
     defaultTraefikCertResolver: 'letsencrypt',
+    traefikDomains: [],
     sshKeyPath: '~/.ssh',
     cleanupAfterDeploy: false,
     autoBackupEnabled: false,

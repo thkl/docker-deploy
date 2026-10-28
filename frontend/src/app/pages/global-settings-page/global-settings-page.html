@@ -75,6 +75,12 @@
           <span>Default cert resolver</span>
           <input formControlName="defaultTraefikCertResolver" placeholder="letsencrypt" />
         </label>
+
+        <label>
+          <span>Available domains</span>
+          <textarea formControlName="traefikDomains" rows="3" placeholder="lab.network&#10;lab.de"></textarea>
+          <small>One domain per line or comma separated. The project wizard suggests https://project-name.domain.</small>
+        </label>
       </div>
     </section>
 

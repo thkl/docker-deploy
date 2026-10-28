@@ -1,7 +1,8 @@
-import { Component, effect, inject, OnInit, signal, WritableSignal } from '@angular/core';
+import { Component, computed, effect, inject, OnDestroy, OnInit, signal, WritableSignal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
-import { GlobalSettings, ProjectPayload } from '../../models/project';
+import { firstValueFrom, Subscription } from 'rxjs';
+import { DeploymentRecord, GlobalSettings, ProjectPayload } from '../../models/project';
+import { DeploymentStreamService } from '../../services/deployment-stream';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -23,6 +24,7 @@ const defaultGlobalSettings: GlobalSettings = {
   defaultTraefikNetwork: 'proxy',
   defaultTraefikEntryPoints: 'websecure',
   defaultTraefikCertResolver: 'letsencrypt',
+  traefikDomains: [],
   sshKeyPath: '~/.ssh',
   cleanupAfterDeploy: false,
   autoBackupEnabled: false,
@@ -52,10 +54,11 @@ const defaultGlobalSettings: GlobalSettings = {
   templateUrl: './project-setup-wizard-page.html',
   styleUrl: './project-setup-wizard-page.scss',
 })
-export class ProjectSetupWizardPage implements OnInit {
+export class ProjectSetupWizardPage implements OnInit, OnDestroy {
   protected readonly store = inject(ProjectStore);
   private readonly api = inject(ProjectApi);
   private readonly router = inject(Router);
+  private readonly deploymentStream = inject(DeploymentStreamService);
 
   protected readonly step = signal<WizardStep>(0);
   protected readonly steps = ['Application', 'Data', 'Traffic', 'Review'];
@@ -72,17 +75,64 @@ export class ProjectSetupWizardPage implements OnInit {
   protected readonly databaseUser = signal('app');
   protected readonly databasePassword = signal('');
   protected readonly databaseRootPassword = signal('');
+  protected readonly databaseUrlEnvName = signal('DATABASE_URL');
+  protected readonly separateDatabaseVariables = signal(false);
+  protected readonly databaseHostEnvName = signal('DB_HOST');
+  protected readonly databasePortEnvName = signal('DB_PORT');
+  protected readonly databaseNameEnvName = signal('DB_DATABASE');
+  protected readonly databaseUserEnvName = signal('DB_USER');
+  protected readonly databasePasswordEnvName = signal('DB_PASSWORD');
   protected readonly volumes = signal<SetupVolume[]>([]);
   protected readonly traefikEnabled = signal(false);
   protected readonly hostname = signal('');
+  protected readonly selectedDomain = signal('');
+  protected readonly customHostname = signal(false);
   protected readonly traefikNetwork = signal('proxy');
   protected readonly wildcardCertificate = signal(false);
   protected readonly wildcardDomain = signal('');
   protected readonly saving = signal(false);
   protected readonly error = signal('');
+  protected readonly deploymentError = signal('');
+  protected readonly savedProjectId = signal('');
+  protected readonly deploymentState = signal<'idle' | 'starting' | 'running' | 'succeeded' | 'failed'>('idle');
+  protected readonly deployment = signal<DeploymentRecord | null>(null);
   protected readonly globalSettings = signal<GlobalSettings>(defaultGlobalSettings);
+  protected readonly availableDomains = computed(() => this.globalSettings().traefikDomains ?? []);
+  protected readonly publicUrl = computed(() => {
+    const hostname = this.hostname().trim();
+    return this.traefikEnabled() && hostname ? `https://${hostname}` : '';
+  });
+  protected readonly suggestedHostname = computed(() => {
+    const name = projectHostnameLabel(this.projectName());
+    const domain = this.selectedDomain();
+    return name && domain ? `${name}.${domain}` : '';
+  });
+  protected readonly deploymentProgress = computed(() => {
+    const state = this.deploymentState();
+    if (state === 'succeeded' || state === 'failed') return 100;
+    if (state === 'starting') return 5;
+
+    switch (this.deployment()?.phase) {
+      case 'queued': return 8;
+      case 'dispatching': return 20;
+      case 'running': return 50;
+      case 'reconnecting': return 62;
+      case 'reconciling': return 78;
+      case 'cleanup': return 90;
+      case 'succeeded': return 100;
+      case 'failed':
+      case 'canceled': return 100;
+      default: return state === 'running' ? 45 : 0;
+    }
+  });
+  protected readonly lastLogLine = computed(() => {
+    const deployment = this.deployment();
+    const log = deployment?.log || deployment?.targets?.map((target) => target.log).filter(Boolean).join('\n') || '';
+    return log.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1) || 'Waiting for deployment output…';
+  });
 
   private nextVolumeId = 1;
+  private deploymentSubscription?: Subscription;
 
   constructor() {
     effect(() => {
@@ -101,12 +151,56 @@ export class ProjectSetupWizardPage implements OnInit {
       next: (settings) => {
         this.globalSettings.set(settings);
         this.traefikNetwork.set(settings.defaultTraefikNetwork || 'proxy');
+        const domains = settings.traefikDomains ?? [];
+        if (domains.length && !this.customHostname()) {
+          this.selectedDomain.set(domains[0].toLowerCase());
+          this.hostname.set(this.suggestedHostname());
+        }
       },
     });
   }
 
+  ngOnDestroy() {
+    this.deploymentSubscription?.unsubscribe();
+  }
+
   protected updateText(field: WritableSignal<string>, event: Event) {
     field.set((event.target as HTMLInputElement).value);
+  }
+
+  protected updateProjectName(event: Event) {
+    this.projectName.set((event.target as HTMLInputElement).value);
+    if (!this.customHostname()) {
+      this.hostname.set(this.suggestedHostname());
+    }
+  }
+
+  protected updateHostname(event: Event) {
+    const value = (event.target as HTMLInputElement).value.trim();
+    this.hostname.set(value.replace(/^https?:\/\//i, '').replace(/\/+$/, ''));
+    this.customHostname.set(true);
+    this.error.set('');
+  }
+
+  protected selectTrafficDomain(event: Event) {
+    const domain = (event.target as HTMLSelectElement).value;
+    if (domain === '__custom__') {
+      this.customHostname.set(true);
+      return;
+    }
+
+    const previousDomain = this.selectedDomain();
+    this.selectedDomain.set(domain);
+    this.customHostname.set(false);
+    this.hostname.set(this.suggestedHostname());
+    if (this.wildcardCertificate() && (!this.wildcardDomain() || this.wildcardDomain() === previousDomain)) {
+      this.wildcardDomain.set(domain);
+    }
+    this.error.set('');
+  }
+
+  protected hostnameSuggestionLabel(domain: string) {
+    return `https://${projectHostnameLabel(this.projectName()) || 'project'}.${domain}`;
   }
 
   protected selectSource(source: SourceType) {
@@ -124,7 +218,16 @@ export class ProjectSetupWizardPage implements OnInit {
   }
 
   protected toggleWildcardCertificate(event: Event) {
-    this.wildcardCertificate.set((event.target as HTMLInputElement).checked);
+    const enabled = (event.target as HTMLInputElement).checked;
+    this.wildcardCertificate.set(enabled);
+    if (enabled && !this.wildcardDomain() && this.selectedDomain()) {
+      this.wildcardDomain.set(this.selectedDomain());
+    }
+    this.error.set('');
+  }
+
+  protected toggleSeparateDatabaseVariables(event: Event) {
+    this.separateDatabaseVariables.set((event.target as HTMLInputElement).checked);
     this.error.set('');
   }
 
@@ -186,30 +289,122 @@ export class ProjectSetupWizardPage implements OnInit {
     this.step.update((step) => Math.max(step - 1, 0) as WizardStep);
   }
 
-  protected async createProject() {
-    for (const step of [0, 1, 2] as const) {
-      const message = this.validateStep(step);
-      if (message) {
-        this.step.set(step);
-        this.error.set(message);
-        return;
-      }
-    }
+  protected async saveProject() {
+    if (!this.validateAllSteps()) return;
 
     this.error.set('');
     this.saving.set(true);
     try {
-      const payload = this.buildPayload();
-      const result = await firstValueFrom(this.api.createProject(payload));
-      const projectId = result.id || result.name || this.projectName().trim();
-      this.store.selectProject(projectId);
-      this.store.loadProjects();
-      await this.router.navigate(['/projects', projectId, 'overview']);
+      await this.ensureProjectSaved();
+      await this.router.navigate(['/projects', this.savedProjectId(), 'overview']);
     } catch (error) {
       this.error.set(readApiError(error));
     } finally {
       this.saving.set(false);
     }
+  }
+
+  protected async saveAndDeploy() {
+    if (!this.validateAllSteps()) return;
+
+    this.error.set('');
+    this.deploymentError.set('');
+    this.saving.set(true);
+    try {
+      const projectId = await this.ensureProjectSaved();
+      this.deploymentState.set('starting');
+      this.deployment.set(null);
+      this.deploymentSubscription?.unsubscribe();
+      const result = await firstValueFrom(this.api.deployProject(projectId));
+      this.watchDeployment(projectId, result.deploymentId);
+    } catch (error) {
+      this.deploymentState.set('failed');
+      if (this.savedProjectId()) {
+        this.deploymentError.set(readApiError(error));
+      } else {
+        this.error.set(readApiError(error));
+      }
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async deployAgain() {
+    if (!this.savedProjectId()) return;
+    this.deploymentError.set('');
+    this.deployment.set(null);
+    this.saving.set(true);
+    this.deploymentState.set('starting');
+    try {
+      this.deploymentSubscription?.unsubscribe();
+      const result = await firstValueFrom(this.api.deployProject(this.savedProjectId()));
+      this.watchDeployment(this.savedProjectId(), result.deploymentId);
+    } catch (error) {
+      this.deploymentState.set('failed');
+      this.deploymentError.set(readApiError(error));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected deploymentStatusLabel() {
+    switch (this.deploymentState()) {
+      case 'starting': return 'Starting deployment';
+      case 'succeeded': return 'Deployment succeeded';
+      case 'failed': return 'Deployment failed';
+      case 'running': {
+        const phase = this.deployment()?.phase;
+        return phase ? phase.charAt(0).toUpperCase() + phase.slice(1) : 'Deployment running';
+      }
+      default: return 'Deployment';
+    }
+  }
+
+  private validateAllSteps() {
+    for (const step of [0, 1, 2] as const) {
+      const message = this.validateStep(step);
+      if (message) {
+        this.step.set(step);
+        this.error.set(message);
+        return false;
+      }
+    }
+
+    this.error.set('');
+    return true;
+  }
+
+  private async ensureProjectSaved() {
+    if (this.savedProjectId()) return this.savedProjectId();
+
+    const result = await firstValueFrom(this.api.createProject(this.buildPayload()));
+    const projectId = result.id || result.name || this.projectName().trim();
+    this.savedProjectId.set(projectId);
+    this.store.selectProject(projectId);
+    this.store.loadProjects();
+    return projectId;
+  }
+
+  private watchDeployment(projectRef: string, deploymentId: string) {
+    this.deploymentState.set('running');
+    this.deploymentSubscription = this.deploymentStream.streamLatest(projectRef).subscribe({
+      next: (deployment) => {
+        if (!deployment || (deployment.id !== deploymentId && !deployment.targets?.some((target) => target.id === deploymentId))) return;
+        this.deployment.set(deployment);
+        if (deployment.status === 'succeeded') {
+          this.deploymentState.set('succeeded');
+          this.store.loadProjects();
+        } else if (deployment.status === 'failed' || deployment.phase === 'canceled') {
+          this.deploymentState.set('failed');
+          this.deploymentError.set(deployment.error || (deployment.phase === 'canceled' ? 'Deployment was canceled.' : 'Deployment failed.'));
+        } else {
+          this.deploymentState.set('running');
+        }
+      },
+      error: () => {
+        this.deploymentError.set('Could not read deployment progress. The deployment may still be running.');
+      },
+    });
   }
 
   protected databaseLabel() {
@@ -288,11 +483,27 @@ export class ProjectSetupWizardPage implements OnInit {
         if (!this.databasePassword().trim()) {
           return 'Set a database password or generate one before continuing.';
         }
+        const variableNames = [this.databaseUrlEnvName().trim()];
+        if (this.separateDatabaseVariables()) {
+          variableNames.push(
+            this.databaseHostEnvName().trim(),
+            this.databasePortEnvName().trim(),
+            this.databaseNameEnvName().trim(),
+            this.databaseUserEnvName().trim(),
+            this.databasePasswordEnvName().trim(),
+          );
+        }
+        if (variableNames.some((name) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))) {
+          return 'Environment variable names must start with a letter or underscore and contain only letters, numbers, and underscores.';
+        }
+        if (new Set(variableNames.map((name) => name.toLowerCase())).size !== variableNames.length) {
+          return 'Each database setting needs a different environment variable name.';
+        }
       }
     }
 
     if (step === 2 && this.traefikEnabled()) {
-      if (!/^[a-zA-Z0-9.-]+$/.test(this.hostname().trim())) {
+      if (!validHostname(this.hostname().trim())) {
         return 'Enter a hostname using letters, numbers, dots, and hyphens.';
       }
       if (!validPort(this.containerPort())) {
@@ -302,7 +513,7 @@ export class ProjectSetupWizardPage implements OnInit {
         return 'Enter a Docker network name using letters, numbers, dots, underscores, or hyphens.';
       }
       if (this.wildcardCertificate()) {
-        if (!/^[a-zA-Z0-9.-]+$/.test(this.wildcardDomain().trim())) {
+        if (!validHostname(this.wildcardDomain().trim())) {
           return 'Enter a wildcard certificate base domain using letters, numbers, dots, and hyphens.';
         }
       }
@@ -388,7 +599,22 @@ export class ProjectSetupWizardPage implements OnInit {
 
     if (this.database() !== 'none') {
       lines.push('    depends_on:', '      - database');
-      lines.push('    environment:', `      DATABASE_URL: ${yamlQuote(this.connectionUri())}`);
+      const appEnvironment: Array<[string, string]> = [
+        [this.databaseUrlEnvName().trim(), this.connectionUri()],
+      ];
+      if (this.separateDatabaseVariables()) {
+        appEnvironment.push(
+          [this.databaseHostEnvName().trim(), 'database'],
+          [this.databasePortEnvName().trim(), this.database() === 'postgres' ? '5432' : '3306'],
+          [this.databaseNameEnvName().trim(), this.databaseName().trim()],
+          [this.databaseUserEnvName().trim(), this.databaseUser().trim()],
+          [this.databasePasswordEnvName().trim(), this.databasePassword()],
+        );
+      }
+      lines.push('    environment:');
+      for (const [key, value] of appEnvironment) {
+        lines.push(`      ${yamlQuote(key)}: ${yamlQuote(value)}`);
+      }
     }
 
     if (traefikEnabled) {
@@ -515,6 +741,17 @@ function validPort(value: string) {
   return Number.isInteger(port) && port >= 1 && port <= 65535;
 }
 
+function validHostname(value: string) {
+  const labels = value.toLowerCase().split('.');
+  return value.length <= 253 && labels.length >= 2 && labels.every((label) =>
+    label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label),
+  );
+}
+
+function projectHostnameLabel(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63).replace(/-+$/g, '');
+}
+
 function yamlQuote(value: string) {
   return JSON.stringify(value);
 }
@@ -528,5 +765,5 @@ function randomPassword() {
 
 function readApiError(error: unknown) {
   const apiError = (error as { error?: { error?: string } }).error?.error;
-  return apiError || 'Could not create project.';
+  return apiError || 'Could not save or deploy project.';
 }

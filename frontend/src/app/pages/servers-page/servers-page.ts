@@ -59,6 +59,7 @@ export class ServersPage implements OnInit, OnDestroy {
     defaultTraefikNetwork: 'proxy',
     defaultTraefikEntryPoints: 'websecure',
     defaultTraefikCertResolver: 'letsencrypt',
+    traefikDomains: [],
     sshKeyPath: '~/.ssh',
     cleanupAfterDeploy: false,
     autoBackupEnabled: false,
