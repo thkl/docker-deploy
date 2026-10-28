@@ -210,6 +210,20 @@
             <small>The network must exist on this host and be connected to Traefik.</small>
           </label>
         </div>
+        <label class="toggle-row">
+          <input type="checkbox" [checked]="wildcardCertificate()" (change)="toggleWildcardCertificate($event)" />
+          <span>
+            <strong>Use wildcard certificate labels</strong>
+            <small>Traefik needs a DNS challenge configured for the selected certificate resolver.</small>
+          </span>
+        </label>
+        @if (wildcardCertificate()) {
+          <label class="field">
+            <span>Wildcard base domain</span>
+            <input [value]="wildcardDomain()" (input)="updateText(wildcardDomain, $event)" placeholder="example.com" />
+            <small>The generated labels request a certificate for this domain and its subdomains.</small>
+          </label>
+        }
       } @else {
         <p class="inline-empty">No public route will be added. You can configure Traefik later.</p>
       }
@@ -232,6 +246,9 @@
         <div><dt>Database</dt><dd>{{ databaseLabel() }}</dd></div>
         <div><dt>Storage</dt><dd>{{ volumes().length ? volumes().length + ' mount(s)' : 'None' }}{{ database() !== 'none' ? ' · database volume included' : '' }}</dd></div>
         <div><dt>Traffic</dt><dd>{{ traefikEnabled() ? hostname() + ' → ' + containerPort() + ' on ' + traefikNetwork() : 'No Traefik route' }}</dd></div>
+        @if (traefikEnabled() && wildcardCertificate()) {
+          <div><dt>Certificate</dt><dd>Wildcard · {{ wildcardDomain() }}</dd></div>
+        }
       </dl>
 
       @if (database() !== 'none') {

@@ -76,6 +76,8 @@ export class ProjectSetupWizardPage implements OnInit {
   protected readonly traefikEnabled = signal(false);
   protected readonly hostname = signal('');
   protected readonly traefikNetwork = signal('proxy');
+  protected readonly wildcardCertificate = signal(false);
+  protected readonly wildcardDomain = signal('');
   protected readonly saving = signal(false);
   protected readonly error = signal('');
   protected readonly globalSettings = signal<GlobalSettings>(defaultGlobalSettings);
@@ -118,6 +120,11 @@ export class ProjectSetupWizardPage implements OnInit {
 
   protected toggleTraefik(event: Event) {
     this.traefikEnabled.set((event.target as HTMLInputElement).checked);
+    this.error.set('');
+  }
+
+  protected toggleWildcardCertificate(event: Event) {
+    this.wildcardCertificate.set((event.target as HTMLInputElement).checked);
     this.error.set('');
   }
 
@@ -294,6 +301,11 @@ export class ProjectSetupWizardPage implements OnInit {
       if (!/^[a-zA-Z0-9._-]+$/.test(this.traefikNetwork().trim())) {
         return 'Enter a Docker network name using letters, numbers, dots, underscores, or hyphens.';
       }
+      if (this.wildcardCertificate()) {
+        if (!/^[a-zA-Z0-9.-]+$/.test(this.wildcardDomain().trim())) {
+          return 'Enter a wildcard certificate base domain using letters, numbers, dots, and hyphens.';
+        }
+      }
     }
 
     return '';
@@ -309,6 +321,8 @@ export class ProjectSetupWizardPage implements OnInit {
     const hostname = this.hostname().trim();
     const port = Number(this.containerPort().trim() || '3000');
     const traefikNetwork = this.traefikNetwork().trim() || this.globalSettings().defaultTraefikNetwork || 'proxy';
+    const wildcardCertificate = traefikEnabled && this.wildcardCertificate();
+    const wildcardDomain = wildcardCertificate ? this.wildcardDomain().trim() : '';
 
     return {
       name,
@@ -328,8 +342,8 @@ export class ProjectSetupWizardPage implements OnInit {
       traefikEntryPoints: this.globalSettings().defaultTraefikEntryPoints || 'websecure',
       traefikCertResolver: this.globalSettings().defaultTraefikCertResolver || 'letsencrypt',
       traefikNetwork,
-      traefikWildcardCertificate: false,
-      traefikWildcardDomain: '',
+      traefikWildcardCertificate: wildcardCertificate,
+      traefikWildcardDomain: wildcardDomain,
       traefikWebsocket: false,
       traefikRemovePublishedPorts: true,
       project: { name, serverId, serverIds: [serverId], path: '' },
@@ -345,6 +359,8 @@ export class ProjectSetupWizardPage implements OnInit {
           entryPoints: this.globalSettings().defaultTraefikEntryPoints || 'websecure',
           certResolver: this.globalSettings().defaultTraefikCertResolver || 'letsencrypt',
           network: traefikNetwork,
+          wildcardCertificate,
+          wildcardDomain,
           removePublishedPorts: true,
         } : {}),
       },
@@ -354,6 +370,9 @@ export class ProjectSetupWizardPage implements OnInit {
   private buildComposeOverride() {
     const service = this.serviceName().trim();
     const lines = ['services:', `  ${yamlQuote(service)}:`];
+    const traefikEnabled = this.traefikEnabled();
+    const traefikNetwork = this.traefikNetwork().trim() || this.globalSettings().defaultTraefikNetwork || 'proxy';
+    const internalNetwork = this.internalNetworkName();
 
     if (this.sourceType() === 'git') {
       lines.push('    build:', '      context: .');
@@ -370,6 +389,18 @@ export class ProjectSetupWizardPage implements OnInit {
     if (this.database() !== 'none') {
       lines.push('    depends_on:', '      - database');
       lines.push('    environment:', `      DATABASE_URL: ${yamlQuote(this.connectionUri())}`);
+    }
+
+    if (traefikEnabled) {
+      lines.push('    networks:');
+      if (this.database() !== 'none') {
+        lines.push(`      - ${yamlQuote(internalNetwork)}`);
+      }
+      lines.push(`      - ${yamlQuote(traefikNetwork)}`);
+      lines.push('    labels:');
+      for (const [key, value] of this.traefikLabels(traefikNetwork)) {
+        lines.push(`      ${yamlQuote(key)}: ${yamlQuote(value)}`);
+      }
     }
 
     const appVolumes = this.volumes();
@@ -411,6 +442,9 @@ export class ProjectSetupWizardPage implements OnInit {
         `        source: ${yamlQuote(databaseVolumeName)}`,
         `        target: ${yamlQuote(this.database() === 'postgres' ? '/var/lib/postgresql/data' : '/var/lib/mysql')}`,
       );
+      if (traefikEnabled) {
+        lines.push('    networks:', `      - ${yamlQuote(internalNetwork)}`);
+      }
     }
 
     const namedVolumes = appVolumes.filter((volume) => volume.kind === 'volume').map((volume) => volume.source.trim());
@@ -424,7 +458,45 @@ export class ProjectSetupWizardPage implements OnInit {
       }
     }
 
+    if (traefikEnabled) {
+      lines.push('networks:');
+      if (this.database() !== 'none') {
+        lines.push(`  ${yamlQuote(internalNetwork)}: {}`);
+      }
+      lines.push(`  ${yamlQuote(traefikNetwork)}:`, '    external: true');
+    }
+
     return lines.join('\n');
+  }
+
+  private traefikLabels(network: string) {
+    const projectRouterName = this.projectName().trim().replace(/[^a-zA-Z0-9_-]/g, '-') || this.serviceName().trim();
+    const entryPoints = this.globalSettings().defaultTraefikEntryPoints || 'websecure';
+    const certResolver = this.globalSettings().defaultTraefikCertResolver || 'letsencrypt';
+    const labels: Array<[string, string]> = [
+      ['traefik.enable', 'true'],
+      ['traefik.docker.network', network],
+      [`traefik.http.routers.${projectRouterName}.rule`, `Host(`${this.hostname().trim()}`)`],
+      [`traefik.http.routers.${projectRouterName}.entrypoints`, entryPoints],
+      [`traefik.http.routers.${projectRouterName}.tls`, 'true'],
+      [`traefik.http.routers.${projectRouterName}.tls.certresolver`, certResolver],
+      [`traefik.http.services.${projectRouterName}.loadbalancer.server.port`, this.containerPort().trim() || '80'],
+    ];
+
+    if (this.wildcardCertificate()) {
+      labels.push(
+        [`traefik.http.routers.${projectRouterName}.tls.domains[0].main`, this.wildcardDomain().trim()],
+        [`traefik.http.routers.${projectRouterName}.tls.domains[0].sans`, `*.${this.wildcardDomain().trim()}`],
+      );
+    }
+
+    return labels;
+  }
+
+  private internalNetworkName() {
+    return (this.traefikNetwork().trim() || this.globalSettings().defaultTraefikNetwork || 'proxy') === 'wizard-internal'
+      ? 'wizard-app-internal'
+      : 'wizard-internal';
   }
 
   private databaseVolumeName() {

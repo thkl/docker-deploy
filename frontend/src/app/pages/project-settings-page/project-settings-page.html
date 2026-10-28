@@ -881,6 +881,9 @@
             <label>
               <span>Docker network</span>
               <select formControlName="traefikNetwork" [disabled]="builderNetworkNames().length === 0">
+                @if (form.controls.traefikNetwork.value && !builderNetworkNames().includes(form.controls.traefikNetwork.value)) {
+                <option [value]="form.controls.traefikNetwork.value">{{ form.controls.traefikNetwork.value }} · external</option>
+                }
                 @for (networkName of builderNetworkNames(); track networkName) {
                 <option [value]="networkName">{{ networkName }}</option>
                 }

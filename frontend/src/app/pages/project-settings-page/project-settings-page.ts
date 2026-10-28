@@ -1648,17 +1648,6 @@ export class ProjectSettingsPage implements OnInit {
       return `Traefik target service ${traefik.service} no longer exists. Select a service or disable Traefik.`;
     }
 
-    if (this.composeMode() === 'builder' && !this.builderNetworkNames().includes(traefik.network)) {
-      return `Traefik network ${traefik.network} no longer exists. Select another network or disable Traefik before saving.`;
-    }
-
-    if (this.composeMode() === 'yaml') {
-      const parsed = parseComposeBuilder(this.form.controls.composeOverride.value);
-      if (parsed && !parsed.networks.some((network) => network.name.trim() === traefik.network)) {
-        return `Traefik network ${traefik.network} is not defined in the YAML. Select another network or disable Traefik before saving.`;
-      }
-    }
-
     return '';
   }
 
@@ -1769,9 +1758,6 @@ export class ProjectSettingsPage implements OnInit {
         diagnostics.push('Traefik target service is missing.');
       } else if (target.networkMode.trim() === 'host') {
         diagnostics.push(`${target.name} uses host networking, so Traefik cannot attach it to a Docker network.`);
-      }
-      if (!networkNames.includes(traefik.network)) {
-        diagnostics.push('Traefik Docker network is missing.');
       }
     }
 
