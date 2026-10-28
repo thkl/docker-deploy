@@ -476,7 +476,7 @@ export class ProjectSetupWizardPage implements OnInit {
     const labels: Array<[string, string]> = [
       ['traefik.enable', 'true'],
       ['traefik.docker.network', network],
-      [`traefik.http.routers.${projectRouterName}.rule`, `Host(`${this.hostname().trim()}`)`],
+      [`traefik.http.routers.${projectRouterName}.rule`, 'Host(`' + this.hostname().trim() + '`)'],
       [`traefik.http.routers.${projectRouterName}.entrypoints`, entryPoints],
       [`traefik.http.routers.${projectRouterName}.tls`, 'true'],
       [`traefik.http.routers.${projectRouterName}.tls.certresolver`, certResolver],
