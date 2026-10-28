@@ -1,0 +1,267 @@
+<section class="wizard-head">
+  <div>
+    <span class="eyebrow">Project setup</span>
+    <h2>Create a project</h2>
+    <p>Set up an app, its storage, and optional services in a few steps.</p>
+  </div>
+  <a class="text-link" routerLink="/projects/new/advanced">Advanced setup</a>
+</section>
+
+<nav class="step-nav" aria-label="Project setup steps">
+  <ol>
+    @for (label of steps; track $index) {
+      <li [class.current]="step() === $index" [class.complete]="step() > $index" [attr.aria-current]="step() === $index ? 'step' : null">
+        <span class="step-index" aria-hidden="true">{{ step() > $index ? '✓' : $index + 1 }}</span>
+        <span>{{ label }}</span>
+      </li>
+    }
+  </ol>
+</nav>
+
+<section class="wizard-panel" aria-labelledby="wizard-step-title">
+  @if (error()) {
+    <p class="notice error" role="alert">{{ error() }}</p>
+  }
+
+  @if (step() === 0) {
+    <div class="step-content">
+      <div class="step-title">
+        <span class="step-count">Step 1 of 4</span>
+        <h3 id="wizard-step-title">What are we deploying?</h3>
+        <p>Choose where the app comes from and which Docker host will run it.</p>
+      </div>
+
+      <label class="field">
+        <span>Project name</span>
+        <input [value]="projectName()" (input)="updateText(projectName, $event)" autocomplete="off" placeholder="my-app" />
+        <small>Use letters, numbers, dots, underscores, or hyphens.</small>
+      </label>
+
+      <fieldset class="source-choice">
+        <legend>Application source</legend>
+        <div class="choice-grid">
+          <button type="button" [class.selected]="sourceType() === 'git'" [attr.aria-pressed]="sourceType() === 'git'" (click)="selectSource('git')">
+            <strong>Build from Git</strong>
+            <span>Build a Docker image from a Dockerfile in the repository root.</span>
+          </button>
+          <button type="button" [class.selected]="sourceType() === 'image'" [attr.aria-pressed]="sourceType() === 'image'" (click)="selectSource('image')">
+            <strong>Use a Docker image</strong>
+            <span>Deploy an image from Docker Hub or another registry.</span>
+          </button>
+        </div>
+      </fieldset>
+
+      @if (sourceType() === 'git') {
+        <label class="field">
+          <span>Git repository URL</span>
+          <input [value]="repositoryUrl()" (input)="updateText(repositoryUrl, $event)" autocomplete="url" placeholder="https://github.com/team/my-app.git" />
+          <small>The repository needs a Dockerfile at its root. The wizard creates the Compose service for it.</small>
+        </label>
+        <label class="field">
+          <span>Git access token <small>Optional · for private HTTPS repositories</small></span>
+          <input type="password" [value]="gitToken()" (input)="updateText(gitToken, $event)" autocomplete="new-password" />
+        </label>
+      } @else {
+        <label class="field">
+          <span>Docker image</span>
+          <input [value]="image()" (input)="updateText(image, $event)" autocomplete="off" placeholder="nginx:alpine" />
+          <small>Include a tag to pin a version. Private registries need credentials in Global settings.</small>
+        </label>
+      }
+
+      <div class="field-grid">
+        <label class="field">
+          <span>Application service name</span>
+          <input [value]="serviceName()" (input)="updateText(serviceName, $event)" autocomplete="off" placeholder="app" />
+        </label>
+        <label class="field">
+          <span>Internal container port</span>
+          <input [value]="containerPort()" (input)="updateText(containerPort, $event)" inputmode="numeric" placeholder="3000" />
+          <small>Used for the proxy route. Leave blank if the app has no web port.</small>
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Docker host</span>
+        <select [value]="selectedServerId()" (change)="selectServer($event)">
+          @if (!store.servers().length) {
+            <option value="local">Local Docker host</option>
+          }
+          @for (server of store.servers(); track server.id) {
+            <option [value]="server.id">{{ server.name }} · {{ server.kind }}</option>
+          }
+        </select>
+      </label>
+    </div>
+  }
+
+  @if (step() === 1) {
+    <div class="step-content">
+      <div class="step-title">
+        <span class="step-count">Step 2 of 4</span>
+        <h3 id="wizard-step-title">Does the app need data storage?</h3>
+        <p>Add persistent app folders or a database. Database ports stay private to the Docker network.</p>
+      </div>
+
+      <section class="option-section">
+        <div class="section-heading">
+          <div>
+            <h4>App storage</h4>
+            <p>Named volumes are managed by Docker. Bind mounts use a folder on the selected host.</p>
+          </div>
+          <button type="button" class="secondary" (click)="addVolume()">Add storage</button>
+        </div>
+
+        @if (volumes().length) {
+          <div class="mount-list">
+            @for (volume of volumes(); track trackVolume($index, volume)) {
+              <div class="mount-row">
+                <label class="field">
+                  <span>Storage type</span>
+                  <select [value]="volume.kind" (change)="updateVolume(volume.id, 'kind', $event)">
+                    <option value="volume">Named volume</option>
+                    <option value="bind">Host folder (bind)</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>{{ volume.kind === 'volume' ? 'Volume name' : 'Host path' }}</span>
+                  <input [value]="volume.source" (input)="updateVolume(volume.id, 'source', $event)" [placeholder]="volume.kind === 'volume' ? 'app-data' : '/srv/my-app/data'" />
+                </label>
+                <label class="field">
+                  <span>Container path</span>
+                  <input [value]="volume.target" (input)="updateVolume(volume.id, 'target', $event)" placeholder="/app/data" />
+                </label>
+                <button type="button" class="remove-button" (click)="removeVolume(volume.id)" [attr.aria-label]="'Remove ' + volumeLabel(volume)">Remove</button>
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="inline-empty">No app storage added. You can add mounts later in project settings.</p>
+        }
+      </section>
+
+      <label class="field">
+        <span>Optional database</span>
+        <select [value]="database()" (change)="selectDatabase($event)">
+          <option value="none">No database</option>
+          <option value="postgres">PostgreSQL</option>
+          <option value="mariadb">MariaDB</option>
+        </select>
+      </label>
+
+      @if (database() !== 'none') {
+        <section class="database-fields">
+          <div class="section-heading">
+            <div>
+              <h4>{{ databaseLabel() }}</h4>
+              <p>Added as the <code>database</code> service with a persistent data volume.</p>
+            </div>
+            <button type="button" class="secondary" (click)="generateDatabaseCredentials()">Generate new password</button>
+          </div>
+          <div class="field-grid">
+            <label class="field">
+              <span>Database name</span>
+              <input [value]="databaseName()" (input)="updateText(databaseName, $event)" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Database user</span>
+              <input [value]="databaseUser()" (input)="updateText(databaseUser, $event)" autocomplete="username" />
+            </label>
+            <label class="field span-all">
+              <span>Database password</span>
+              <input [value]="databasePassword()" (input)="updateText(databasePassword, $event)" autocomplete="new-password" />
+            </label>
+          </div>
+          <p class="credential-note">The wizard adds <code>DATABASE_URL</code> to the app service. Your application or framework must read that variable. The database is reachable as <code>database</code> on port {{ database() === 'postgres' ? '5432' : '3306' }}.</p>
+        </section>
+      }
+    </div>
+  }
+
+  @if (step() === 2) {
+    <div class="step-content">
+      <div class="step-title">
+        <span class="step-count">Step 3 of 4</span>
+        <h3 id="wizard-step-title">Should Traefik publish this app?</h3>
+        <p>Route a hostname to the application through the Traefik network configured on this host.</p>
+      </div>
+
+      <label class="toggle-row">
+        <input type="checkbox" [checked]="traefikEnabled()" (change)="toggleTraefik($event)" />
+        <span>
+          <strong>Enable Traefik routing</strong>
+          <small>Traefik sends HTTPS traffic to the app’s internal container port.</small>
+        </span>
+      </label>
+
+      @if (traefikEnabled()) {
+        <div class="field-grid traffic-fields">
+          <label class="field span-all">
+            <span>Public hostname</span>
+            <input [value]="hostname()" (input)="updateText(hostname, $event)" autocomplete="url" placeholder="app.example.com" />
+          </label>
+          <label class="field">
+            <span>Application container port</span>
+            <input [value]="containerPort() || 'Not set'" readonly />
+          </label>
+          <label class="field">
+            <span>Traefik Docker network</span>
+            <input [value]="traefikNetwork()" (input)="updateText(traefikNetwork, $event)" placeholder="proxy" />
+            <small>The network must exist on this host and be connected to Traefik.</small>
+          </label>
+        </div>
+      } @else {
+        <p class="inline-empty">No public route will be added. You can configure Traefik later.</p>
+      }
+    </div>
+  }
+
+  @if (step() === 3) {
+    <div class="step-content">
+      <div class="step-title">
+        <span class="step-count">Step 4 of 4</span>
+        <h3 id="wizard-step-title">Review your project</h3>
+        <p>Check the deployment settings before creating the project.</p>
+      </div>
+
+      <dl class="review-list">
+        <div><dt>Project</dt><dd>{{ projectName() }}</dd></div>
+        <div><dt>Source</dt><dd>{{ sourceType() === 'git' ? repositoryUrl() : image() }}</dd></div>
+        <div><dt>Service</dt><dd>{{ serviceName() }}@{{ containerPort() || 'no web port' }}</dd></div>
+        <div><dt>Docker host</dt><dd>{{ selectedServerName() }}</dd></div>
+        <div><dt>Database</dt><dd>{{ databaseLabel() }}</dd></div>
+        <div><dt>Storage</dt><dd>{{ volumes().length ? volumes().length + ' mount(s)' : 'None' }}{{ database() !== 'none' ? ' · database volume included' : '' }}</dd></div>
+        <div><dt>Traffic</dt><dd>{{ traefikEnabled() ? hostname() + ' → ' + containerPort() + ' on ' + traefikNetwork() : 'No Traefik route' }}</dd></div>
+      </dl>
+
+      @if (database() !== 'none') {
+        <section class="credential-preview">
+          <h4>Database connection</h4>
+          <p>These credentials are saved in the project’s Compose configuration.</p>
+          <code>{{ connectionUri() }}</code>
+        </section>
+      }
+
+      <details class="compose-details">
+        <summary>Review generated Compose configuration</summary>
+        <pre>{{ composePreview() }}</pre>
+      </details>
+    </div>
+  }
+
+  <footer class="wizard-actions">
+    @if (step() > 0) {
+      <button type="button" class="secondary" (click)="back()" [disabled]="saving()">Back</button>
+    } @else {
+      <a class="secondary button-link" routerLink="/projects">Cancel</a>
+    }
+    <span class="action-spacer"></span>
+    @if (step() < 3) {
+      <button type="button" (click)="next()">Continue</button>
+    } @else {
+      <button type="button" (click)="createProject()" [disabled]="saving()">
+        {{ saving() ? 'Creating project…' : 'Create project' }}
+      </button>
+    }
+  </footer>
+</section>

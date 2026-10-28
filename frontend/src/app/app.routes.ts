@@ -4,7 +4,7 @@ export const routes: Routes = [
   {
     path: '',
     pathMatch: 'full',
-    redirectTo: 'projects',
+    redirectTo: 'containers',
   },
   {
     path: 'projects',
@@ -17,9 +17,14 @@ export const routes: Routes = [
       import('./pages/login-page/login-page').then((m) => m.LoginPage),
   },
   {
-    path: 'projects/new',
+    path: 'projects/new/advanced',
     loadComponent: () =>
       import('./pages/project-settings-page/project-settings-page').then((m) => m.ProjectSettingsPage),
+  },
+  {
+    path: 'projects/new',
+    loadComponent: () =>
+      import('./pages/project-setup-wizard-page/project-setup-wizard-page').then((m) => m.ProjectSetupWizardPage),
   },
   {
     path: 'projects/:name/overview',
