@@ -235,6 +235,7 @@ export interface ProjectNotificationSettings {
 export interface DeleteProjectPayload {
   confirmationName: string;
   stopContainers: boolean;
+  deleteVolumes: boolean;
   deleteCheckout: boolean;
   deleteDeploymentHistory: boolean;
 }

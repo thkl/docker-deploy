@@ -103,6 +103,29 @@ export class ProjectSetupWizardPage implements OnInit, OnDestroy {
     const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
     return server?.capabilities?.traefik.dockerProviderNetwork || server?.capabilities?.traefik.networks?.[0] || '';
   });
+  protected readonly traefikRoutingWarning = computed(() => {
+    if (!this.traefikEnabled()) return '';
+    const server = this.store.servers().find((candidate) => candidate.id === this.selectedServerId());
+    if (server?.kind !== 'remote') return '';
+
+    const traefik = server.capabilities?.traefik;
+    if (!traefik) return '';
+    if (traefik?.providerMode === 'swarm') {
+      return 'Traefik on this agent detects Swarm services, but this wizard creates a Compose app. Traefik will ignore its container labels. Enable the Docker provider on this host or use Advanced setup to deploy as a Swarm stack from a manager.';
+    }
+    if (!traefik?.available) {
+      return 'No Traefik workload was detected on this agent. With standalone Docker, Traefik must run on this same host and share the selected network. If Traefik runs elsewhere, use Swarm or publish a host port and configure an upstream route to this node.';
+    }
+    if (!traefik.providerMode || traefik.providerMode === 'unknown') {
+      return 'Traefik is detected on this agent, but its provider could not be identified. Compose routing requires the Docker provider; a Swarm-only provider ignores Compose container labels.';
+    }
+
+    const providerNetwork = traefik.dockerProviderNetwork || traefik.networks?.[0];
+    if (providerNetwork && providerNetwork !== this.traefikNetwork()) {
+      return `Traefik reports ${providerNetwork} as its Docker provider network, but this project uses ${this.traefikNetwork()}. Use the detected network so Traefik can reach the app.`;
+    }
+    return '';
+  });
   protected readonly publicUrl = computed(() => {
     const hostname = this.hostname().trim();
     return this.traefikEnabled() && hostname ? `https://${hostname}` : '';

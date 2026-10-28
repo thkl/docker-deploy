@@ -39,8 +39,8 @@ export class LocalAgent implements AgentClient {
     /**
      * Stops project containers on the local target server.
      */
-    stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
-        return stopProjectContainers(projectName, appSettings, globalSettings);
+    stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, options: { deleteVolumes?: boolean; removeStack?: boolean } = {}) {
+        return stopProjectContainers(projectName, appSettings, globalSettings, options);
     }
 
     /**

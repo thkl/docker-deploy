@@ -65,6 +65,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly deleteError = signal('');
   protected readonly deleteConfirmation = signal('');
   protected readonly deleteStopContainers = signal(true);
+  protected readonly deleteVolumes = signal(false);
   protected readonly deleteCheckout = signal(true);
   protected readonly deleteDeploymentHistory = signal(true);
   protected readonly selectedServer = computed(() => this.store.selectedProjectServer());
@@ -387,6 +388,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.deleteError.set('');
     this.deleteConfirmation.set('');
     this.deleteStopContainers.set(true);
+    this.deleteVolumes.set(false);
     this.deleteCheckout.set(true);
     this.deleteDeploymentHistory.set(true);
   }
@@ -404,10 +406,15 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.deleteConfirmation.set((event.target as HTMLInputElement).value);
   }
 
-  protected updateDeleteOption(option: 'stop' | 'checkout' | 'history', event: Event) {
+  protected updateDeleteOption(option: 'stop' | 'volumes' | 'checkout' | 'history', event: Event) {
     const checked = (event.target as HTMLInputElement).checked;
     if (option === 'stop') {
       this.deleteStopContainers.set(checked);
+      if (!checked) {
+        this.deleteVolumes.set(false);
+      }
+    } else if (option === 'volumes') {
+      this.deleteVolumes.set(checked);
     } else if (option === 'checkout') {
       this.deleteCheckout.set(checked);
     } else {
@@ -432,6 +439,7 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.api.deleteProject(project.id, {
       confirmationName: this.deleteConfirmation(),
       stopContainers: this.deleteStopContainers(),
+      deleteVolumes: this.deleteVolumes(),
       deleteCheckout: this.deleteCheckout(),
       deleteDeploymentHistory: this.deleteDeploymentHistory(),
     }).subscribe({

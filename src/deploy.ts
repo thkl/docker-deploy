@@ -1335,7 +1335,7 @@ function redactValues(value: string, secrets: string[]) {
  * Runs `docker compose down` for a project using the same compose file selection
  * rules as a deployment.
  */
-export async function stopProjectContainers(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+export async function stopProjectContainers(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, options: { deleteVolumes?: boolean; removeStack?: boolean } = {}) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
     const deploymentStrategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
@@ -1355,12 +1355,24 @@ export async function stopProjectContainers(repoName: string, appSettings: Proje
                 PROJECT_ROOT=${quotedHostAppsPath}
                 PROJECT_NAME=${shellQuote(composeProjectName)}
                 DEPLOYMENT_STRATEGY=${shellQuote(deploymentStrategy)}
+                DELETE_VOLUMES=${shellQuote(Boolean(options.deleteVolumes))}
+                REMOVE_STACK=${shellQuote(options.removeStack !== false)}
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
 
                 if [ "$DEPLOYMENT_STRATEGY" = "swarm" ]; then
-                    echo "--> Removing Swarm stack..."
-                    docker stack rm "$PROJECT_NAME"
-                    exit $?
+                    if [ "$REMOVE_STACK" = "true" ]; then
+                        echo "--> Removing Swarm stack..."
+                        docker stack rm --detach=false "$PROJECT_NAME" || exit $?
+                    fi
+
+                    if [ "$DELETE_VOLUMES" = "true" ]; then
+                        echo "--> Removing project-created Swarm volumes on this server..."
+                        STACK_VOLUMES="$(docker volume ls --quiet --filter "label=com.docker.stack.namespace=$PROJECT_NAME")" || exit $?
+                        for volume in $STACK_VOLUMES; do
+                            docker volume rm "$volume" || exit $?
+                        done
+                    fi
+                    exit 0
                 fi
 
                 if [ -f "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" ]; then
@@ -1375,7 +1387,11 @@ ${traefikOverrideScript}
                 fi
 
                 echo "--> Stopping project containers..."
-                docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES down
+                VOLUME_OPTION=""
+                if [ "$DELETE_VOLUMES" = "true" ]; then
+                    VOLUME_OPTION="--volumes"
+                fi
+                docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES down $VOLUME_OPTION
 EOF`;
 
     const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });

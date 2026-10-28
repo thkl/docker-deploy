@@ -989,6 +989,11 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 return;
             }
 
+            if (payload.deleteVolumes && !payload.stopContainers) {
+                res.status(400).json({ error: "Project volumes can only be deleted when project containers are stopped." });
+                return;
+            }
+
             const globalSettings = globalSettingsStore.readSettings();
             const actions: string[] = [];
             const agent = agentManager.getClient(appSettings.serverId ?? "local");
@@ -1007,9 +1012,35 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             }
 
             if (payload.stopContainers) {
-                for (const serverId of targetServerIds(appSettings)) {
-                    await agentManager.getClient(serverId).stopProject(projectName, { ...appSettings, serverId }, globalSettings);
-                    actions.push(`containers stopped on ${serverId}`);
+                const targets = targetServerIds(appSettings);
+                const isSwarm = appSettings.deploymentStrategy === "swarm";
+                const swarmManagerId = isSwarm
+                    ? agentManager.findSwarmManagerServerId(targets) ?? targets[0] ?? "local"
+                    : undefined;
+                const stopTargets = isSwarm && !payload.deleteVolumes
+                    ? [swarmManagerId!]
+                    : isSwarm
+                        ? [swarmManagerId!, ...targets.filter((serverId) => serverId !== swarmManagerId)]
+                        : targets;
+
+                for (const serverId of stopTargets) {
+                    await agentManager.getClient(serverId).stopProject(
+                        projectName,
+                        { ...appSettings, serverId },
+                        globalSettings,
+                        { deleteVolumes: Boolean(payload.deleteVolumes), removeStack: !isSwarm || serverId === swarmManagerId }
+                    );
+                    if (!isSwarm) {
+                        actions.push(payload.deleteVolumes
+                            ? `containers and project-created volumes removed on ${serverId}`
+                            : `containers stopped on ${serverId}`);
+                    } else if (serverId === swarmManagerId) {
+                        actions.push(payload.deleteVolumes
+                            ? `Swarm stack removed and project-created volumes cleaned on ${serverId}`
+                            : `Swarm stack removed on ${serverId}`);
+                    } else if (payload.deleteVolumes) {
+                        actions.push(`project-created volumes cleaned on ${serverId}`);
+                    }
                 }
             }
 

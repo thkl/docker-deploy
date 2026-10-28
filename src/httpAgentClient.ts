@@ -64,10 +64,10 @@ export class HttpAgentClient implements AgentClient {
     /**
      * Stops a remote project.
      */
-    async stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+    async stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, options: { deleteVolumes?: boolean; removeStack?: boolean } = {}) {
         const accepted = await this.postJob<{ result: string }>({
             jobType: "stop",
-            payload: { projectName, appSettings, globalSettings }
+            payload: { projectName, appSettings, globalSettings, ...options }
         });
         return accepted.result || "";
     }

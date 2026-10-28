@@ -351,6 +351,7 @@ export interface ProjectPayload {
 export interface DeleteProjectPayload {
     confirmationName?: string;
     stopContainers?: boolean;
+    deleteVolumes?: boolean;
     deleteCheckout?: boolean;
     deleteDeploymentHistory?: boolean;
 }

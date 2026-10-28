@@ -17,7 +17,10 @@ export interface InspectComposeJobPayload extends DeployJobPayload {}
 
 export interface ValidateComposeJobPayload extends DeployJobPayload {}
 
-export interface StopJobPayload extends DeployJobPayload {}
+export interface StopJobPayload extends DeployJobPayload {
+    deleteVolumes?: boolean;
+    removeStack?: boolean;
+}
 
 export interface InspectStatusJobPayload extends DeployJobPayload {}
 
@@ -94,7 +97,7 @@ export interface AgentClient {
     deployReleaseSnapshot(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks?: DeploymentHooks): RuntimeLogStream | Promise<RuntimeLogStream | void> | void;
     captureReleaseSnapshot(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<CapturedReleaseSnapshot>;
     reconnectDeploymentLog?(jobId: string, streamToken: string, hooks?: DeploymentHooks): RuntimeLogStream;
-    stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<string>;
+    stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, options?: { deleteVolumes?: boolean; removeStack?: boolean }): Promise<string>;
     importCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ImportedCompose>;
     inspectCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ComposeInspection>;
     validateCompose(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<ComposeValidation>;

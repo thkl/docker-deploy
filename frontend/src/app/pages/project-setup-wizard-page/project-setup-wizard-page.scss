@@ -395,6 +395,22 @@ h4 {
   padding: 0.65rem;
 }
 
+.database-password-note {
+  background: color-mix(in srgb, var(--warning), var(--panel) 94%);
+  border: 1px solid color-mix(in srgb, var(--warning), transparent 72%);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  margin: 0;
+  padding: 0.58rem 0.66rem;
+}
+
+.database-password-note code {
+  font-size: 0.69rem;
+  overflow-wrap: anywhere;
+}
+
 .credential-preview code {
   font-size: 0.72rem;
   overflow-wrap: anywhere;
@@ -482,6 +498,17 @@ h4 {
   font-size: 0.76rem;
   margin: 0;
   padding: 0.56rem 0.9rem;
+}
+
+.notice.warning {
+  background: color-mix(in srgb, var(--warning), var(--panel) 94%);
+  border: 1px solid color-mix(in srgb, var(--warning), transparent 70%);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  margin: 0;
+  padding: 0.58rem 0.68rem;
 }
 
 .wizard-actions {

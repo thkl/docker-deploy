@@ -698,6 +698,10 @@
           <span>{{ project.deploymentStrategy === 'swarm' ? 'Remove Swarm stack' : 'Stop containers with Docker Compose' }}</span>
         </label>
         <label class="check-row">
+          <input type="checkbox" [checked]="deleteVolumes()" (change)="updateDeleteOption('volumes', $event)" [disabled]="deleting() || !deleteStopContainers()" />
+          <span>Delete all project-created volumes <small>(database and other volume data will be permanently removed)</small></span>
+        </label>
+        <label class="check-row">
           <input type="checkbox" [checked]="deleteCheckout()" (change)="updateDeleteOption('checkout', $event)" [disabled]="deleting()" />
           <span>Delete project root <code>{{ project.path }}</code></span>
         </label>

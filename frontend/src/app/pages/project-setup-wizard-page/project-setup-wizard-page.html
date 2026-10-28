@@ -211,6 +211,9 @@
             </div>
           }
           <p class="credential-note">The database service is reachable from the app as <code>database</code> on port {{ database() === 'postgres' ? '5432' : '3306' }}. The wizard adds these environment variables to the app’s Compose service.</p>
+          @if (database() === 'postgres') {
+            <p class="database-password-note"><strong>Reusing a PostgreSQL volume?</strong> <code>POSTGRES_PASSWORD</code> initializes an empty volume only. To change the password for an existing database, update the PostgreSQL role with <code>\password {{ databaseUser() }}</code> in <code>psql</code> so it matches the app’s configured password.</p>
+          }
         </section>
       }
     </div>
@@ -233,6 +236,9 @@
       </label>
 
       @if (traefikEnabled()) {
+        @if (traefikRoutingWarning()) {
+          <p class="notice warning" role="status">{{ traefikRoutingWarning() }}</p>
+        }
         <div class="field-grid traffic-fields">
           @if (availableDomains().length) {
             <label class="field span-all">
@@ -307,6 +313,10 @@
           <div><dt>Certificate</dt><dd>Wildcard · *.{{ wildcardDomain() }}</dd></div>
         }
       </dl>
+
+      @if (traefikRoutingWarning()) {
+        <p class="notice warning" role="status">{{ traefikRoutingWarning() }}</p>
+      }
 
       @if (database() !== 'none') {
         <section class="credential-preview">
