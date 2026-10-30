@@ -151,7 +151,8 @@ export class ContainerStatsStreamHub {
     private handleOutput(serverId: string, feed: ServerStatsFeed, chunk: string) {
         if (feed.stopped) return;
         if (chunk.trim()) feed.outputReceived = true;
-        const lines = `${feed.buffer}${chunk}`.split(/\r?\n/);
+        const normalizedOutput = stripTerminalControls(`${feed.buffer}${chunk}`);
+        const lines = normalizedOutput.split(/[\r\n]+/);
         feed.buffer = lines.pop() ?? "";
         if (feed.buffer.length > 64_000) feed.buffer = "";
 
@@ -257,4 +258,10 @@ function parsePercent(value?: string) {
     if (!value) return undefined;
     const parsed = Number.parseFloat(value.replace("%", "").trim());
     return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function stripTerminalControls(value: string) {
+    return value
+        .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
+        .replace(/\u001B\][^\u0007]*(?:\u0007|\u001B\\)/g, "");
 }
