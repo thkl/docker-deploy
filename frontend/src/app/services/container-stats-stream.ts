@@ -6,7 +6,7 @@ import { AuthService } from './auth';
 export type ContainerStatsStreamEvent =
   | { type: 'status'; status: 'connecting' | 'live' | 'closed' }
   | { type: 'stats'; samples: ContainerStatsSample[] }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string; retryable?: boolean };
 
 @Injectable({ providedIn: 'root' })
 export class ContainerStatsStreamService {
@@ -18,6 +18,7 @@ export class ContainerStatsStreamService {
       let reconnectTimer: ReturnType<typeof window.setTimeout> | undefined;
       let reconnectDelay = 1000;
       let closed = false;
+      let retryDisabled = false;
 
       const connect = () => {
         subscriber.next({ type: 'status', status: 'connecting' });
@@ -28,14 +29,16 @@ export class ContainerStatsStreamService {
         };
         nextSocket.onmessage = (event) => {
           try {
-            subscriber.next(JSON.parse(event.data) as ContainerStatsStreamEvent);
+            const message = JSON.parse(event.data) as ContainerStatsStreamEvent;
+            if (message.type === 'error' && message.retryable === false) retryDisabled = true;
+            subscriber.next(message);
           } catch (error) {
             subscriber.error(error);
           }
         };
         nextSocket.onerror = () => nextSocket.close();
         nextSocket.onclose = () => {
-          if (closed || subscriber.closed) return;
+          if (closed || retryDisabled || subscriber.closed) return;
           reconnectTimer = window.setTimeout(connect, reconnectDelay);
           reconnectDelay = Math.min(reconnectDelay * 2, 10_000);
         };

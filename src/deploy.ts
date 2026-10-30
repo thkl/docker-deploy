@@ -2754,7 +2754,7 @@ export async function inspectContainers(): Promise<ContainerInventory> {
 
 /** Streams Docker's live resource samples for all running containers. */
 export function followContainerStats(hooks: RuntimeLogHooks = {}): RuntimeLogStream {
-    const worker = spawn("docker", ["stats", "--no-trunc", "--format", "{{json .}}"], { stdio: ["ignore", "pipe", "pipe"] });
+    const worker = spawn("docker", ["stats", "--no-trunc", "--format=json"], { stdio: ["ignore", "pipe", "pipe"] });
     return wireRuntimeLogWorker(worker, hooks);
 }
 

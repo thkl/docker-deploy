@@ -30,6 +30,7 @@ interface ServerStatsFeed {
     live: boolean;
     outputReceived: boolean;
     parseFailed: boolean;
+    firstInvalidLine: string;
     lastStderr: string;
     stopped: boolean;
 }
@@ -87,6 +88,7 @@ export class ContainerStatsStreamHub {
                 live: false,
                 outputReceived: false,
                 parseFailed: false,
+                firstInvalidLine: "",
                 lastStderr: "",
                 stopped: false
             };
@@ -119,7 +121,7 @@ export class ContainerStatsStreamHub {
                     else feed.lastStderr = `${feed.lastStderr}${chunk}`.slice(-2_000).trim();
                 },
                 onClose: () => this.finishFeed(serverId, feed),
-                onFailure: (error) => this.failFeed(serverId, feed, this.withLastStderr(feed, error.message))
+                onFailure: (error) => this.failFeed(serverId, feed, this.withLastStderr(feed, error.message), false)
             });
             feed.starting = false;
             if (feed.stopped || this.feeds.get(serverId) !== feed) {
@@ -131,11 +133,11 @@ export class ContainerStatsStreamHub {
                 feed.sampleTimeout = setTimeout(() => {
                     if (feed.stopped || feed.live) return;
                     const detail = feed.parseFailed
-                        ? "Docker stats returned output, but it was not valid JSON stats data."
+                        ? `Docker stats output was not valid JSON stats data${feed.firstInvalidLine ? `: ${feed.firstInvalidLine}` : "."}`
                         : feed.outputReceived
                             ? "Docker stats returned incomplete rows. Check the agent's Docker CLI output."
                             : "No Docker stats samples arrived. Check that the agent is updated and the host has a running container.";
-                    this.failFeed(serverId, feed, this.withLastStderr(feed, detail));
+                    this.failFeed(serverId, feed, this.withLastStderr(feed, detail), feed.parseFailed ? false : true);
                 }, statsSampleTimeoutMs);
             }
         } catch (error) {
@@ -158,6 +160,7 @@ export class ContainerStatsStreamHub {
             const sample = parseStatsLine(line);
             if (!sample) {
                 feed.parseFailed = true;
+                if (!feed.firstInvalidLine) feed.firstInvalidLine = line.trim().slice(0, 300);
                 continue;
             }
             feed.pendingSamples.set(sample.id || sample.name, sample);
@@ -187,9 +190,9 @@ export class ContainerStatsStreamHub {
         this.stopFeed(serverId, feed);
     }
 
-    private failFeed(serverId: string, feed: ServerStatsFeed, error: string) {
+    private failFeed(serverId: string, feed: ServerStatsFeed, error: string, retryable = true) {
         if (feed.stopped) return;
-        this.broadcast(feed, { type: "error", error });
+        this.broadcast(feed, { type: "error", error, retryable });
         for (const client of feed.clients) client.close();
         this.stopFeed(serverId, feed);
     }
