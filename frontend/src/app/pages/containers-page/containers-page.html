@@ -1,7 +1,7 @@
 <section class="page-head">
   <div>
     <h2>Containers</h2>
-    <p>Health, resource use, and live logs from every connected Docker host.</p>
+    <p>Health, live logs, and 10-minute CPU and memory trends across connected Docker hosts.</p>
   </div>
   <div class="head-actions">
     <span class="refresh-state">{{ refreshing() ? 'Updating…' : 'Refreshes every 10 seconds' }}</span>
@@ -102,14 +102,24 @@
                 </span>
               </span>
               </button>
-              <span class="resource-cell">
+              <span class="resource-cell cpu-cell">
                 <small>CPU</small>
                 <strong>{{ formatPercent(container.cpuPercent) }}</strong>
+                @if (metricSparklinePoints(container, 'cpu'); as points) {
+                  <svg class="metric-sparkline cpu-sparkline" viewBox="0 0 72 18" role="img" [attr.aria-label]="metricSparklineLabel(container, 'cpu')">
+                    <polyline [attr.points]="points" />
+                  </svg>
+                }
               </span>
               <span class="resource-cell memory-cell">
                 <small>Memory</small>
                 <strong>{{ container.memoryUsage || '—' }}</strong>
                 <span>{{ formatPercent(container.memoryPercent) }}</span>
+                @if (metricSparklinePoints(container, 'memory'); as points) {
+                  <svg class="metric-sparkline memory-sparkline" viewBox="0 0 72 18" role="img" [attr.aria-label]="metricSparklineLabel(container, 'memory')">
+                    <polyline [attr.points]="points" />
+                  </svg>
+                }
               </span>
               <span class="resource-cell restart-cell">
                 <small>Restarts</small>

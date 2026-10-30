@@ -206,7 +206,7 @@ p {
   display: grid;
   font: inherit;
   gap: 0.48rem;
-  grid-template-columns: minmax(0, 1fr) 48px minmax(88px, 0.34fr) 48px auto;
+  grid-template-columns: minmax(0, 1fr) 78px 106px 56px 66px;
   padding: 0.58rem 0.65rem;
   text-align: left;
   width: 100%;
@@ -350,6 +350,27 @@ p {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.metric-sparkline {
+  display: block;
+  height: 16px;
+  max-width: 100%;
+  overflow: visible;
+  width: 72px;
+}
+
+.metric-sparkline polyline {
+  fill: none;
+  stroke: var(--accent-strong);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.memory-sparkline polyline {
+  stroke: var(--running);
 }
 
 .logs-panel {
@@ -583,7 +604,7 @@ p {
   }
 
   .container-row {
-    grid-template-columns: minmax(0, 1fr) 42px 84px auto;
+    grid-template-columns: minmax(0, 1fr) 64px 82px 42px;
   }
 
   .container-layout {
