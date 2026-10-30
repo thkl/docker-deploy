@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, StopJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, StopJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, resetAgentPairing, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
@@ -277,12 +277,12 @@ export class AgentRuntime {
         }
 
         if (request.jobType === "deployReleaseSnapshot") {
-            const payload = request.payload as { release: Parameters<LocalAgent["deployReleaseSnapshot"]>[0]; globalSettings: Parameters<LocalAgent["deployReleaseSnapshot"]>[1] };
+            const payload = request.payload as ReleaseSnapshotJobPayload;
             const stream = this.localAgent.deployReleaseSnapshot(payload.release, payload.globalSettings, {
                 onOutput: (stream, chunk) => this.emitFrame(accepted.jobId, { stream, chunk }),
-                onSuccess: () => this.emitFrame(accepted.jobId, { stream: "status", chunk: "Release rollback completed.", done: true, success: true }),
+                onSuccess: () => this.emitFrame(accepted.jobId, { stream: "status", chunk: "Release deployment completed.", done: true, success: true }),
                 onFailure: (error) => this.emitFrame(accepted.jobId, { stream: "status", chunk: error.message, done: true, success: false, error: error.message })
-            }) as RuntimeLogStream;
+            }, { appSettings: payload.appSettings, requireRegistryPull: payload.requireRegistryPull }) as RuntimeLogStream;
             const job = this.jobs.get(accepted.jobId);
             if (job) {
                 job.cancel = () => stream.stop();

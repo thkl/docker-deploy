@@ -17,6 +17,7 @@ import { VaultSecretStore } from "./vaultSecretStore.js";
 export class DeploymentService {
     private readonly activeDeployments = new Map<string, RuntimeLogStream>();
     private readonly serverQueues = new Map<string, Promise<void>>();
+    private readonly scheduledDeploymentTargets = new Set<string>();
 
     constructor(
         private readonly deploymentStore: DeploymentStore,
@@ -35,11 +36,21 @@ export class DeploymentService {
      * into persisted deployment history plus WebSocket broadcasts.
      */
     startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
-        const serverIds = this.targetDeploymentServerIds(appSettings);
-        const run = this.deploymentStore.startRun(projectName, trigger, serverIds);
+        const configuredServerIds = this.targetDeploymentServerIds(appSettings);
+        const masterServerId = this.registryFanoutMasterServerId(appSettings, configuredServerIds);
+        const serverIds = masterServerId
+            ? [masterServerId, ...configuredServerIds.filter((serverId) => serverId !== masterServerId)]
+            : configuredServerIds;
+        const run = this.deploymentStore.startRun(projectName, trigger, serverIds, masterServerId ?? undefined);
         this.broadcastDeploymentUpdate(projectName, run);
-        for (const target of run.targets ?? []) {
-            this.startDeploymentTarget(projectName, appSettings, target, target.serverId);
+        const targets = run.targets ?? [];
+        const masterTarget = masterServerId ? targets.find((target) => target.serverId === masterServerId) : undefined;
+        if (masterTarget) {
+            this.startDeploymentTarget(projectName, appSettings, masterTarget, masterTarget.serverId);
+        } else {
+            for (const target of targets) {
+                this.startDeploymentTarget(projectName, appSettings, target, target.serverId);
+            }
         }
         return run;
     }
@@ -65,27 +76,53 @@ export class DeploymentService {
         return run;
     }
 
-    private startDeploymentTarget(projectName: string, appSettings: ProjectSettings, deployment: DeploymentRecord, serverId: string) {
+    private startDeploymentTarget(
+        projectName: string,
+        appSettings: ProjectSettings,
+        deployment: DeploymentRecord,
+        serverId: string,
+        releaseSnapshot?: NonNullable<ReturnType<ReleaseStore["get"]>>
+    ) {
+        if (this.scheduledDeploymentTargets.has(deployment.id) || this.activeDeployments.has(deployment.id)) {
+            return;
+        }
+        this.scheduledDeploymentTargets.add(deployment.id);
         const previous = this.serverQueues.get(serverId) ?? Promise.resolve();
         const queued = previous
             .catch(() => undefined)
-            .then(() => this.dispatchDeploymentTarget(projectName, appSettings, deployment, serverId));
-        this.serverQueues.set(serverId, queued.finally(() => {
-            if (this.serverQueues.get(serverId) === queued) {
+            .then(() => releaseSnapshot
+                ? this.dispatchRegistrySnapshotReplica(projectName, appSettings, deployment, serverId, releaseSnapshot)
+                : this.dispatchDeploymentTarget(projectName, appSettings, deployment, serverId))
+            .catch((error) => {
+                const current = this.deploymentStore.get(deployment.id);
+                if (current?.status !== "running") return;
+                this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                    error: readErrorMessage(error),
+                    exitCode: "dispatch",
+                    phase: "failed"
+                });
+                this.scheduledDeploymentTargets.delete(deployment.id);
+                this.broadcastDeploymentUpdate(projectName);
+                this.failQueuedRegistryReplicas(projectName, deployment, appSettings, "The primary target could not start deployment.");
+            });
+        const settled = queued.finally(() => {
+            if (this.serverQueues.get(serverId) === settled) {
                 this.serverQueues.delete(serverId);
             }
-        }));
+        });
+        this.serverQueues.set(serverId, settled);
     }
 
     private async dispatchDeploymentTarget(projectName: string, appSettings: ProjectSettings, deployment: DeploymentRecord, serverId: string) {
         const current = this.deploymentStore.get(deployment.id);
         if (current?.status !== "running") {
+            this.scheduledDeploymentTargets.delete(deployment.id);
             return;
         }
 
         let targetSettings: ProjectSettings;
         try {
-            targetSettings = this.resolveDeploymentSecrets({ ...appSettings, serverId });
+            targetSettings = this.resolveDeploymentSecrets(this.registryTargetSettings(appSettings, deployment, serverId));
         } catch (error) {
             this.deploymentStore.finish(projectName, deployment.id, "failed", {
                 error: error instanceof Error ? error.message : "Could not resolve deployment secrets.",
@@ -93,6 +130,8 @@ export class DeploymentService {
                 phase: "failed"
             });
             this.broadcastDeploymentUpdate(projectName);
+            this.scheduledDeploymentTargets.delete(deployment.id);
+            this.failQueuedRegistryReplicas(projectName, deployment, appSettings, "The primary target could not prepare deployment secrets.");
             return;
         }
         const globalSettings = this.globalSettingsStore.readSettings();
@@ -114,7 +153,7 @@ export class DeploymentService {
                 this.publishDeployment(projectName, this.deploymentStore.latest(projectName));
             },
             onSuccess: () => {
-                void this.finishSuccessfulDeployment(projectName, deployment.id, targetSettings, globalSettings);
+                this.handleSuccessfulDeployment(projectName, deployment, targetSettings, globalSettings);
             },
             onFailure: (error) => {
                 const current = this.deploymentStore.get(deployment.id);
@@ -146,8 +185,10 @@ export class DeploymentService {
                     exitCode: error.code,
                     phase: "failed"
                 });
+                this.scheduledDeploymentTargets.delete(deployment.id);
                 this.broadcastDeploymentUpdate(projectName);
                 void this.refreshServerHealth(serverId);
+                this.failQueuedRegistryReplicas(projectName, deployment, appSettings, "The primary target failed before publishing the registry image.");
             }
         });
 
@@ -167,11 +208,105 @@ export class DeploymentService {
                 exitCode: "dispatch",
                 phase: "failed"
             });
+            this.scheduledDeploymentTargets.delete(deployment.id);
             this.broadcastDeploymentUpdate(projectName);
             void this.refreshServerHealth(serverId);
+            this.failQueuedRegistryReplicas(projectName, deployment, appSettings, "The primary target could not start the registry image deployment.");
         });
 
         return;
+    }
+
+    private async dispatchRegistrySnapshotReplica(
+        projectName: string,
+        appSettings: ProjectSettings,
+        deployment: DeploymentRecord,
+        serverId: string,
+        release: NonNullable<ReturnType<ReleaseStore["get"]>>
+    ) {
+        const current = this.deploymentStore.get(deployment.id);
+        if (current?.status !== "running") {
+            this.scheduledDeploymentTargets.delete(deployment.id);
+            return;
+        }
+
+        let targetSettings: ProjectSettings;
+        try {
+            targetSettings = this.resolveDeploymentSecrets(this.registryTargetSettings(appSettings, deployment, serverId));
+        } catch (error) {
+            this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                error: error instanceof Error ? error.message : "Could not resolve deployment secrets.",
+                exitCode: "secret-resolution",
+                phase: "failed"
+            });
+            this.scheduledDeploymentTargets.delete(deployment.id);
+            this.broadcastDeploymentUpdate(projectName);
+            return;
+        }
+
+        const globalSettings = this.globalSettingsStore.readSettings();
+        const targetRelease = {
+            ...release,
+            serverId,
+            projectPath: targetSettings.path ?? defaultProjectPath(globalSettings, projectName)
+        };
+        this.deploymentStore.setPhase(projectName, deployment.id, "dispatching");
+        this.broadcastDeploymentUpdate(projectName);
+        await this.refreshServerHealth(serverId);
+
+        const agent = this.agentManager.getClient(serverId);
+        const deploymentRun = agent.deployReleaseSnapshot(targetRelease, globalSettings, {
+            onAccepted: (job) => {
+                this.deploymentStore.setAgentJob(projectName, deployment.id, job);
+                this.deploymentStore.setPhase(projectName, deployment.id, "running");
+                this.broadcastDeploymentUpdate(projectName);
+            },
+            onOutput: (stream, chunk) => {
+                this.deploymentStore.setPhase(projectName, deployment.id, "running");
+                this.deploymentStore.append(projectName, deployment.id, stream, chunk);
+                this.broadcastDeployment(projectName);
+                this.publishDeployment(projectName, this.deploymentStore.latest(projectName));
+            },
+            onSuccess: () => this.handleSuccessfulDeployment(projectName, deployment, targetSettings, globalSettings),
+            onFailure: (error) => {
+                const latest = this.deploymentStore.get(deployment.id);
+                if (latest?.status !== "running") return;
+                this.activeDeployments.delete(deployment.id);
+                if (error.code === "remote-agent-job-lost") {
+                    this.deploymentStore.setPhase(projectName, deployment.id, "reconnecting");
+                    this.deploymentStore.append(projectName, deployment.id, "stdout", "--> Remote agent restarted before registry image deployment was recorded. Waiting for runtime reconciliation.\n");
+                    this.broadcastDeploymentUpdate(projectName);
+                    void this.reconcileDeployment(projectName, deployment.id, targetSettings, globalSettings, "Remote agent restarted before registry image deployment was recorded", "remote-agent-restart");
+                    return;
+                }
+                this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                    error: error.message,
+                    exitCode: error.code,
+                    phase: "failed"
+                });
+                this.scheduledDeploymentTargets.delete(deployment.id);
+                this.broadcastDeploymentUpdate(projectName);
+                void this.refreshServerHealth(serverId);
+            }
+        }, { appSettings: targetSettings, requireRegistryPull: true });
+
+        if (isRuntimeLogStream(deploymentRun)) {
+            this.activeDeployments.set(deployment.id, deploymentRun);
+        }
+        Promise.resolve(deploymentRun).then((stream) => {
+            const latest = this.deploymentStore.get(deployment.id);
+            if (stream && latest?.status === "running") this.activeDeployments.set(deployment.id, stream);
+        }).catch((error) => {
+            this.activeDeployments.delete(deployment.id);
+            this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                error: readErrorMessage(error),
+                exitCode: "dispatch",
+                phase: "failed"
+            });
+            this.scheduledDeploymentTargets.delete(deployment.id);
+            this.broadcastDeploymentUpdate(projectName);
+            void this.refreshServerHealth(serverId);
+        });
     }
 
     private startRollbackTarget(projectName: string, appSettings: ProjectSettings, release: NonNullable<ReturnType<ReleaseStore["get"]>>, deployment: DeploymentRecord, serverId: string) {
@@ -255,23 +390,145 @@ export class DeploymentService {
     private async finishSuccessfulDeployment(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
         const current = this.deploymentStore.get(deploymentId);
         if (current?.status !== "running") {
-            return;
+            return undefined;
         }
 
         this.activeDeployments.delete(deploymentId);
         this.deploymentStore.setPhase(projectName, deploymentId, "cleanup");
-        await this.captureReleaseSnapshot(projectName, deploymentId, appSettings, globalSettings);
+        const release = await this.captureReleaseSnapshot(projectName, deploymentId, appSettings, globalSettings);
         await this.cleanupCheckoutAfterDeploy(projectName, deploymentId, appSettings, globalSettings);
         this.deploymentStore.finish(projectName, deploymentId, "succeeded", { phase: "succeeded" });
         this.broadcastDeploymentUpdate(projectName);
         void this.refreshServerHealth(appSettings.serverId ?? "local");
         void this.refreshRuntimeStatus(projectName);
+        return release;
+    }
+
+    private handleSuccessfulDeployment(projectName: string, deployment: DeploymentRecord, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        void this.finishSuccessfulDeployment(projectName, deployment.id, appSettings, globalSettings).then((release) => {
+            this.scheduledDeploymentTargets.delete(deployment.id);
+            this.startQueuedRegistryReplicas(projectName, deployment, appSettings, release);
+        }).catch((error) => {
+            this.scheduledDeploymentTargets.delete(deployment.id);
+            const current = this.deploymentStore.get(deployment.id);
+            if (current?.status === "running") {
+                this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                    error: readErrorMessage(error),
+                    exitCode: "deployment-finalization",
+                    phase: "failed"
+                });
+            }
+            this.broadcastDeploymentUpdate(projectName);
+            this.failQueuedRegistryReplicas(projectName, deployment, appSettings, "The primary target could not finish before replica deployment.");
+        });
+    }
+
+    private startQueuedRegistryReplicas(
+        projectName: string,
+        masterDeployment: DeploymentRecord,
+        appSettings: ProjectSettings,
+        release?: NonNullable<ReturnType<ReleaseStore["get"]>>
+    ) {
+        const run = masterDeployment.runId ? this.deploymentStore.getRun(masterDeployment.runId) : null;
+        if (!run?.masterServerId || !run.targets?.length) {
+            return;
+        }
+        const masterServerId = run.masterServerId;
+        const masterTarget = run.targets.find((target) => target.serverId === masterServerId);
+        if (!masterTarget || masterTarget.serverId !== masterDeployment.serverId || masterTarget.status !== "succeeded") {
+            return;
+        }
+
+        for (const target of run.targets.filter((target) => target.serverId !== masterServerId)) {
+            if (target.status !== "running") continue;
+            this.appendDeploymentLine(projectName, target.id, "stdout", `--> Primary target ${masterDeployment.serverId} published the image; pulling the shared registry image now.`);
+            const reusableSnapshot = release && !release.sourceCheckoutRequired && release.buildServices.length === 0 ? release : undefined;
+            this.startDeploymentTarget(projectName, appSettings, target, target.serverId, reusableSnapshot);
+        }
+    }
+
+    private failQueuedRegistryReplicas(projectName: string, deployment: DeploymentRecord, appSettings: ProjectSettings, reason: string) {
+        const run = deployment.runId ? this.deploymentStore.getRun(deployment.runId) : null;
+        if (!run?.masterServerId || !run.targets?.length) {
+            return;
+        }
+        const masterServerId = run.masterServerId;
+        if (masterServerId !== deployment.serverId) return;
+
+        for (const target of run.targets.filter((candidate) => candidate.serverId !== masterServerId)) {
+            if (target.status !== "running" || target.phase !== "queued") continue;
+            const message = `Replica deployment was not started because primary target ${deployment.serverId} failed. ${reason}`;
+            this.appendDeploymentLine(projectName, target.id, "stderr", `--> ${message}`);
+            this.deploymentStore.finish(projectName, target.id, "failed", {
+                error: message,
+                exitCode: "registry-master-failed",
+                phase: "failed"
+            });
+        }
+        this.broadcastDeploymentUpdate(projectName);
+    }
+
+    private registryFanoutMasterServerId(appSettings: ProjectSettings, serverIds: string[]) {
+        if (!this.registryFanoutEnabled(appSettings, serverIds)) {
+            return null;
+        }
+        const primaryServerId = appSettings.serverId?.trim();
+        return primaryServerId && serverIds.includes(primaryServerId) ? primaryServerId : serverIds[0] ?? null;
+    }
+
+    private registryFanoutEnabled(appSettings: ProjectSettings, serverIds: string[]) {
+        return appSettings.deploymentStrategy !== "swarm"
+            && serverIds.length > 1
+            && Boolean(appSettings.registry?.publish)
+            && Boolean(appSettings.registry?.deployFromRegistry);
+    }
+
+    private registryTargetSettings(appSettings: ProjectSettings, deployment: DeploymentRecord, serverId: string): ProjectSettings {
+        const run = deployment.runId ? this.deploymentStore.getRun(deployment.runId) : null;
+        const masterServerId = run?.masterServerId;
+        const isReplica = Boolean(masterServerId) && masterServerId !== serverId;
+        if (!isReplica) {
+            return { ...appSettings, serverId };
+        }
+
+        return {
+            ...appSettings,
+            serverId,
+            registry: {
+                ...appSettings.registry,
+                publish: false,
+                deployFromRegistry: true
+            }
+        };
+    }
+
+    private reconcileQueuedRegistryReplica(projectName: string, deployment: DeploymentRecord, appSettings: ProjectSettings) {
+        const run = deployment.runId ? this.deploymentStore.getRun(deployment.runId) : null;
+        if (!run?.masterServerId || !run.targets?.length) return false;
+        const masterServerId = run.masterServerId;
+        const master = run.targets.find((target) => target.serverId === masterServerId);
+        if (!master) return false;
+        if (deployment.serverId === master.serverId) return false;
+
+        if (master.status === "failed") {
+            this.failQueuedRegistryReplicas(projectName, master, appSettings, "The primary build/publish target failed.");
+            return true;
+        }
+        if (master.status !== "succeeded") {
+            return true;
+        }
+        if (deployment.phase === "queued" && !deployment.agentJobId) {
+            this.appendDeploymentLine(projectName, deployment.id, "stdout", `--> Primary target ${master.serverId} has published the registry image; starting this replica.`);
+            this.startDeploymentTarget(projectName, appSettings, deployment, deployment.serverId);
+            return true;
+        }
+        return false;
     }
 
     private async captureReleaseSnapshot(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
         const deployment = this.deploymentStore.get(deploymentId);
         if (!deployment) {
-            return;
+            return undefined;
         }
 
         try {
@@ -281,8 +538,10 @@ export class DeploymentService {
             this.appendDeploymentLine(projectName, deploymentId, "stdout", release.rollbackAvailable
                 ? `--> Release snapshot saved: ${release.id}.`
                 : `--> Release snapshot saved: ${release.id}. Rollback unavailable because ${release.rollbackUnavailableReason}`);
+            return release;
         } catch (error) {
             this.appendDeploymentLine(projectName, deploymentId, "stderr", `--> Release snapshot skipped: ${readErrorMessage(error)}`);
+            return undefined;
         }
     }
 
@@ -388,6 +647,7 @@ export class DeploymentService {
         }
 
         for (const target of targets) {
+            this.scheduledDeploymentTargets.delete(target.id);
             const targetStream = this.activeDeployments.get(target.id);
             if (targetStream) {
                 this.activeDeployments.delete(target.id);
@@ -430,6 +690,10 @@ export class DeploymentService {
                 this.broadcastDeploymentUpdate(deployment.projectName);
                 void this.refreshServerHealth(deployment.serverId || "local");
                 void this.refreshRuntimeStatus(deployment.projectName);
+                continue;
+            }
+
+            if (this.reconcileQueuedRegistryReplica(deployment.projectName, deployment, appSettings)) {
                 continue;
             }
 
@@ -500,6 +764,9 @@ export class DeploymentService {
             if (target.status !== "running" || this.activeDeployments.has(target.id)) {
                 continue;
             }
+            if (this.reconcileQueuedRegistryReplica(projectName, target, appSettings)) {
+                continue;
+            }
             const serverId = target.serverId || appSettings.serverId || "local";
             const targetSettings = { ...appSettings, serverId };
             if (this.reconnectDeploymentTarget(projectName, target, targetSettings, globalSettings)) {
@@ -533,6 +800,7 @@ export class DeploymentService {
 
         this.deploymentStore.setPhase(projectName, deployment.id, "reconnecting");
         this.broadcastDeployment(projectName);
+        this.scheduledDeploymentTargets.add(deployment.id);
         const stream = agent.reconnectDeploymentLog(deployment.agentJobId, deployment.agentStreamToken, this.deploymentHooks(projectName, deployment.id, appSettings, globalSettings));
         this.activeDeployments.set(deployment.id, stream);
         return true;
@@ -547,7 +815,8 @@ export class DeploymentService {
                 this.publishDeployment(projectName, this.deploymentStore.latest(projectName));
             },
             onSuccess: () => {
-                void this.finishSuccessfulDeployment(projectName, deploymentId, appSettings, globalSettings);
+                const deployment = this.deploymentStore.get(deploymentId);
+                if (deployment) this.handleSuccessfulDeployment(projectName, deployment, appSettings, globalSettings);
             },
             onFailure: (error: Error & { code?: number | string }) => {
                 const current = this.deploymentStore.get(deploymentId);
@@ -566,7 +835,9 @@ export class DeploymentService {
                     exitCode: error.code,
                     phase: "failed"
                 });
+                this.scheduledDeploymentTargets.delete(deploymentId);
                 this.broadcastDeploymentUpdate(projectName);
+                if (current) this.failQueuedRegistryReplicas(projectName, current, appSettings, "The primary build/publish target failed.");
             }
         };
     }
@@ -606,6 +877,14 @@ export class DeploymentService {
             });
         }
 
+        const reconciled = this.deploymentStore.get(deploymentId);
+        if (reconciled?.status === "succeeded") {
+            this.scheduledDeploymentTargets.delete(deploymentId);
+            this.startQueuedRegistryReplicas(projectName, reconciled, appSettings);
+        } else if (reconciled?.status === "failed") {
+            this.scheduledDeploymentTargets.delete(deploymentId);
+            this.failQueuedRegistryReplicas(projectName, reconciled, appSettings, "The primary build/publish target failed during recovery.");
+        }
         this.broadcastDeploymentUpdate(projectName);
         void this.refreshServerHealth(appSettings.serverId ?? "local");
         void this.refreshRuntimeStatus(projectName);

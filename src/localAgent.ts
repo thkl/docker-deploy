@@ -25,8 +25,13 @@ export class LocalAgent implements AgentClient {
     /**
      * Redeploys a captured release snapshot on the local target server.
      */
-    deployReleaseSnapshot(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
-        return dispatchReleaseRollbackWorker(release, globalSettings, hooks);
+    deployReleaseSnapshot(
+        release: ProjectReleaseSnapshot,
+        globalSettings: GlobalSettings,
+        hooks: DeploymentHooks = {},
+        options: { appSettings?: ProjectSettings; requireRegistryPull?: boolean } = {}
+    ) {
+        return dispatchReleaseRollbackWorker(release, globalSettings, hooks, options);
     }
 
     /**

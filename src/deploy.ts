@@ -536,14 +536,16 @@ export async function captureProjectReleaseSnapshot(repoName: string, appSetting
                 fi
 
                 echo "${snapshotBeginMarker}"
-                node - "$DEPLOY_FILE" /tmp/deploy-release-compose.json "$PROJECT_NAME" "$PROJECT_ROOT" "$DEPLOYMENT_STRATEGY" "$GIT_SHA" << 'DEPLOY_RELEASE_SNAPSHOT_JS'
+                node - "$DEPLOY_FILE" /tmp/deploy-release-compose.json "$PROJECT_NAME" "$PROJECT_ROOT" "$DEPLOYMENT_STRATEGY" "$GIT_SHA" "$RELEASE_DEPLOY" << 'DEPLOY_RELEASE_SNAPSHOT_JS'
 const fs = require("node:fs");
+const path = require("node:path");
 const deployFile = process.argv[2];
 const composeJsonFile = process.argv[3];
 const composeProjectName = process.argv[4];
-const projectPath = process.argv[5];
+const projectPath = path.resolve(process.argv[5]);
 const deploymentStrategy = process.argv[6] === "swarm" ? "swarm" : "compose";
 const gitSha = process.argv[7] || "";
+const releaseRoot = path.resolve(process.argv[8] || "");
 const composeYaml = fs.readFileSync(deployFile, "utf8");
 const compose = JSON.parse(fs.readFileSync(composeJsonFile, "utf8") || "{}");
 const services = compose && typeof compose === "object" && compose.services && typeof compose.services === "object" ? compose.services : {};
@@ -560,6 +562,35 @@ for (const [serviceName, service] of Object.entries(services)) {
     buildServices.push(serviceName);
   }
 }
+const isUnderRelease = (value) => {
+  if (typeof value !== "string" || !value.trim()) return false;
+  const resolved = path.resolve(value);
+  return resolved === releaseRoot || resolved.startsWith(releaseRoot + path.sep);
+};
+let sourceCheckoutRequired = fs.existsSync(path.join(releaseRoot, ".env")) || composeYaml.includes("\${");
+for (const service of Object.values(services)) {
+  if (!service || typeof service !== "object") continue;
+  for (const volume of Array.isArray(service.volumes) ? service.volumes : []) {
+    if (volume && typeof volume === "object" && volume.type === "bind" && isUnderRelease(volume.source)) {
+      sourceCheckoutRequired = true;
+    }
+  }
+  const envFiles = Array.isArray(service.env_file) ? service.env_file : service.env_file ? [service.env_file] : [];
+  for (const file of envFiles) {
+    const filePath = typeof file === "string" ? file : file && typeof file === "object" && typeof file.path === "string" ? file.path : "";
+    if (isUnderRelease(filePath) || (path.resolve(filePath || ".") === path.join(projectPath, ".env") && fs.existsSync(path.join(releaseRoot, ".env")))) {
+      sourceCheckoutRequired = true;
+    }
+  }
+}
+for (const resourceType of ["configs", "secrets"]) {
+  const resources = compose && typeof compose === "object" && compose[resourceType] && typeof compose[resourceType] === "object" ? compose[resourceType] : {};
+  for (const resource of Object.values(resources)) {
+    if (resource && typeof resource === "object" && isUnderRelease(resource.file)) {
+      sourceCheckoutRequired = true;
+    }
+  }
+}
 process.stdout.write(JSON.stringify({
   serverId: "",
   composeProjectName,
@@ -568,7 +599,8 @@ process.stdout.write(JSON.stringify({
   composeYaml,
   gitSha,
   images,
-  buildServices
+  buildServices,
+  sourceCheckoutRequired
 }, null, 2) + "\\n");
 DEPLOY_RELEASE_SNAPSHOT_JS
                 echo "${snapshotEndMarker}"
@@ -585,20 +617,28 @@ EOF`;
         serverId: appSettings.serverId ?? "local",
         gitSha: parsed.gitSha?.trim() || undefined,
         images: Array.isArray(parsed.images) ? parsed.images : [],
-        buildServices: Array.isArray(parsed.buildServices) ? parsed.buildServices : []
+        buildServices: Array.isArray(parsed.buildServices) ? parsed.buildServices : [],
+        sourceCheckoutRequired: Boolean(parsed.sourceCheckoutRequired)
     };
 }
 
 /**
  * Redeploys one previously captured image-based release snapshot.
  */
-export function dispatchReleaseRollbackWorker(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}): RuntimeLogStream {
+export function dispatchReleaseRollbackWorker(
+    release: ProjectReleaseSnapshot,
+    globalSettings: GlobalSettings,
+    hooks: DeploymentHooks = {},
+    options: { appSettings?: ProjectSettings; requireRegistryPull?: boolean } = {}
+): RuntimeLogStream {
     const hostAppsPath = release.projectPath;
     const composeProjectName = release.composeProjectName;
     const deploymentStrategy = release.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const registryAddress = globalSettings.registryAddress.trim();
     const registryUsername = globalSettings.registryUsername.trim();
     const registryPassword = globalSettings.registryPassword?.trim() ?? "";
+    const requireRegistryPull = Boolean(options.requireRegistryPull);
+    const secretMaterializationScript = renderReleaseSnapshotSecretMaterializationScript(options.appSettings, deploymentStrategy, composeProjectName);
     const composeDelimiter = uniqueHereDocDelimiter("DEPLOY_ROLLBACK_COMPOSE_EOF", release.composeYaml);
 
     const workerScript = `
@@ -611,11 +651,13 @@ export function dispatchReleaseRollbackWorker(release: ProjectReleaseSnapshot, g
                 REGISTRY_ADDRESS=${shellQuote(registryAddress)}
                 REGISTRY_USERNAME=${shellQuote(registryUsername)}
                 REGISTRY_PASSWORD=${shellQuote(registryPassword)}
+                REQUIRE_REGISTRY_PULL=${shellQuote(requireRegistryPull ? "true" : "false")}
                 ROLLBACK_WORKSPACE="$PROJECT_ROOT/.updater/rollback"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
                 ROLLBACK_FILE="$ROLLBACK_WORKSPACE/${release.id}.yml"
                 PERSISTED_FILE="$COMPOSE_WORKSPACE/docker-compose.deploy.yml"
                 mkdir -p "$ROLLBACK_WORKSPACE" "$COMPOSE_WORKSPACE"
+${secretMaterializationScript}
 
                 cat > "$ROLLBACK_FILE" << '${composeDelimiter}'
 ${release.composeYaml}
@@ -648,8 +690,18 @@ ${composeDelimiter}
                         exit 1
                     fi
                 else
+                    COMPOSE_FILES="-f $ROLLBACK_FILE"
+${renderExternalNetworkEnsureScript()}
                     echo "--> Pulling release images when available..."
-                    docker compose -p "$PROJECT_NAME" -f "$ROLLBACK_FILE" pull || echo "--> Image pull failed or was partially unavailable; continuing with local image cache."
+                    if [ "$REQUIRE_REGISTRY_PULL" = "true" ]; then
+                        docker compose -p "$PROJECT_NAME" -f "$ROLLBACK_FILE" pull
+                        if [ $? -ne 0 ]; then
+                            echo "--> CRITICAL: Required registry image pull failed."
+                            exit 1
+                        fi
+                    else
+                        docker compose -p "$PROJECT_NAME" -f "$ROLLBACK_FILE" pull || echo "--> Image pull failed or was partially unavailable; continuing with local image cache."
+                    fi
                     echo "--> Recreating services from release snapshot..."
                     docker compose -p "$PROJECT_NAME" -f "$ROLLBACK_FILE" up -d --no-build --remove-orphans
                     if [ $? -ne 0 ]; then
@@ -705,6 +757,33 @@ ${composeDelimiter}
             }
         }
     };
+}
+
+function renderReleaseSnapshotSecretMaterializationScript(appSettings: ProjectSettings | undefined, deploymentStrategy: DeploymentStrategy, projectName: string) {
+    if (deploymentStrategy !== "compose") {
+        return "";
+    }
+    const secrets = (appSettings?.envSecrets ?? []).filter((secret) => secret.mode === "docker_secret");
+    if (!secrets.length) {
+        return "";
+    }
+    const lines = [
+        "                echo \"--> Preparing Compose secret files for this target.\"",
+        "                mkdir -p \"$COMPOSE_WORKSPACE/secrets\"",
+        "                chmod 700 \"$COMPOSE_WORKSPACE/secrets\""
+    ];
+    for (const secret of secrets) {
+        const secretName = composeSecretMountTarget(secret.service, secret.key);
+        const projectSecretName = dockerSecretBaseName(projectName, secret);
+        const encodedValue = Buffer.from(secret.value ?? "", "utf8").toString("base64");
+        for (const name of new Set([secretName, projectSecretName])) {
+            lines.push(
+                `                printf '%s' ${shellQuote(encodedValue)} | base64 -d > \"$COMPOSE_WORKSPACE/secrets/${name}\"`,
+                `                chmod 600 \"$COMPOSE_WORKSPACE/secrets/${name}\"`
+            );
+        }
+    }
+    return lines.join("\n");
 }
 
 /**

@@ -217,6 +217,7 @@ export interface ProjectReleaseSnapshot {
     gitSha?: string;
     images: ReleaseSnapshotImage[];
     buildServices: string[];
+    sourceCheckoutRequired?: boolean;
     createdAt: string;
     rollbackAvailable: boolean;
     rollbackUnavailableReason?: string;
@@ -231,6 +232,7 @@ export interface CapturedReleaseSnapshot {
     gitSha?: string;
     images: ReleaseSnapshotImage[];
     buildServices: string[];
+    sourceCheckoutRequired?: boolean;
 }
 
 export type ProjectPreflightStatus = "pass" | "warn" | "fail";

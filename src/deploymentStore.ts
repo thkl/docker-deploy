@@ -9,6 +9,7 @@ export type DeploymentPhase = "queued" | "dispatching" | "running" | "reconnecti
 export interface DeploymentRecord {
     id: string;
     runId?: string;
+    masterServerId?: string;
     projectId?: string;
     projectName: string;
     serverId: string;
@@ -87,7 +88,7 @@ export class DeploymentStore {
         }
     }
 
-    startRun(projectName: string, trigger: DeploymentTrigger, serverIds: string[]) {
+    startRun(projectName: string, trigger: DeploymentTrigger, serverIds: string[], masterServerId?: string) {
         const now = new Date().toISOString();
         const projectId = this.projectIdByRef(projectName);
         if (!projectId) {
@@ -112,6 +113,7 @@ export class DeploymentStore {
         const run: DeploymentRecord = {
             id: runId,
             runId,
+            ...(masterServerId ? { masterServerId } : {}),
             projectId,
             projectName,
             serverId: uniqueServerIds.join(","),
@@ -127,10 +129,10 @@ export class DeploymentStore {
             this.database
                 .prepare(
                     `INSERT INTO deployment_runs
-                     (id, project_id, trigger, status, started_at)
-                     VALUES (?, ?, ?, 'running', ?)`
+                     (id, project_id, trigger, status, master_server_id, started_at)
+                     VALUES (?, ?, ?, 'running', ?, ?)`
                 )
-                .run(runId, projectId, trigger, now);
+                .run(runId, projectId, trigger, masterServerId ?? null, now);
 
             for (const target of targets) {
                 this.database
@@ -229,6 +231,7 @@ export class DeploymentStore {
         return {
             id: row.id,
             runId: row.id,
+            ...(row.masterServerId ? { masterServerId: row.masterServerId } : {}),
             projectId: row.projectId,
             projectName: row.projectName,
             serverId: targets.map((target) => target.serverId).join(",") || primary?.serverId || "",
@@ -331,6 +334,7 @@ interface DeploymentRunRow {
     projectName: string;
     trigger: DeploymentTrigger;
     status: DeploymentStatus;
+    masterServerId: string | null;
     startedAt: string;
     finishedAt: string | null;
     error: string | null;
@@ -360,6 +364,7 @@ function runSelectSql(where: string, suffix: string) {
                 p.name AS projectName,
                 r.trigger,
                 r.status,
+                r.master_server_id AS masterServerId,
                 r.started_at AS startedAt,
                 r.finished_at AS finishedAt,
                 r.error

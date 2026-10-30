@@ -33,10 +33,15 @@ export class HttpAgentClient implements AgentClient {
     /**
      * Redeploys a captured release snapshot on a remote agent.
      */
-    async deployReleaseSnapshot(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}) {
+    async deployReleaseSnapshot(
+        release: ProjectReleaseSnapshot,
+        globalSettings: GlobalSettings,
+        hooks: DeploymentHooks = {},
+        options: { appSettings?: ProjectSettings; requireRegistryPull?: boolean } = {}
+    ) {
         const accepted = await this.postJob({
             jobType: "deployReleaseSnapshot",
-            payload: { release, globalSettings } satisfies ReleaseSnapshotJobPayload
+            payload: { release, globalSettings, ...options } satisfies ReleaseSnapshotJobPayload
         });
         hooks.onAccepted?.({ jobId: accepted.jobId, streamToken: accepted.streamToken });
         return this.connectLogStream(accepted, hooks);

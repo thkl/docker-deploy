@@ -140,6 +140,9 @@
           <input type="checkbox" formControlName="registryDeployFromRegistry" />
           <span>Deploy by pulling registry images</span>
         </label>
+        @if (form.controls.registryPublish.value && form.controls.registryDeployFromRegistry.value && selectedServerIds().length > 1) {
+          <small class="muted-copy">The primary target builds and publishes once. Other selected servers wait, then pull and deploy that image without rebuilding. Replicas use the prepared Compose snapshot when possible; Git is checked out only if Compose needs repository files or the snapshot is unavailable.</small>
+        }
       </fieldset>
 
       <label>

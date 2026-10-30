@@ -56,6 +56,8 @@ export interface BrowsePathJobPayload {
 export interface ReleaseSnapshotJobPayload {
     release: ProjectReleaseSnapshot;
     globalSettings: GlobalSettings;
+    appSettings?: ProjectSettings;
+    requireRegistryPull?: boolean;
 }
 
 export interface DetectTraefikJobPayload {
@@ -94,7 +96,7 @@ export interface AgentLogFrame {
 
 export interface AgentClient {
     deployProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks?: DeploymentHooks): RuntimeLogStream | Promise<RuntimeLogStream | void> | void;
-    deployReleaseSnapshot(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks?: DeploymentHooks): RuntimeLogStream | Promise<RuntimeLogStream | void> | void;
+    deployReleaseSnapshot(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks?: DeploymentHooks, options?: { appSettings?: ProjectSettings; requireRegistryPull?: boolean }): RuntimeLogStream | Promise<RuntimeLogStream | void> | void;
     captureReleaseSnapshot(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<CapturedReleaseSnapshot>;
     reconnectDeploymentLog?(jobId: string, streamToken: string, hooks?: DeploymentHooks): RuntimeLogStream;
     stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, options?: { deleteVolumes?: boolean; removeStack?: boolean }): Promise<string>;

@@ -6,7 +6,7 @@ import { GlobalSettings, GlobalSettingsPayload, NotificationSettings, ProjectCon
 import type { DeploymentRecord } from "./deploymentStore.js";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secretStore.js";
 
-const schemaVersion = 7;
+const schemaVersion = 8;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     updaterInternalUrl: "",
@@ -194,6 +194,7 @@ export class AppDatabase {
                 project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 trigger TEXT NOT NULL,
                 status TEXT NOT NULL,
+                master_server_id TEXT,
                 started_at TEXT NOT NULL,
                 finished_at TEXT,
                 error TEXT
@@ -296,6 +297,7 @@ export class AppDatabase {
         this.ensureColumn("deployments", "phase", "TEXT NOT NULL DEFAULT 'running'");
         this.ensureColumn("deployments", "agent_job_id", "TEXT");
         this.ensureColumn("deployments", "agent_stream_token", "TEXT");
+        this.ensureColumn("deployment_runs", "master_server_id", "TEXT");
         this.ensureColumn("notification_events", "deployment_id", "TEXT");
         this.ensureColumn("notification_events", "dedupe_key", "TEXT");
         this.connection.exec("DROP INDEX IF EXISTS notification_events_dedupe_key_idx;");
