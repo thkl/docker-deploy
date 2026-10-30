@@ -23,12 +23,18 @@ interface ServerStatsFeed {
     pendingSamples: Map<string, ContainerStatsSample>;
     stream?: RuntimeLogStream;
     flushTimer?: ReturnType<typeof setTimeout>;
+    sampleTimeout?: ReturnType<typeof setTimeout>;
     keepAlive?: ReturnType<typeof setInterval>;
     buffer: string;
     starting: boolean;
     live: boolean;
+    outputReceived: boolean;
+    parseFailed: boolean;
+    lastStderr: string;
     stopped: boolean;
 }
+
+const statsSampleTimeoutMs = 10_000;
 
 /** Shares one live Docker stats stream per server among connected browser clients. */
 export class ContainerStatsStreamHub {
@@ -79,6 +85,9 @@ export class ContainerStatsStreamHub {
                 buffer: "",
                 starting: false,
                 live: false,
+                outputReceived: false,
+                parseFailed: false,
+                lastStderr: "",
                 stopped: false
             };
             this.feeds.set(serverId, feed);
@@ -106,10 +115,11 @@ export class ContainerStatsStreamHub {
         try {
             const stream = await this.agentManager.getClient(serverId).followContainerStats({
                 onOutput: (channel, chunk) => {
-                    if (channel === "stdout") this.handleOutput(feed, chunk);
+                    if (channel === "stdout") this.handleOutput(serverId, feed, chunk);
+                    else feed.lastStderr = `${feed.lastStderr}${chunk}`.slice(-2_000).trim();
                 },
                 onClose: () => this.finishFeed(serverId, feed),
-                onFailure: (error) => this.failFeed(serverId, feed, error.message)
+                onFailure: (error) => this.failFeed(serverId, feed, this.withLastStderr(feed, error.message))
             });
             feed.starting = false;
             if (feed.stopped || this.feeds.get(serverId) !== feed) {
@@ -117,8 +127,17 @@ export class ContainerStatsStreamHub {
                 return;
             }
             feed.stream = stream;
-            feed.live = true;
-            this.broadcast(feed, { type: "status", status: "live" });
+            if (!feed.live) {
+                feed.sampleTimeout = setTimeout(() => {
+                    if (feed.stopped || feed.live) return;
+                    const detail = feed.parseFailed
+                        ? "Docker stats returned output, but it was not valid JSON stats data."
+                        : feed.outputReceived
+                            ? "Docker stats returned incomplete rows. Check the agent's Docker CLI output."
+                            : "No Docker stats samples arrived. Check that the agent is updated and the host has a running container.";
+                    this.failFeed(serverId, feed, this.withLastStderr(feed, detail));
+                }, statsSampleTimeoutMs);
+            }
         } catch (error) {
             feed.starting = false;
             if (!feed.stopped) {
@@ -127,14 +146,27 @@ export class ContainerStatsStreamHub {
         }
     }
 
-    private handleOutput(feed: ServerStatsFeed, chunk: string) {
+    private handleOutput(serverId: string, feed: ServerStatsFeed, chunk: string) {
+        if (feed.stopped) return;
+        if (chunk.trim()) feed.outputReceived = true;
         const lines = `${feed.buffer}${chunk}`.split(/\r?\n/);
         feed.buffer = lines.pop() ?? "";
         if (feed.buffer.length > 64_000) feed.buffer = "";
 
         for (const line of lines) {
+            if (!line.trim()) continue;
             const sample = parseStatsLine(line);
-            if (sample) feed.pendingSamples.set(sample.id || sample.name, sample);
+            if (!sample) {
+                feed.parseFailed = true;
+                continue;
+            }
+            feed.pendingSamples.set(sample.id || sample.name, sample);
+            if (!feed.live) {
+                feed.live = true;
+                if (feed.sampleTimeout) clearTimeout(feed.sampleTimeout);
+                feed.sampleTimeout = undefined;
+                this.broadcast(feed, { type: "status", status: "live" });
+            }
         }
         if (feed.pendingSamples.size && !feed.flushTimer) {
             feed.flushTimer = setTimeout(() => this.flushSamples(feed), 100);
@@ -171,8 +203,14 @@ export class ContainerStatsStreamHub {
         feed.stopped = true;
         if (this.feeds.get(serverId) === feed) this.feeds.delete(serverId);
         if (feed.flushTimer) clearTimeout(feed.flushTimer);
+        if (feed.sampleTimeout) clearTimeout(feed.sampleTimeout);
         if (feed.keepAlive) clearInterval(feed.keepAlive);
         feed.stream?.stop();
+    }
+
+    private withLastStderr(feed: ServerStatsFeed, message: string) {
+        const detail = feed.lastStderr.trim();
+        return detail ? `${message} ${detail.slice(-1_000)}` : message;
     }
 
     private broadcast(feed: ServerStatsFeed, payload: unknown) {
