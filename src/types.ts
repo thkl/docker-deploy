@@ -625,6 +625,18 @@ export interface ContainerRecord {
     processCount?: number;
 }
 
+export interface ContainerStatsSample {
+    id: string;
+    name: string;
+    checkedAt: string;
+    cpuPercent?: number;
+    memoryUsage?: string;
+    memoryPercent?: number;
+    networkIo?: string;
+    blockIo?: string;
+    processCount?: number;
+}
+
 export interface ContainerInventory {
     checkedAt: string;
     containers: ContainerRecord[];

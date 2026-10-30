@@ -2673,6 +2673,12 @@ export async function inspectContainers(): Promise<ContainerInventory> {
     return { checkedAt, containers };
 }
 
+/** Streams Docker's live resource samples for all running containers. */
+export function followContainerStats(hooks: RuntimeLogHooks = {}): RuntimeLogStream {
+    const worker = spawn("docker", ["stats", "--no-trunc", "--format", "{{json .}}"], { stdio: ["ignore", "pipe", "pipe"] });
+    return wireRuntimeLogWorker(worker, hooks);
+}
+
 /**
  * Reads logs for any container on the current Docker host.
  */

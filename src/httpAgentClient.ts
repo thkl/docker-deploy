@@ -254,6 +254,15 @@ export class HttpAgentClient implements AgentClient {
         return accepted.result;
     }
 
+    /** Streams live container resource samples through the paired agent. */
+    async followContainerStats(hooks: RuntimeLogHooks = {}): Promise<RuntimeLogStream> {
+        const accepted = await this.postJob({
+            jobType: "containerStatsFollow",
+            payload: {} satisfies InspectContainersJobPayload
+        });
+        return this.connectRuntimeLogStream(accepted, hooks);
+    }
+
     /** Reads container logs through the paired agent. */
     async containerLogs(containerId: string, tail: number): Promise<ContainerLogs> {
         const accepted = await this.postJob<{ result: ContainerLogs }>({

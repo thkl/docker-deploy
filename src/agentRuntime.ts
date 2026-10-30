@@ -377,6 +377,19 @@ export class AgentRuntime {
             return {};
         }
 
+        if (request.jobType === "containerStatsFollow") {
+            const stream = await this.localAgent.followContainerStats({
+                onOutput: (stream, chunk) => this.emitFrame(accepted.jobId, { stream, chunk }),
+                onClose: () => this.emitFrame(accepted.jobId, { stream: "status", chunk: "Container stats stream closed.", done: true, success: true }),
+                onFailure: (error) => this.emitFrame(accepted.jobId, { stream: "status", chunk: error.message, done: true, success: false, error: error.message })
+            });
+            const job = this.jobs.get(accepted.jobId);
+            if (job) {
+                job.cancel = () => stream.stop();
+            }
+            return {};
+        }
+
         if (request.jobType === "runtimeLogs") {
             const payload = request.payload as RuntimeLogsJobPayload;
             return { result: await this.localAgent.runtimeLogs(payload.projectName, payload.appSettings, payload.globalSettings, payload.service, payload.tail) };
@@ -449,11 +462,13 @@ export class AgentRuntime {
         }
 
         job.frames.push(frame);
-        job.frames = trimFrames(job.frames);
+        job.frames = trimFrames(job.frames, job.type === "containerStatsFollow" ? 1 : 5000);
         if (frame.done) {
             job.active = false;
         }
-        this.persistDeployJobs();
+        if (job.type === "deploy") {
+            this.persistDeployJobs();
+        }
         const serialized = JSON.stringify(this.sealControllerEnvelope(frame, "job.log"));
         for (const socket of job.sockets) {
             if (socket.readyState === WebSocket.OPEN) {
@@ -662,15 +677,15 @@ export class AgentRuntime {
 }
 
 function isStreamingJob(jobType: AgentJobRequest["jobType"]) {
-    return jobType === "deploy" || jobType === "runtimeLogsFollow" || jobType === "containerLogsFollow" || jobType === "runtimeActionFollow";
+    return jobType === "deploy" || jobType === "runtimeLogsFollow" || jobType === "containerLogsFollow" || jobType === "containerStatsFollow" || jobType === "runtimeActionFollow";
 }
 
 function isPairingResetRequested() {
     return ["1", "true", "yes"].includes(String(process.env.DEPLOY_AGENT_RESET_PAIRING || process.env.UPDATER_AGENT_RESET_PAIRING || "").trim().toLowerCase());
 }
 
-function trimFrames(frames: AgentLogFrame[]) {
-    return frames.slice(-5000);
+function trimFrames(frames: AgentLogFrame[], limit = 5000) {
+    return frames.slice(-limit);
 }
 
 function delay(ms: number) {

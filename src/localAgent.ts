@@ -2,7 +2,7 @@ import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js"
 import { inspectCompose } from "./composeInspection.js";
 import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { applyTraefikDefaults, backupTraefikConfig, captureProjectReleaseSnapshot, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, dispatchReleaseRollbackWorker, followContainerLogs, followRuntimeLogs, inspectCheckoutBindMounts, inspectContainers, inspectDockerTopology, inspectProjectStatus, readContainerLogs, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, testRegistryLogin, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { applyTraefikDefaults, backupTraefikConfig, captureProjectReleaseSnapshot, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, dispatchReleaseRollbackWorker, followContainerLogs, followContainerStats, followRuntimeLogs, inspectCheckoutBindMounts, inspectContainers, inspectDockerTopology, inspectProjectStatus, readContainerLogs, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, testRegistryLogin, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { browseDockerHostPath } from "./pathBrowser.js";
 import { GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, TraefikDefaultsPayload } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
@@ -158,6 +158,11 @@ export class LocalAgent implements AgentClient {
     /** Lists all containers and current resource samples on this Docker host. */
     inspectContainers() {
         return inspectContainers();
+    }
+
+    /** Streams live resource samples for containers on this Docker host. */
+    followContainerStats(hooks: RuntimeLogHooks = {}) {
+        return Promise.resolve(followContainerStats(hooks));
     }
 
     /** Reads recent logs for a container on this Docker host. */

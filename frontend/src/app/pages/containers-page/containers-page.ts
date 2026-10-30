@@ -1,8 +1,9 @@
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { ContainerFleetInventory, ContainerRecord, ProjectSummary } from '../../models/project';
+import { ContainerFleetInventory, ContainerRecord, ContainerStatsSample, ProjectSummary } from '../../models/project';
 import { ContainerLogStreamService, ContainerLogStreamEvent } from '../../services/container-log-stream';
+import { ContainerStatsStreamEvent, ContainerStatsStreamService } from '../../services/container-stats-stream';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -22,6 +23,7 @@ interface ContainerMetricSample {
 const metricHistoryStorageKey = 'updater.container-metric-history.v1';
 const metricHistoryWindowMs = 10 * 60 * 1000;
 const metricHistorySampleLimit = 60;
+const inventoryRefreshIntervalMs = 60_000;
 
 function readMetricHistory(): Record<string, ContainerMetricSample[]> {
   try {
@@ -58,12 +60,16 @@ function readMetricHistory(): Record<string, ContainerMetricSample[]> {
 export class ContainersPage implements OnInit, OnDestroy {
   private readonly api = inject(ProjectApi);
   private readonly logStream = inject(ContainerLogStreamService);
+  private readonly statsStream = inject(ContainerStatsStreamService);
   protected readonly store = inject(ProjectStore);
   private refreshTimer?: ReturnType<typeof setInterval>;
   private logSubscription?: Subscription;
+  private readonly statsSubscriptions = new Map<string, Subscription>();
+  private lastUnknownInventoryRefreshAt = 0;
 
   protected readonly inventory = signal<ContainerFleetInventory | null>(null);
   private readonly metricHistory = signal<Record<string, ContainerMetricSample[]>>(readMetricHistory());
+  private readonly statsStreamStates = signal<Record<string, 'connecting' | 'live' | 'closed' | 'error'>>({});
   protected readonly loading = signal(true);
   protected readonly refreshing = signal(false);
   protected readonly error = signal('');
@@ -104,15 +110,27 @@ export class ContainersPage implements OnInit, OnDestroy {
   protected readonly unhealthyCount = computed(() => this.containers().filter((container) => container.health === 'unhealthy').length);
   protected readonly stoppedCount = computed(() => this.containers().filter((container) => container.state !== 'running').length);
   protected readonly failedServers = computed(() => (this.inventory()?.servers ?? []).filter((server) => server.error));
+  protected readonly statsStreamLabel = computed(() => {
+    const servers = this.inventory()?.servers ?? [];
+    if (!servers.length) return 'Waiting for Docker hosts';
+    const states = servers.map((server) => this.statsStreamStates()[server.serverId]);
+    const live = states.filter((state) => state === 'live').length;
+    if (live === states.length) return `Live metrics · ${live} host${live === 1 ? '' : 's'}`;
+    if (states.some((state) => state === 'error')) return `Stats reconnecting · ${live}/${states.length} hosts`;
+    if (live) return `Streaming stats · ${live}/${states.length} hosts`;
+    return 'Connecting to live Docker stats…';
+  });
 
   ngOnInit() {
     this.refresh();
-    this.refreshTimer = setInterval(() => this.refresh(), 10_000);
+    this.refreshTimer = setInterval(() => this.refresh(), inventoryRefreshIntervalMs);
   }
 
   ngOnDestroy() {
     if (this.refreshTimer) clearInterval(this.refreshTimer);
     this.logSubscription?.unsubscribe();
+    for (const subscription of this.statsSubscriptions.values()) subscription.unsubscribe();
+    this.statsSubscriptions.clear();
   }
 
   protected refresh() {
@@ -123,6 +141,7 @@ export class ContainersPage implements OnInit, OnDestroy {
       next: (inventory) => {
         this.recordMetricSamples(inventory);
         this.inventory.set(inventory);
+        this.syncStatsStreams(inventory.servers.map((server) => server.serverId));
         this.loading.set(false);
         this.refreshing.set(false);
         if (this.selectedContainerKey() && !this.selectedContainer()) this.closeLogs();
@@ -249,6 +268,107 @@ export class ContainersPage implements OnInit, OnDestroy {
     return `${label} usage trend for the last 10 minutes; latest ${this.formatPercent(values.at(-1))}; ${values.length} samples`;
   }
 
+  private syncStatsStreams(serverIds: string[]) {
+    const targets = new Set(serverIds);
+    for (const [serverId, subscription] of this.statsSubscriptions) {
+      if (targets.has(serverId)) continue;
+      subscription.unsubscribe();
+      this.statsSubscriptions.delete(serverId);
+      this.statsStreamStates.update((states) => {
+        const next = { ...states };
+        delete next[serverId];
+        return next;
+      });
+    }
+
+    for (const serverId of targets) {
+      if (this.statsSubscriptions.has(serverId)) continue;
+      this.setStatsStreamState(serverId, 'connecting');
+      const subscription = this.statsStream.follow(serverId).subscribe({
+        next: (event) => this.handleStatsStreamEvent(serverId, event),
+        error: () => this.setStatsStreamState(serverId, 'error'),
+        complete: () => this.setStatsStreamState(serverId, 'closed'),
+      });
+      this.statsSubscriptions.set(serverId, subscription);
+    }
+  }
+
+  private handleStatsStreamEvent(serverId: string, event: ContainerStatsStreamEvent) {
+    if (event.type === 'status') {
+      this.setStatsStreamState(serverId, event.status);
+      return;
+    }
+    if (event.type === 'error') {
+      this.setStatsStreamState(serverId, 'error');
+      return;
+    }
+    this.applyStatsSamples(serverId, event.samples);
+  }
+
+  private setStatsStreamState(serverId: string, status: 'connecting' | 'live' | 'closed' | 'error') {
+    this.statsStreamStates.update((states) => ({ ...states, [serverId]: status }));
+  }
+
+  private applyStatsSamples(serverId: string, samples: ContainerStatsSample[]) {
+    const inventory = this.inventory();
+    if (!inventory || !samples.length) return;
+
+    const historyEntries: Array<{ key: string; sample: ContainerMetricSample }> = [];
+    let hasUnknownContainer = false;
+    let changed = false;
+    const servers = inventory.servers.map((server) => {
+      if (server.serverId !== serverId) return server;
+      hasUnknownContainer = samples.some((sample) => !server.containers.some((container) => this.statsSampleMatches(container, sample)));
+      let serverChanged = false;
+      const containers = server.containers.map((container) => {
+        const sample = samples.find((candidate) => this.statsSampleMatches(container, candidate));
+        if (!sample) return container;
+        serverChanged = true;
+        changed = true;
+        const at = Date.parse(sample.checkedAt) || Date.now();
+        if (sample.cpuPercent !== undefined || sample.memoryPercent !== undefined) {
+          historyEntries.push({
+            key: this.keyFor({ ...container, serverId, serverName: server.serverName }),
+            sample: {
+              at,
+              ...(sample.cpuPercent !== undefined ? { cpuPercent: sample.cpuPercent } : {}),
+              ...(sample.memoryPercent !== undefined ? { memoryPercent: sample.memoryPercent } : {}),
+            },
+          });
+        }
+        return {
+          ...container,
+          state: 'running',
+          cpuPercent: sample.cpuPercent,
+          memoryUsage: sample.memoryUsage,
+          memoryPercent: sample.memoryPercent,
+          networkIo: sample.networkIo,
+          blockIo: sample.blockIo,
+          processCount: sample.processCount,
+        };
+      });
+      return serverChanged ? { ...server, checkedAt: samples.at(-1)!.checkedAt, containers } : server;
+    });
+
+    if (changed) {
+      this.inventory.set({ ...inventory, checkedAt: samples.at(-1)!.checkedAt, servers });
+      this.storeMetricHistory(historyEntries);
+    }
+    if (hasUnknownContainer && Date.now() - this.lastUnknownInventoryRefreshAt > 15_000) {
+      this.lastUnknownInventoryRefreshAt = Date.now();
+      this.refresh();
+    }
+  }
+
+  private statsSampleMatches(container: ContainerRecord, sample: ContainerStatsSample) {
+    const containerId = container.id.toLowerCase();
+    const sampleId = sample.id.toLowerCase();
+    return containerId === sampleId
+      || containerId.startsWith(sampleId)
+      || sampleId.startsWith(containerId)
+      || container.name === sample.name;
+  }
+
   protected formatDate(value?: string) {
     if (!value) return '—';
     const date = new Date(value);
@@ -275,37 +395,49 @@ export class ContainersPage implements OnInit, OnDestroy {
 
   private recordMetricSamples(inventory: ContainerFleetInventory) {
     const at = Date.parse(inventory.checkedAt) || Date.now();
-    const cutoff = at - metricHistoryWindowMs;
-    const previous = this.metricHistory();
-    const next: Record<string, ContainerMetricSample[]> = {};
-
+    const entries: Array<{ key: string; sample: ContainerMetricSample }> = [];
     for (const server of inventory.servers) {
-      if (server.error) {
-        for (const [key, samples] of Object.entries(previous)) {
-          if (key.startsWith(`${server.serverId}:`)) {
-            const recent = samples.filter((sample) => sample.at >= cutoff && sample.at <= at).slice(-metricHistorySampleLimit);
-            if (recent.length) next[key] = recent;
-          }
-        }
-        continue;
-      }
-
       for (const container of server.containers) {
-        const key = `${server.serverId}:${container.id}`;
-        const samples = (previous[key] ?? []).filter((sample) => sample.at >= cutoff && sample.at <= at);
         if (container.cpuPercent !== undefined || container.memoryPercent !== undefined) {
-          const sample: ContainerMetricSample = {
-            at,
-            ...(container.cpuPercent !== undefined ? { cpuPercent: container.cpuPercent } : {}),
-            ...(container.memoryPercent !== undefined ? { memoryPercent: container.memoryPercent } : {}),
-          };
-          const last = samples.at(-1);
-          if (last?.at === at) samples[samples.length - 1] = sample;
-          else if (!last || at > last.at) samples.push(sample);
+          entries.push({
+            key: `${server.serverId}:${container.id}`,
+            sample: {
+              at,
+              ...(container.cpuPercent !== undefined ? { cpuPercent: container.cpuPercent } : {}),
+              ...(container.memoryPercent !== undefined ? { memoryPercent: container.memoryPercent } : {}),
+            },
+          });
         }
-        if (samples.length) next[key] = samples.slice(-metricHistorySampleLimit);
       }
     }
+    this.storeMetricHistory(entries);
+  }
+
+  private storeMetricHistory(entries: Array<{ key: string; sample: ContainerMetricSample }>) {
+    if (!entries.length) return;
+    const cutoff = Date.now() - metricHistoryWindowMs;
+    const previous = this.metricHistory();
+    const next: Record<string, ContainerMetricSample[]> = {};
+    for (const [key, samples] of Object.entries(previous)) {
+      const recent = samples.filter((sample) => sample.at >= cutoff).slice(-metricHistorySampleLimit);
+      if (recent.length) next[key] = recent;
+    }
+
+    let changed = false;
+    for (const { key, sample } of entries) {
+      const samples = next[key] ?? [];
+      const last = samples.at(-1);
+      if (last?.at === sample.at) {
+        samples[samples.length - 1] = { ...last, ...sample };
+        next[key] = samples;
+        changed = true;
+      } else if (!last || sample.at - last.at >= 10_000) {
+        samples.push(sample);
+        next[key] = samples.slice(-metricHistorySampleLimit);
+        changed = true;
+      }
+    }
+    if (!changed) return;
 
     this.metricHistory.set(next);
     try {
