@@ -1169,7 +1169,9 @@ function encryptedInfisicalSettingsJson(settings: ProjectSettings["infisical"]) 
         clientSecret: settings.clientSecret?.trim() ?? "",
         projectId: settings.projectId.trim(),
         environment: settings.environment.trim(),
-        secretPath: settings.secretPath.trim() || "/"
+        secretPath: settings.secretPath.trim() || "/",
+        deployOnSecretChange: Boolean(settings.deployOnSecretChange),
+        webhookSecret: settings.webhookSecret?.trim() ?? ""
     };
     return encryptSecret(JSON.stringify(normalized));
 }

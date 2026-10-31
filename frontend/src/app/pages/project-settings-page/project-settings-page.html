@@ -719,7 +719,9 @@
           }
 
           @if (builderSection() === 'secrets') {
-          <app-project-settings-secrets-section (testConnection)="testInfisicalConnection()" />
+          <app-project-settings-secrets-section
+            [webhookEndpoint]="infisicalWebhookEndpoint()"
+            (testConnection)="testInfisicalConnection()" />
           }
 
           @if (builderSection() === 'networks') {

@@ -299,7 +299,9 @@ function parseInfisicalSettings(value: string) {
             clientSecret: String(parsed.clientSecret ?? ""),
             projectId: String(parsed.projectId ?? ""),
             environment: String(parsed.environment ?? "prod"),
-            secretPath: String(parsed.secretPath ?? "/")
+            secretPath: String(parsed.secretPath ?? "/"),
+            deployOnSecretChange: Boolean(parsed.deployOnSecretChange),
+            webhookSecret: String(parsed.webhookSecret ?? "")
         };
     } catch {
         return undefined;

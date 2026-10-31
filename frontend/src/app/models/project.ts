@@ -165,6 +165,9 @@ export interface ProjectInfisicalSettings {
   environment: string;
   secretPath: string;
   hasClientSecret?: boolean;
+  deployOnSecretChange?: boolean;
+  webhookSecret?: string;
+  hasWebhookSecret?: boolean;
 }
 
 export interface VaultSecret {

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import express, { Express, NextFunction, Request, Response } from "express";
 import { AgentManager } from "./agentManager.js";
 import { AgentHealthService } from "./agentHealth.js";
@@ -23,6 +24,7 @@ import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { NotificationService } from "./notificationService.js";
 import { NotificationStore } from "./notificationStore.js";
 import { fetchInfisicalSecrets } from "./infisicalSecrets.js";
+import { verifyInfisicalWebhookSignature } from "./infisicalWebhook.js";
 import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
@@ -914,6 +916,10 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const composeOverride = payloadComposeOverride(payload);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload));
             const infisical = normalizeInfisicalSettings(payload.infisical);
+            if (infisical?.deployOnSecretChange && (!infisical.enabled || !infisical.webhookSecret)) {
+                res.status(400).json({ error: "Enable Infisical and configure its webhook signing secret before enabling change deployments." });
+                return;
+            }
             const globalSettings = globalSettingsStore.readSettings();
             const traefik = normalizeTraefikSettings(payload, globalSettings);
 
@@ -972,6 +978,10 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const scaleToZero = payloadScaleToZero(payload, existing?.scaleToZero);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), existing?.envSecrets);
             const infisical = normalizeInfisicalSettings(payload.infisical, existing?.infisical);
+            if (infisical?.deployOnSecretChange && (!infisical.enabled || !infisical.webhookSecret)) {
+                res.status(400).json({ error: "Enable Infisical and configure its webhook signing secret before enabling change deployments." });
+                return;
+            }
             const currentName = existingProject?.name ?? currentRef;
 
             if (!existing) {
@@ -1645,6 +1655,121 @@ function registerScaleToZeroWakeRoute(app: Express, dependencies: Pick<RouteDepe
 
 function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "webhookStore">) {
     const { configStore, deploymentService, webhookStore } = dependencies;
+    const recentInfisicalEvents = new Map<string, number>();
+
+    app.post("/webhook/infisical/:projectRef", (req: Request, res: Response) => {
+        const projectRef = String(req.params.projectRef ?? "").trim();
+        const resolvedProject = configStore.resolveProject(projectRef);
+        if (!resolvedProject) {
+            res.status(404).send("No project found for this Infisical webhook.");
+            return;
+        }
+
+        const { name: projectName, settings } = resolvedProject;
+        const infisical = settings.infisical;
+        if (!infisical?.enabled || !infisical.deployOnSecretChange || !infisical.webhookSecret) {
+            res.status(404).send("Infisical change deployments are not enabled for this project.");
+            return;
+        }
+
+        const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+        const signature = readHeader(req.headers["x-infisical-signature"]);
+        if (!verifyInfisicalWebhookSignature(infisical.webhookSecret, signature, rawBody)) {
+            webhookStore.record({
+                projectId: settings.id,
+                projectName,
+                source: `infisical:${projectRef}`,
+                eventType: "secrets.modified",
+                status: "error",
+                reason: "Infisical webhook signature was missing, invalid, or expired."
+            });
+            res.status(401).send("Invalid Infisical webhook signature.");
+            return;
+        }
+
+        const payload = req.body && typeof req.body === "object" ? req.body as {
+            event?: unknown;
+            project?: { environment?: unknown; secretPath?: unknown };
+        } : {};
+        const eventType = typeof payload.event === "string" ? payload.event : "";
+        if (eventType !== "secrets.modified") {
+            webhookStore.record({
+                projectId: settings.id,
+                projectName,
+                source: `infisical:${projectRef}`,
+                eventType: eventType || undefined,
+                status: "ignored",
+                reason: "Only secrets.modified events trigger a deployment."
+            });
+            res.status(202).send("Ignored Infisical event.");
+            return;
+        }
+
+        const eventEnvironment = String(payload.project?.environment ?? "").trim().toLowerCase();
+        const eventSecretPath = normalizeInfisicalWebhookPath(String(payload.project?.secretPath ?? ""));
+        const configuredEnvironment = infisical.environment.trim().toLowerCase();
+        const configuredSecretPath = normalizeInfisicalWebhookPath(infisical.secretPath);
+        if (!eventEnvironment || eventEnvironment !== configuredEnvironment || eventSecretPath !== configuredSecretPath) {
+            webhookStore.record({
+                projectId: settings.id,
+                projectName,
+                source: `infisical:${projectRef}`,
+                eventType,
+                status: "ignored",
+                reason: "Infisical event environment or secret path does not match this project configuration."
+            });
+            res.status(202).send("Ignored out-of-scope Infisical event.");
+            return;
+        }
+
+        if (settings.deploymentOnHold) {
+            webhookStore.record({
+                projectId: settings.id,
+                projectName,
+                source: `infisical:${projectRef}`,
+                eventType,
+                status: "ignored",
+                reason: "Deployment skipped because this project is on hold."
+            });
+            res.status(202).send("Deployment on hold.");
+            return;
+        }
+
+        const now = Date.now();
+        for (const [key, receivedAt] of recentInfisicalEvents) {
+            if (now - receivedAt > 10 * 60 * 1000) recentInfisicalEvents.delete(key);
+        }
+        const eventKey = createHash("sha256").update(projectRef).update(rawBody ?? "").digest("hex");
+        if (recentInfisicalEvents.has(eventKey)) {
+            res.status(200).send("Infisical event already handled.");
+            return;
+        }
+
+        try {
+            const deployment = deploymentService.startDeployment(projectName, settings, "webhook");
+            recentInfisicalEvents.set(eventKey, now);
+            webhookStore.record({
+                projectId: settings.id,
+                projectName,
+                source: `infisical:${projectRef}`,
+                eventType,
+                status: "dispatched",
+                reason: "Infisical secret change dispatched a deployment.",
+                deploymentId: deployment.targets?.[0]?.id ?? deployment.id
+            });
+            res.status(200).send("Deployment dispatched.");
+        } catch (error) {
+            webhookStore.record({
+                projectId: settings.id,
+                projectName,
+                source: `infisical:${projectRef}`,
+                eventType,
+                status: "error",
+                reason: error instanceof Error ? error.message : "Could not dispatch deployment."
+            });
+            res.status(500).send("Could not dispatch deployment.");
+        }
+    });
 
     app.post("/webhook/:name", (req: Request, res: Response) => {
         const rawProjectName = req.params.name;
@@ -1825,7 +1950,13 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
     const composeOverride = settings.composeOverride ?? "";
     const envSecrets = maskEnvSecrets(settings.envSecrets);
     const infisical = settings.infisical
-        ? { ...settings.infisical, clientSecret: "", hasClientSecret: Boolean(settings.infisical.clientSecret) }
+        ? {
+            ...settings.infisical,
+            clientSecret: "",
+            hasClientSecret: Boolean(settings.infisical.clientSecret),
+            webhookSecret: "",
+            hasWebhookSecret: Boolean(settings.infisical.webhookSecret)
+        }
         : undefined;
     const deploymentStrategy = settings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const registry = settings.registry ?? { publish: false, deployFromRegistry: false };
@@ -1962,6 +2093,10 @@ function normalizeInfisicalSettings(input: Partial<ProjectInfisicalSettings> | u
     const clientSecret = !clientSecretInput || isMaskedSecretValue(clientSecretInput)
         ? existing?.clientSecret ?? ""
         : clientSecretInput;
+    const webhookSecretInput = String(input.webhookSecret ?? "").trim();
+    const webhookSecret = !webhookSecretInput || isMaskedSecretValue(webhookSecretInput)
+        ? existing?.webhookSecret ?? ""
+        : webhookSecretInput;
     const settings = {
         enabled: Boolean(input.enabled),
         siteUrl: String(input.siteUrl ?? "").trim().replace(/\/+$/, ""),
@@ -1971,10 +2106,17 @@ function normalizeInfisicalSettings(input: Partial<ProjectInfisicalSettings> | u
         environment: String(input.environment ?? "prod").trim() || "prod",
         secretPath: (String(input.secretPath ?? "/").trim() || "/").startsWith("/")
             ? String(input.secretPath ?? "/").trim() || "/"
-            : `/${String(input.secretPath).trim()}`
+            : `/${String(input.secretPath).trim()}`,
+        deployOnSecretChange: Boolean(input.deployOnSecretChange ?? existing?.deployOnSecretChange),
+        webhookSecret
     };
-    if (!settings.enabled && !settings.clientId && !settings.clientSecret && !settings.projectId) return undefined;
+    if (!settings.enabled && !settings.clientId && !settings.clientSecret && !settings.projectId && !settings.deployOnSecretChange && !settings.webhookSecret) return undefined;
     return settings;
+}
+
+function normalizeInfisicalWebhookPath(value: string) {
+    const segments = value.trim().split("/").map((segment) => segment.trim()).filter(Boolean);
+    return `/${segments.join("/")}`;
 }
 
 function isMaskedSecretValue(value: string) {

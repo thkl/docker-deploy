@@ -1256,8 +1256,26 @@ export class ProjectSettingsPage implements OnInit {
       return;
     }
 
+    const existingSecrets = new Map(this.builderServices().map((service) => [service.name, {
+      secretEnvironment: service.secretEnvironment,
+      secretHelperCommand: service.secretHelperCommand,
+    }]));
     this.nextBuilderId = 1;
-    this.builderServices.set(parsed.services.map((service) => ({ ...service, id: this.nextBuilderId++ })));
+    this.builderServices.set(parsed.services.map((service) => {
+      const id = this.nextBuilderId++;
+      const savedSecrets = existingSecrets.get(service.name);
+      if (!savedSecrets) {
+        return { ...service, id };
+      }
+
+      return {
+        ...service,
+        id,
+        environment: removeGeneratedSecretFileEntries(service.environment, savedSecrets.secretEnvironment),
+        secretEnvironment: savedSecrets.secretEnvironment,
+        secretHelperCommand: savedSecrets.secretHelperCommand,
+      };
+    }));
     this.builderNetworks.set(parsed.networks.map((network) => ({ ...network, id: this.nextBuilderId++ })));
     this.builderVolumes.set(parsed.volumes.map((volume) => ({ ...volume, id: this.nextBuilderId++ })));
     if (this.builderServices().length === 0) {
@@ -1506,12 +1524,24 @@ export class ProjectSettingsPage implements OnInit {
     this.settingsState.testInfisicalConnection(this.currentProjectRef, secretNames);
   }
 
+  protected infisicalWebhookEndpoint() {
+    if (!this.currentProjectRef) {
+      return '';
+    }
+    return new URL(`/webhook/infisical/${encodeURIComponent(this.currentProjectRef)}`, window.location.origin).toString();
+  }
+
   private currentProject() {
     const projectRef = this.currentProjectRef || this.currentName();
     return this.store.projects().find((project) => project.id === projectRef || project.name === projectRef) ?? null;
   }
 
   private toPayload(): ProjectPayload | null {
+    if (!this.settingsState.infisicalWebhookReady()) {
+      this.error.set('Add a webhook signing secret or turn off Infisical change deployments.');
+      return null;
+    }
+
     if (this.composeMode() === 'builder') {
       const diagnostics = this.builderDiagnostics();
       if (diagnostics.length) {
@@ -2292,7 +2322,7 @@ function ensureServerSelected(serverIds: string[], serverId: string) {
   return [...new Set(ids.includes(selected) ? ids : [selected, ...ids])];
 }
 
-function removeGeneratedSecretFileEntries(environment: string, secrets: ProjectEnvironmentSecret[]) {
+function removeGeneratedSecretFileEntries(environment: string, secrets: Array<Pick<ProjectEnvironmentSecret, 'key' | 'mode' | 'exposure'>>) {
   const generatedKeys = new Set(
     secrets
       .filter((secret) => secret.mode === 'docker_secret' && secret.exposure !== 'env')

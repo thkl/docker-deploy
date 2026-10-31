@@ -71,6 +71,7 @@ export class ProjectSettingsPageStore {
   readonly deletingVaultSecret = signal('');
   readonly editingVaultSecretId = signal('');
   readonly infisicalSecretConfigured = signal(false);
+  readonly infisicalWebhookSecretConfigured = signal(false);
   readonly infisicalTestState = signal<'idle' | 'testing' | 'success' | 'error'>('idle');
   readonly infisicalTestMessage = signal('');
   readonly message = signal('');
@@ -92,14 +93,22 @@ export class ProjectSettingsPageStore {
     projectId: [''],
     environment: ['prod'],
     secretPath: ['/'],
+    deployOnSecretChange: [false],
+    webhookSecret: [''],
   });
 
   constructor() {
     this.infisicalForm.valueChanges.subscribe(() => this.resetInfisicalTest());
+    this.infisicalForm.controls.enabled.valueChanges.subscribe((enabled) => {
+      if (!enabled && this.infisicalForm.controls.deployOnSecretChange.value) {
+        this.infisicalForm.controls.deployOnSecretChange.setValue(false);
+      }
+    });
   }
 
   patchInfisical(settings?: Partial<ProjectInfisicalSettings>) {
     this.infisicalSecretConfigured.set(Boolean(settings?.hasClientSecret || settings?.clientSecret));
+    this.infisicalWebhookSecretConfigured.set(Boolean(settings?.hasWebhookSecret || settings?.webhookSecret));
     this.infisicalForm.reset({
       enabled: Boolean(settings?.enabled),
       siteUrl: settings?.siteUrl || 'https://app.infisical.com',
@@ -108,6 +117,8 @@ export class ProjectSettingsPageStore {
       projectId: settings?.projectId ?? '',
       environment: settings?.environment || 'prod',
       secretPath: settings?.secretPath || '/',
+      deployOnSecretChange: Boolean(settings?.deployOnSecretChange),
+      webhookSecret: '',
     });
   }
 
@@ -149,7 +160,16 @@ export class ProjectSettingsPageStore {
       projectId: value.projectId.trim(),
       environment: value.environment.trim(),
       secretPath: value.secretPath.trim() || '/',
+      deployOnSecretChange: value.deployOnSecretChange,
+      webhookSecret: value.webhookSecret.trim(),
     };
+  }
+
+  infisicalWebhookReady() {
+    const value = this.infisicalForm.getRawValue();
+    return !value.deployOnSecretChange || Boolean(
+      value.enabled && (value.webhookSecret.trim() || this.infisicalWebhookSecretConfigured())
+    );
   }
 
   infisicalReady() {
