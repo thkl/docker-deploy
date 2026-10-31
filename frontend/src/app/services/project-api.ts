@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, ContainerFleetInventory, ContainerLogs, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, NotificationDeliveryRecord, PathBrowseResult, ProjectPayload, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, VaultSecret, VaultSecretPayload, WebhookEventRecord } from '../models/project';
+import { ComposeInspection, ComposeValidation, ContainerFleetInventory, ContainerLogs, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, NotificationDeliveryRecord, PathBrowseResult, ProjectInfisicalSettings, ProjectPayload, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, VaultSecret, VaultSecretPayload, WebhookEventRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -17,6 +17,10 @@ export class ProjectApi {
 
   updateProject(projectRef: string, payload: ProjectPayload): Observable<{ id?: string; name: string }> {
     return this.http.put<{ id?: string; name: string }>(`/api/projects/${encodeURIComponent(projectRef)}`, payload);
+  }
+
+  testInfisicalConnection(payload: { projectRef?: string; infisical: Partial<ProjectInfisicalSettings>; secretNames: string[] }): Observable<{ ok: boolean; checkedSecrets: number; message: string }> {
+    return this.http.post<{ ok: boolean; checkedSecrets: number; message: string }>('/api/infisical/test', payload);
   }
 
   deleteProject(projectRef: string, payload: DeleteProjectPayload): Observable<DeleteProjectResult> {

@@ -4,6 +4,7 @@ import {
   ProjectEnvironmentSecretExposure,
   ProjectEnvironmentSecretMode,
   ProjectEnvironmentSecretSource,
+  ProjectInfisicalSettings,
   VaultSecret
 } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
@@ -16,6 +17,7 @@ export interface ComposeSecretEnvironmentEntry {
   mode: ProjectEnvironmentSecretMode;
   source: ProjectEnvironmentSecretSource;
   vaultSecretId: string;
+  infisicalSecretName: string;
   exposure: ProjectEnvironmentSecretExposure;
 }
 
@@ -68,6 +70,9 @@ export class ProjectSettingsPageStore {
   readonly savingVaultSecret = signal(false);
   readonly deletingVaultSecret = signal('');
   readonly editingVaultSecretId = signal('');
+  readonly infisicalSecretConfigured = signal(false);
+  readonly infisicalTestState = signal<'idle' | 'testing' | 'success' | 'error'>('idle');
+  readonly infisicalTestMessage = signal('');
   readonly message = signal('');
   readonly error = signal('');
   readonly projectName = signal('');
@@ -78,6 +83,85 @@ export class ProjectSettingsPageStore {
     description: [''],
     value: ['', [Validators.required]],
   });
+
+  readonly infisicalForm = this.fb.group({
+    enabled: [false],
+    siteUrl: ['https://app.infisical.com'],
+    clientId: [''],
+    clientSecret: [''],
+    projectId: [''],
+    environment: ['prod'],
+    secretPath: ['/'],
+  });
+
+  constructor() {
+    this.infisicalForm.valueChanges.subscribe(() => this.resetInfisicalTest());
+  }
+
+  patchInfisical(settings?: Partial<ProjectInfisicalSettings>) {
+    this.infisicalSecretConfigured.set(Boolean(settings?.hasClientSecret || settings?.clientSecret));
+    this.infisicalForm.reset({
+      enabled: Boolean(settings?.enabled),
+      siteUrl: settings?.siteUrl || 'https://app.infisical.com',
+      clientId: settings?.clientId ?? '',
+      clientSecret: '',
+      projectId: settings?.projectId ?? '',
+      environment: settings?.environment || 'prod',
+      secretPath: settings?.secretPath || '/',
+    });
+  }
+
+  resetInfisical() {
+    this.patchInfisical();
+  }
+
+  resetInfisicalTest() {
+    this.infisicalTestState.set('idle');
+    this.infisicalTestMessage.set('');
+  }
+
+  testInfisicalConnection(projectRef: string, secretNames: string[]) {
+    this.infisicalTestState.set('testing');
+    this.infisicalTestMessage.set('Checking credentials and mapped secret access…');
+    this.api.testInfisicalConnection({
+      ...(projectRef ? { projectRef } : {}),
+      infisical: this.infisicalPayload(),
+      secretNames,
+    }).subscribe({
+      next: (result) => {
+        this.infisicalTestState.set('success');
+        this.infisicalTestMessage.set(result.message);
+      },
+      error: (error) => {
+        this.infisicalTestState.set('error');
+        this.infisicalTestMessage.set(error?.error?.error || 'Could not verify Infisical settings.');
+      },
+    });
+  }
+
+  infisicalPayload(): ProjectInfisicalSettings {
+    const value = this.infisicalForm.getRawValue();
+    return {
+      ...value,
+      siteUrl: value.siteUrl.trim(),
+      clientId: value.clientId.trim(),
+      clientSecret: value.clientSecret.trim(),
+      projectId: value.projectId.trim(),
+      environment: value.environment.trim(),
+      secretPath: value.secretPath.trim() || '/',
+    };
+  }
+
+  infisicalReady() {
+    const value = this.infisicalForm.getRawValue();
+    return value.enabled && Boolean(
+      value.siteUrl.trim() &&
+      value.clientId.trim() &&
+      (value.clientSecret.trim() || this.infisicalSecretConfigured()) &&
+      value.projectId.trim() &&
+      value.environment.trim()
+    );
+  }
 
   setProjectName(name: string) {
     this.projectName.set(name.trim());
@@ -177,6 +261,7 @@ export class ProjectSettingsPageStore {
   }
 
   addBuilderSecretEnvironmentEntry(id: number) {
+    this.resetInfisicalTest();
     this.builderServices.update((services) => services.map((service) => {
       if (service.id !== id) {
         return service;
@@ -184,12 +269,13 @@ export class ProjectSettingsPageStore {
 
       return {
         ...service,
-        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', exposure: 'file' }]
+        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', infisicalSecretName: '', exposure: 'file' }]
       };
     }));
   }
 
   updateBuilderSecretEnvironmentEntry(id: number, index: number, field: keyof ComposeSecretEnvironmentEntry | 'delivery', event: Event) {
+    this.resetInfisicalTest();
     const target = event.target as HTMLInputElement | HTMLSelectElement;
     this.builderServices.update((services) => services.map((service) => {
       if (service.id !== id) {
@@ -197,7 +283,7 @@ export class ProjectSettingsPageStore {
       }
 
       const entries = [...service.secretEnvironment];
-      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', exposure: 'file' as const };
+      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', infisicalSecretName: '', exposure: 'file' as const };
       const next = field === 'delivery'
         ? { ...current }
         : { ...current, [field]: target.value };
@@ -206,15 +292,29 @@ export class ProjectSettingsPageStore {
         next.mode = 'docker_secret';
         next.value = '';
         next.vaultSecretId = next.vaultSecretId || this.vaultSecrets()[0]?.id || '';
+        next.infisicalSecretName = '';
+      }
+      if (field === 'source' && target.value === 'infisical') {
+        next.source = 'infisical';
+        next.mode = 'docker_secret';
+        next.value = '';
+        next.vaultSecretId = '';
       }
       if (field === 'source' && target.value === 'inline') {
         next.source = 'inline';
         next.vaultSecretId = '';
+        next.infisicalSecretName = '';
       }
       if (field === 'vaultSecretId') {
         next.source = 'vault';
         next.mode = 'docker_secret';
         next.value = '';
+      }
+      if (field === 'infisicalSecretName') {
+        next.source = 'infisical';
+        next.mode = 'docker_secret';
+        next.value = '';
+        next.vaultSecretId = '';
       }
       if (field === 'delivery') {
         if (target.value === 'env') {
@@ -234,6 +334,7 @@ export class ProjectSettingsPageStore {
   }
 
   removeBuilderSecretEnvironmentEntry(id: number, index: number) {
+    this.resetInfisicalTest();
     this.builderServices.update((services) => services.map((service) => {
       if (service.id !== id) {
         return service;

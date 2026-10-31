@@ -896,6 +896,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
     const lines = [
         "",
         "                echo \"--> Preparing sensitive environment values.\"",
+        "                chmod 700 \"$COMPOSE_WORKSPACE\"",
     ];
 
     if (fileBackedDockerSecrets.length) {
@@ -1005,6 +1006,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
     }
 
     lines.push("DEPLOY_SECRETS_EOF");
+    lines.push("                chmod 600 \"$COMPOSE_WORKSPACE/docker-compose.secrets.yml\"");
 
     if (autoHelperCommands.length) {
         lines.push(`                node - "$COMPOSE_WORKSPACE/docker-compose.secrets.yml" ${shellQuote(JSON.stringify(autoHelperCommands))} << 'DEPLOY_SECRET_HELPER_REPLACE_JS'`);
@@ -1014,16 +1016,13 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
 
     for (const secret of fileBackedDockerSecrets) {
         const secretName = composeSecretMountTarget(secret.service, secret.key);
-        lines.push(`                cat > "$COMPOSE_WORKSPACE/secrets/${secretName}" << 'DEPLOY_SECRET_VALUE_EOF'`);
-        lines.push(secret.value);
-        lines.push("DEPLOY_SECRET_VALUE_EOF");
+        const encodedValue = Buffer.from(secret.value, "utf8").toString("base64");
+        lines.push("                printf '%s' " + shellQuote(encodedValue) + " | base64 -d > \"$COMPOSE_WORKSPACE/secrets/" + secretName + "\"");
         lines.push(`                chmod 600 "$COMPOSE_WORKSPACE/secrets/${secretName}"`);
 
         const projectSecretName = dockerSecretBaseName(projectName, secret);
         if (projectSecretName !== secretName) {
-            lines.push(`                cat > "$COMPOSE_WORKSPACE/secrets/${projectSecretName}" << 'DEPLOY_SECRET_VALUE_EOF'`);
-            lines.push(secret.value);
-            lines.push("DEPLOY_SECRET_VALUE_EOF");
+            lines.push("                printf '%s' " + shellQuote(encodedValue) + " | base64 -d > \"$COMPOSE_WORKSPACE/secrets/" + projectSecretName + "\"");
             lines.push(`                chmod 600 "$COMPOSE_WORKSPACE/secrets/${projectSecretName}"`);
         }
     }

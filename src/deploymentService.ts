@@ -6,6 +6,7 @@ import { GlobalSettings, ProjectSettings } from "./types.js";
 import { RuntimeLogStream } from "./deploy.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
+import { fetchInfisicalSecrets } from "./infisicalSecrets.js";
 
 /**
  * Coordinates deployment lifecycle state with the worker execution layer.
@@ -122,7 +123,7 @@ export class DeploymentService {
 
         let targetSettings: ProjectSettings;
         try {
-            targetSettings = this.resolveDeploymentSecrets(this.registryTargetSettings(appSettings, deployment, serverId));
+            targetSettings = await this.resolveDeploymentSecrets(this.registryTargetSettings(appSettings, deployment, serverId));
         } catch (error) {
             this.deploymentStore.finish(projectName, deployment.id, "failed", {
                 error: error instanceof Error ? error.message : "Could not resolve deployment secrets.",
@@ -232,7 +233,7 @@ export class DeploymentService {
 
         let targetSettings: ProjectSettings;
         try {
-            targetSettings = this.resolveDeploymentSecrets(this.registryTargetSettings(appSettings, deployment, serverId));
+            targetSettings = await this.resolveDeploymentSecrets(this.registryTargetSettings(appSettings, deployment, serverId));
         } catch (error) {
             this.deploymentStore.finish(projectName, deployment.id, "failed", {
                 error: error instanceof Error ? error.message : "Could not resolve deployment secrets.",
@@ -327,7 +328,18 @@ export class DeploymentService {
             return;
         }
 
-        const targetSettings = { ...appSettings, serverId };
+        let targetSettings: ProjectSettings;
+        try {
+            targetSettings = await this.resolveDeploymentSecrets({ ...appSettings, serverId });
+        } catch (error) {
+            this.deploymentStore.finish(projectName, deployment.id, "failed", {
+                error: error instanceof Error ? error.message : "Could not resolve rollback secrets.",
+                exitCode: "secret-resolution",
+                phase: "failed"
+            });
+            this.broadcastDeploymentUpdate(projectName);
+            return;
+        }
         const globalSettings = this.globalSettingsStore.readSettings();
         this.deploymentStore.setPhase(projectName, deployment.id, "dispatching");
         this.deploymentStore.append(projectName, deployment.id, "stdout", `--> Rolling back to release ${release.id} from ${release.createdAt}.\n`);
@@ -364,7 +376,7 @@ export class DeploymentService {
                 this.broadcastDeploymentUpdate(projectName);
                 void this.refreshServerHealth(serverId);
             }
-        });
+        }, { appSettings: targetSettings });
 
         if (isRuntimeLogStream(deploymentRun)) {
             this.activeDeployments.set(deployment.id, deploymentRun);
@@ -905,15 +917,46 @@ export class DeploymentService {
         return [managerId ?? ids[0] ?? "local"];
     }
 
-    private resolveDeploymentSecrets(appSettings: ProjectSettings): ProjectSettings {
+    private async resolveDeploymentSecrets(appSettings: ProjectSettings): Promise<ProjectSettings> {
         const secrets = appSettings.envSecrets ?? [];
-        if (!secrets.some((secret) => secret.source === "vault")) {
-            return appSettings;
+        const infisicalBindings = secrets.filter((secret) => secret.source === "infisical");
+        const targetSettings = { ...appSettings };
+        delete targetSettings.infisical;
+        if (!secrets.some((secret) => secret.source === "vault") && !infisicalBindings.length) {
+            return targetSettings;
         }
 
+        const infisicalValues = infisicalBindings.length
+            ? await fetchInfisicalSecrets(appSettings.infisical ?? {
+                enabled: false,
+                siteUrl: "",
+                clientId: "",
+                clientSecret: "",
+                projectId: "",
+                environment: "",
+                secretPath: "/"
+            }, infisicalBindings.map((secret) => secret.infisicalSecretName ?? ""))
+            : new Map<string, string>();
+
         return {
-            ...appSettings,
+            ...targetSettings,
             envSecrets: secrets.map((secret) => {
+                if (secret.source === "infisical") {
+                    const secretName = secret.infisicalSecretName?.trim() ?? "";
+                    const value = infisicalValues.get(secretName);
+                    if (value === undefined) {
+                        throw new Error("Infisical secret binding for " + secret.service + "." + secret.key + " could not be resolved.");
+                    }
+                    return {
+                        service: secret.service,
+                        key: secret.key,
+                        value,
+                        mode: secret.mode,
+                        source: "inline" as const,
+                        exposure: secret.exposure,
+                        helperCommand: secret.helperCommand
+                    };
+                }
                 if (secret.source !== "vault") {
                     return secret;
                 }

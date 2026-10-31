@@ -6,7 +6,7 @@ import { GlobalSettings, GlobalSettingsPayload, NotificationSettings, ProjectCon
 import type { DeploymentRecord } from "./deploymentStore.js";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secretStore.js";
 
-const schemaVersion = 8;
+const schemaVersion = 9;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     updaterInternalUrl: "",
@@ -136,6 +136,7 @@ export class AppDatabase {
                 deployment_on_hold INTEGER NOT NULL DEFAULT 0,
                 compose_override TEXT,
                 env_secrets_json TEXT,
+                infisical_json TEXT,
                 deployment_strategy TEXT NOT NULL DEFAULT 'compose',
                 scale_to_zero_json TEXT,
                 registry_publish INTEGER NOT NULL DEFAULT 0,
@@ -283,6 +284,7 @@ export class AppDatabase {
         this.ensureColumn("servers", "last_health_error", "TEXT");
         this.ensureColumn("servers", "capabilities_json", "TEXT");
         this.ensureColumn("projects", "env_secrets_json", "TEXT");
+        this.ensureColumn("projects", "infisical_json", "TEXT");
         this.ensureColumn("projects", "env_file_path", "TEXT");
         this.ensureColumn("projects", "deployment_on_hold", "INTEGER NOT NULL DEFAULT 0");
         this.ensureColumn("projects", "server_ids_json", "TEXT");
@@ -389,6 +391,7 @@ export class AppDatabase {
                         path TEXT,
                         compose_override TEXT,
                         env_secrets_json TEXT,
+                        infisical_json TEXT,
                         deployment_strategy TEXT NOT NULL DEFAULT 'compose',
                         scale_to_zero_json TEXT,
                         created_at TEXT NOT NULL,
@@ -436,8 +439,8 @@ export class AppDatabase {
                     this.connection
                         .prepare(
                             `INSERT INTO projects_next
-                             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, scale_to_zero_json, compose_override, env_secrets_json, deployment_strategy, created_at, updated_at)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, scale_to_zero_json, compose_override, env_secrets_json, infisical_json, deployment_strategy, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                         )
                         .run(
                             projectId,
@@ -450,6 +453,7 @@ export class AppDatabase {
                             project.path,
                             project.scaleToZeroJson,
                             project.composeOverride,
+                            null,
                             null,
                             "compose",
                             project.createdAt,
@@ -896,8 +900,8 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
     database
         .prepare(
             `INSERT INTO projects
-             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, env_file_path, deployment_on_hold, scale_to_zero_json, compose_override, env_secrets_json, deployment_strategy, registry_publish, registry_deploy_from_registry, registry_image_namespace, registry_image_tag, notification_settings_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             (id, name, server_id, server_ids_json, token, repository_url, deploy_token, path, env_file_path, deployment_on_hold, scale_to_zero_json, compose_override, env_secrets_json, infisical_json, deployment_strategy, registry_publish, registry_deploy_from_registry, registry_image_namespace, registry_image_tag, notification_settings_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 server_id = excluded.server_id,
@@ -911,6 +915,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
                 scale_to_zero_json = excluded.scale_to_zero_json,
                 compose_override = excluded.compose_override,
                 env_secrets_json = excluded.env_secrets_json,
+                infisical_json = excluded.infisical_json,
                 deployment_strategy = excluded.deployment_strategy,
                 registry_publish = excluded.registry_publish,
                 registry_deploy_from_registry = excluded.registry_deploy_from_registry,
@@ -933,6 +938,7 @@ export function upsertProject(database: DatabaseSync, name: string, settings: Pr
             encryptedScaleToZeroJson(settings.scaleToZero),
             settings.composeOverride ?? null,
             encryptedProjectEnvSecretsJson(settings.envSecrets),
+            encryptedInfisicalSettingsJson(settings.infisical),
             normalizeDeploymentStrategy(settings.deploymentStrategy),
             settings.registry?.publish ? 1 : 0,
             settings.registry?.deployFromRegistry ? 1 : 0,
@@ -1126,6 +1132,19 @@ function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] =
                 };
             }
 
+            if (secret.source === "infisical") {
+                return {
+                    service,
+                    key,
+                    value: "",
+                    mode,
+                    source: "infisical" as const,
+                    infisicalSecretName: secret.infisicalSecretName?.trim() ?? "",
+                    exposure,
+                    helperCommand: exposure === "env" ? secret.helperCommand?.trim() ?? "" : ""
+                };
+            }
+
             return {
                 service,
                 key,
@@ -1136,9 +1155,23 @@ function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] =
                 helperCommand: exposure === "env" ? secret.helperCommand?.trim() ?? "" : ""
             };
         })
-        .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.value));
+        .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.source === "infisical" ? secret.infisicalSecretName : secret.value));
 
     return normalized.length ? JSON.stringify(normalized) : null;
+}
+
+function encryptedInfisicalSettingsJson(settings: ProjectSettings["infisical"]) {
+    if (!settings) return null;
+    const normalized = {
+        enabled: Boolean(settings.enabled),
+        siteUrl: settings.siteUrl.trim(),
+        clientId: settings.clientId.trim(),
+        clientSecret: settings.clientSecret?.trim() ?? "",
+        projectId: settings.projectId.trim(),
+        environment: settings.environment.trim(),
+        secretPath: settings.secretPath.trim() || "/"
+    };
+    return encryptSecret(JSON.stringify(normalized));
 }
 
 function encryptProjectEnvSecretsJson(value: string | null) {

@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, output } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { ProjectSettingsPageStore } from './project-settings-page.store';
 
@@ -10,4 +10,5 @@ import { ProjectSettingsPageStore } from './project-settings-page.store';
 })
 export class ProjectSettingsSecretsSection {
   protected readonly state = inject(ProjectSettingsPageStore);
+  readonly testConnection = output<void>();
 }

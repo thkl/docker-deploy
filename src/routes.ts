@@ -22,11 +22,12 @@ import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { NotificationService } from "./notificationService.js";
 import { NotificationStore } from "./notificationStore.js";
+import { fetchInfisicalSecrets } from "./infisicalSecrets.js";
 import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
-import { ContainerLogs, DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ScaleToZeroSettings, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
+import { ContainerLogs, DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectInfisicalSettings, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ScaleToZeroSettings, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
 import { ScaleToZeroController } from "./scaleToZero.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
@@ -86,6 +87,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
 
     app.use("/api/settings", adminAuth.requireAuth);
     app.use("/api/projects", adminAuth.requireAuth);
+    app.use("/api/infisical", adminAuth.requireAuth);
     app.use("/api/servers", adminAuth.requireAuth);
     app.use("/api/containers", adminAuth.requireAuth);
     app.use("/api/secrets", adminAuth.requireAuth);
@@ -95,6 +97,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
     registerContainerRoutes(app, { serverStore, agentManager });
     registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, scaleToZeroController: dependencies.scaleToZeroController, eventBus });
+    registerInfisicalRoutes(app, { configStore });
     registerWebhookRoute(app, { configStore, deploymentService, webhookStore });
     registerCiDeployRoute(app, { configStore, deploymentService });
     registerFrontendRoutes(app);
@@ -822,6 +825,46 @@ async function readResponseError(response: globalThis.Response) {
  * Registers project CRUD, manual deploy, compose import, and deployment history
  * endpoints.
  */
+function registerInfisicalRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore">) {
+    const { configStore } = dependencies;
+
+    app.post("/api/infisical/test", async (req: Request, res: Response) => {
+        const payload = req.body as {
+            projectRef?: string;
+            infisical?: Partial<ProjectInfisicalSettings>;
+            secretNames?: unknown[];
+        };
+        const projectRef = String(payload.projectRef ?? "").trim();
+        const existingSettings = projectRef ? configStore.resolveProject(projectRef)?.settings.infisical : undefined;
+        const settings = normalizeInfisicalSettings(payload.infisical, existingSettings);
+        if (!settings) {
+            res.status(400).json({ error: "Enter Infisical connection settings before testing." });
+            return;
+        }
+
+        const secretNames = Array.isArray(payload.secretNames)
+            ? [...new Set(payload.secretNames.filter((name): name is string => typeof name === "string").map((name) => name.trim()).filter(Boolean))]
+            : [];
+        if (secretNames.length > 100) {
+            res.status(400).json({ error: "Test up to 100 mapped secrets at a time." });
+            return;
+        }
+
+        try {
+            const values = await fetchInfisicalSecrets(settings, secretNames);
+            res.json({
+                ok: true,
+                checkedSecrets: values.size,
+                message: values.size
+                    ? `Connected and verified access to ${values.size} mapped secret${values.size === 1 ? "" : "s"}.`
+                    : "Authentication succeeded. Add an Infisical binding to verify access to a secret."
+            });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not verify Infisical settings." });
+        }
+    });
+}
+
 function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "releaseStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "vaultSecretStore" | "runtimeStatusStreams" | "scaleToZeroController" | "eventBus">) {
     const { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, scaleToZeroController, eventBus } = dependencies;
 
@@ -870,6 +913,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const scaleToZero = payloadScaleToZero(payload);
             const composeOverride = payloadComposeOverride(payload);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload));
+            const infisical = normalizeInfisicalSettings(payload.infisical);
             const globalSettings = globalSettingsStore.readSettings();
             const traefik = normalizeTraefikSettings(payload, globalSettings);
 
@@ -891,6 +935,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(scaleToZero ? { scaleToZero } : {}),
                 ...(composeOverride ? { composeOverride } : {}),
                 ...(envSecrets.length ? { envSecrets } : {}),
+                ...(infisical ? { infisical } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload),
                 registry: payloadRegistrySettings(payload),
                 notifications: payloadNotificationSettings(payload),
@@ -926,6 +971,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const deploymentOnHold = payloadDeploymentOnHold(payload, existing?.deploymentOnHold ?? false);
             const scaleToZero = payloadScaleToZero(payload, existing?.scaleToZero);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), existing?.envSecrets);
+            const infisical = normalizeInfisicalSettings(payload.infisical, existing?.infisical);
             const currentName = existingProject?.name ?? currentRef;
 
             if (!existing) {
@@ -955,6 +1001,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(scaleToZero ? { scaleToZero } : {}),
                 composeOverride: composeOverride || undefined,
                 ...(envSecrets.length ? { envSecrets } : {}),
+                ...(infisical ? { infisical } : {}),
                 deploymentStrategy: payloadDeploymentStrategy(payload, existing.deploymentStrategy === "swarm" ? "swarm" : "compose"),
                 registry: payloadRegistrySettings(payload, existing.registry),
                 notifications: payloadNotificationSettings(payload, existing.notifications),
@@ -1777,6 +1824,9 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
     const deployToken = settings.deployToken ? maskToken(settings.deployToken) : "";
     const composeOverride = settings.composeOverride ?? "";
     const envSecrets = maskEnvSecrets(settings.envSecrets);
+    const infisical = settings.infisical
+        ? { ...settings.infisical, clientSecret: "", hasClientSecret: Boolean(settings.infisical.clientSecret) }
+        : undefined;
     const deploymentStrategy = settings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const registry = settings.registry ?? { publish: false, deployFromRegistry: false };
     const traefik = settings.traefik ?? { enabled: false };
@@ -1796,6 +1846,7 @@ function projectSummary(name: string, settings: ProjectSettings, globalSettings:
         deployToken,
         composeOverride,
         envSecrets,
+        ...(infisical ? { infisical } : {}),
         deploymentStrategy,
         registry,
         notifications: settings.notifications ?? payloadNotificationSettings({} as ProjectPayload),
@@ -1859,12 +1910,13 @@ function maskEnvSecrets(secrets: ProjectEnvironmentSecret[] | undefined) {
     return (secrets ?? []).map((secret) => ({
         service: secret.service,
         key: secret.key,
-        value: secret.source === "vault" ? "" : maskSecretValue(secret.value ?? ""),
+        value: secret.source === "inline" || !secret.source ? maskSecretValue(secret.value ?? "") : "",
         mode: secret.mode,
-        source: secret.source === "vault" ? "vault" as const : "inline" as const,
+        source: secret.source === "vault" ? "vault" as const : secret.source === "infisical" ? "infisical" as const : "inline" as const,
         exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const,
         helperCommand: secret.mode === "docker_secret" && secret.exposure === "env" ? secret.helperCommand ?? "" : "",
-        ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {})
+        ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {}),
+        ...(secret.infisicalSecretName ? { infisicalSecretName: secret.infisicalSecretName } : {})
     }));
 }
 
@@ -1877,29 +1929,52 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
         .map((secret) => {
             const service = String(secret.service ?? "").trim();
             const key = String(secret.key ?? "").trim();
-            const source = secret.source === "vault" ? "vault" as const : "inline" as const;
+            const source = secret.source === "vault" ? "vault" as const : secret.source === "infisical" ? "infisical" as const : "inline" as const;
             const vaultSecretId = String(secret.vaultSecretId ?? "").trim();
-            const value = source === "vault" ? "" : String(secret.value ?? "").trim();
+            const infisicalSecretName = String(secret.infisicalSecretName ?? "").trim();
+            const value = source === "inline" ? String(secret.value ?? "").trim() : "";
             const mode = source === "vault" ? "docker_secret" as const : secret.mode === "env" ? "env" as const : "docker_secret" as const;
             const exposure = mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const;
             const helperCommand = exposure === "env" ? String(secret.helperCommand ?? "").trim() : "";
             const existingSecret = existing.find((candidate) =>
                 candidate.service === service &&
                 candidate.key === key &&
-                (source === "vault" ? candidate.vaultSecretId === vaultSecretId : candidate.source !== "vault")
+                (source === "vault" ? candidate.vaultSecretId === vaultSecretId : source === "infisical" ? candidate.infisicalSecretName === infisicalSecretName : candidate.source !== "vault" && candidate.source !== "infisical")
             );
             return {
                 service,
                 key,
-                value: source === "vault" ? "" : isMaskedSecretValue(value) ? existingSecret?.value ?? "" : value,
+                value: source === "inline" ? isMaskedSecretValue(value) ? existingSecret?.value ?? "" : value : "",
                 mode,
                 source,
                 exposure,
                 helperCommand,
-                ...(source === "vault" ? { vaultSecretId } : {})
+                ...(source === "vault" ? { vaultSecretId } : {}),
+                ...(source === "infisical" ? { infisicalSecretName } : {})
             };
         })
-        .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.value));
+        .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.source === "infisical" ? secret.infisicalSecretName : secret.value));
+}
+
+function normalizeInfisicalSettings(input: Partial<ProjectInfisicalSettings> | undefined, existing?: ProjectInfisicalSettings): ProjectInfisicalSettings | undefined {
+    if (!input) return existing;
+    const clientSecretInput = String(input.clientSecret ?? "").trim();
+    const clientSecret = !clientSecretInput || isMaskedSecretValue(clientSecretInput)
+        ? existing?.clientSecret ?? ""
+        : clientSecretInput;
+    const settings = {
+        enabled: Boolean(input.enabled),
+        siteUrl: String(input.siteUrl ?? "").trim().replace(/\/+$/, ""),
+        clientId: String(input.clientId ?? "").trim(),
+        clientSecret,
+        projectId: String(input.projectId ?? "").trim(),
+        environment: String(input.environment ?? "prod").trim() || "prod",
+        secretPath: (String(input.secretPath ?? "/").trim() || "/").startsWith("/")
+            ? String(input.secretPath ?? "/").trim() || "/"
+            : `/${String(input.secretPath).trim()}`
+    };
+    if (!settings.enabled && !settings.clientId && !settings.clientSecret && !settings.projectId) return undefined;
+    return settings;
 }
 
 function isMaskedSecretValue(value: string) {

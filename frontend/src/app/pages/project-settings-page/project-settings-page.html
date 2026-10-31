@@ -719,7 +719,7 @@
           }
 
           @if (builderSection() === 'secrets') {
-          <app-project-settings-secrets-section />
+          <app-project-settings-secrets-section (testConnection)="testInfisicalConnection()" />
           }
 
           @if (builderSection() === 'networks') {

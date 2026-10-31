@@ -31,6 +31,7 @@ export class ConfigStore {
                     p.scale_to_zero_json AS scaleToZeroJson,
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
+                    p.infisical_json AS infisicalJson,
                     p.deployment_strategy AS deploymentStrategy,
                     p.registry_publish AS registryPublish,
                     p.registry_deploy_from_registry AS registryDeployFromRegistry,
@@ -114,6 +115,7 @@ export class ConfigStore {
                     p.scale_to_zero_json AS scaleToZeroJson,
                     p.compose_override AS composeOverride,
                     p.env_secrets_json AS envSecretsJson,
+                    p.infisical_json AS infisicalJson,
                     p.deployment_strategy AS deploymentStrategy,
                     p.registry_publish AS registryPublish,
                     p.registry_deploy_from_registry AS registryDeployFromRegistry,
@@ -156,6 +158,7 @@ interface ProjectRow {
     scaleToZeroJson: string | null;
     composeOverride: string | null;
     envSecretsJson: string | null;
+    infisicalJson: string | null;
     deploymentStrategy: string | null;
     registryPublish: number | null;
     registryDeployFromRegistry: number | null;
@@ -194,6 +197,7 @@ function rowToProjectSettings(row: ProjectRow): ProjectSettings {
         ...(scaleToZero ? { scaleToZero } : {}),
         ...(row.composeOverride ? { composeOverride: row.composeOverride } : {}),
         ...(row.envSecretsJson ? { envSecrets: parseProjectEnvSecrets(row.envSecretsJson) } : {}),
+        ...(row.infisicalJson ? { infisical: parseInfisicalSettings(row.infisicalJson) } : {}),
         deploymentStrategy: row.deploymentStrategy === "swarm" ? "swarm" : "compose",
         registry: {
             publish: Boolean(row.registryPublish),
@@ -266,21 +270,39 @@ function parseProjectEnvSecrets(value: string) {
         const parsed = JSON.parse(value) as NonNullable<ProjectSettings["envSecrets"]>;
         return parsed
             .map((secret) => {
-                const source = secret.source === "vault" ? "vault" as const : "inline" as const;
+                const source = secret.source === "vault" ? "vault" as const : secret.source === "infisical" ? "infisical" as const : "inline" as const;
                 return {
                     service: secret.service,
                     key: secret.key,
-                    value: source === "vault" ? "" : decryptSecret(secret.value ?? "") ?? "",
+                    value: source === "inline" ? decryptSecret(secret.value ?? "") ?? "" : "",
                     mode: source === "vault" ? "docker_secret" as const : secret.mode === "env" ? "env" as const : "docker_secret" as const,
                     source,
                     ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {}),
+                    ...(secret.infisicalSecretName ? { infisicalSecretName: secret.infisicalSecretName } : {}),
                     exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const,
                     helperCommand: secret.mode === "docker_secret" && secret.exposure === "env" ? secret.helperCommand ?? "" : ""
                 };
             })
-            .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : true));
+            .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.source === "infisical" ? secret.infisicalSecretName : true));
     } catch {
         return [];
+    }
+}
+
+function parseInfisicalSettings(value: string) {
+    try {
+        const parsed = JSON.parse(decryptSecret(value) ?? value) as Partial<NonNullable<ProjectSettings["infisical"]>>;
+        return {
+            enabled: Boolean(parsed.enabled),
+            siteUrl: String(parsed.siteUrl ?? ""),
+            clientId: String(parsed.clientId ?? ""),
+            clientSecret: String(parsed.clientSecret ?? ""),
+            projectId: String(parsed.projectId ?? ""),
+            environment: String(parsed.environment ?? "prod"),
+            secretPath: String(parsed.secretPath ?? "/")
+        };
+    } catch {
+        return undefined;
     }
 }
 

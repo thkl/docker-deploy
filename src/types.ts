@@ -41,6 +41,7 @@ export interface ProjectSettings {
     deploymentOnHold?: boolean;
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
+    infisical?: ProjectInfisicalSettings;
     deploymentStrategy?: DeploymentStrategy;
     scaleToZero?: ScaleToZeroSettings;
     registry?: ProjectRegistrySettings;
@@ -51,7 +52,7 @@ export interface ProjectSettings {
 export type ProjectConfig = Record<string, ProjectSettings>;
 
 export type ProjectEnvironmentSecretMode = "docker_secret" | "env";
-export type ProjectEnvironmentSecretSource = "inline" | "vault";
+export type ProjectEnvironmentSecretSource = "inline" | "vault" | "infisical";
 export type ProjectEnvironmentSecretExposure = "file" | "env";
 
 export interface ProjectEnvironmentSecret {
@@ -61,8 +62,20 @@ export interface ProjectEnvironmentSecret {
     mode: ProjectEnvironmentSecretMode;
     source?: ProjectEnvironmentSecretSource;
     vaultSecretId?: string;
+    infisicalSecretName?: string;
     exposure?: ProjectEnvironmentSecretExposure;
     helperCommand?: string;
+}
+
+export interface ProjectInfisicalSettings {
+    enabled: boolean;
+    siteUrl: string;
+    clientId: string;
+    clientSecret?: string;
+    projectId: string;
+    environment: string;
+    secretPath: string;
+    hasClientSecret?: boolean;
 }
 
 export interface VaultSecret {
@@ -305,6 +318,7 @@ export interface ProjectPayload {
     deploymentOnHold?: boolean;
     composeOverride?: string;
     envSecrets?: ProjectEnvironmentSecret[];
+    infisical?: Partial<ProjectInfisicalSettings>;
     deploymentStrategy?: DeploymentStrategy;
     scaleToZero?: Partial<ScaleToZeroSettings>;
     registryPublish?: boolean;

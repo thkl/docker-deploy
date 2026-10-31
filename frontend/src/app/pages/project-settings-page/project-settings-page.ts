@@ -93,6 +93,7 @@ interface ComposeSecretEnvironmentEntry extends ComposeEnvironmentEntry {
   mode: ProjectEnvironmentSecretMode;
   source: ProjectEnvironmentSecretSource;
   vaultSecretId: string;
+  infisicalSecretName: string;
   exposure: ProjectEnvironmentSecretExposure;
 }
 
@@ -1342,6 +1343,7 @@ export class ProjectSettingsPage implements OnInit {
     this.composeMode.set('builder');
     this.traefikFormRevision.update((revision) => revision + 1);
     this.applyProjectEnvSecrets(payload.compose?.envSecrets ?? payload.envSecrets ?? []);
+    this.settingsState.patchInfisical(payload.infisical);
   }
 
   private resetForNewProject() {
@@ -1393,6 +1395,7 @@ export class ProjectSettingsPage implements OnInit {
     this.selectedNotificationChannelIds.set([]);
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set([this.form.controls.serverId.value || 'local']);
+    this.settingsState.resetInfisical();
     this.resetComposeBuilder();
   }
 
@@ -1455,6 +1458,7 @@ export class ProjectSettingsPage implements OnInit {
     this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
     this.loadBuilderFromCompose(composeSection?.override ?? project.composeOverride ?? '');
     this.applyProjectEnvSecrets(composeSection?.envSecrets ?? project.envSecrets ?? []);
+    this.settingsState.patchInfisical(project.infisical);
   }
 
   private applyProjectEnvSecrets(secrets: ProjectEnvironmentSecret[]) {
@@ -1472,8 +1476,9 @@ export class ProjectSettingsPage implements OnInit {
           key: secret.key,
           value: secret.value ?? '',
           mode: secret.source === 'vault' ? 'docker_secret' : secret.mode,
-          source: secret.source === 'vault' ? 'vault' : 'inline',
+          source: secret.source === 'vault' ? 'vault' : secret.source === 'infisical' ? 'infisical' : 'inline',
           vaultSecretId: secret.vaultSecretId ?? '',
+          infisicalSecretName: secret.infisicalSecretName ?? '',
           exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' : 'file'
         }))
       };
@@ -1483,6 +1488,15 @@ export class ProjectSettingsPage implements OnInit {
   private loadVaultSecrets() {
     this.settingsState.setProjectName(this.projectSecretNamespace());
     this.settingsState.loadVaultSecrets();
+  }
+
+  protected testInfisicalConnection() {
+    const secretNames = this.builderServices()
+      .flatMap((service) => service.secretEnvironment)
+      .filter((secret) => secret.source === 'infisical')
+      .map((secret) => secret.infisicalSecretName.trim())
+      .filter(Boolean);
+    this.settingsState.testInfisicalConnection(this.currentProjectRef, secretNames);
   }
 
   private currentProject() {
@@ -1562,6 +1576,7 @@ export class ProjectSettingsPage implements OnInit {
       deploymentOnHold: value.deploymentOnHold,
       composeOverride: composeOverride.trim(),
       envSecrets,
+      infisical: this.settingsState.infisicalPayload(),
       traefikEnabled: groupedTraefik.enabled,
       traefikHostname: value.traefikHostname.trim(),
       traefikService: value.traefikService.trim(),
@@ -1749,6 +1764,9 @@ export class ProjectSettingsPage implements OnInit {
         if (secret.source === 'vault' && secret.mode !== 'docker_secret') {
           diagnostics.push(`${serviceName}.${key} must use Docker secret mode when it references an Updater secret.`);
         }
+        if (secret.source === 'infisical' && !secret.infisicalSecretName.trim()) {
+          diagnostics.push(`${serviceName}.${key} needs an Infisical secret name.`);
+        }
         if (secret.mode === 'docker_secret' && secret.exposure === 'env' && !isShellEnvIdentifier(key)) {
           diagnostics.push(`${serviceName}.${key} needs a shell-compatible name for env helper mode.`);
         }
@@ -1756,6 +1774,10 @@ export class ProjectSettingsPage implements OnInit {
           diagnostics.push(`${serviceName}.${key} needs a manual secret value.`);
         }
       }
+    }
+
+    if (this.builderServices().some((service) => service.secretEnvironment.some((secret) => secret.source === 'infisical')) && !this.settingsState.infisicalReady()) {
+      diagnostics.push('Complete the enabled Infisical connection details before adding Infisical secret bindings.');
     }
 
     const traefik = this.currentTraefikComposeSettings();
@@ -2245,14 +2267,15 @@ function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): 
       .map((secret) => ({
         service: service.name.trim(),
         key: secret.key.trim(),
-        value: secret.source === 'vault' ? '' : secret.value.trim(),
+        value: secret.source === 'inline' ? secret.value.trim() : '',
         mode: secret.source === 'vault' ? 'docker_secret' as const : secret.mode === 'env' ? 'env' as const : 'docker_secret' as const,
-        source: secret.source === 'vault' ? 'vault' as const : 'inline' as const,
+        source: secret.source,
         exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' as const : 'file' as const,
         helperCommand: secret.mode === 'docker_secret' && secret.exposure === 'env' ? service.secretHelperCommand.trim() : '',
-        ...(secret.source === 'vault' ? { vaultSecretId: secret.vaultSecretId.trim() } : {})
+        ...(secret.source === 'vault' ? { vaultSecretId: secret.vaultSecretId.trim() } : {}),
+        ...(secret.source === 'infisical' ? { infisicalSecretName: secret.infisicalSecretName.trim() } : {})
       }))
-      .filter((secret) => secret.service && secret.key && (secret.source === 'vault' ? secret.vaultSecretId : secret.value))
+      .filter((secret) => secret.service && secret.key && (secret.source === 'vault' ? secret.vaultSecretId : secret.source === 'infisical' ? secret.infisicalSecretName : secret.value))
   );
 }
 
