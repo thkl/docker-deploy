@@ -398,6 +398,13 @@ export class ProjectSettingsPage implements OnInit {
         return;
       }
 
+      // A save refreshes the project list asynchronously. Avoid hydrating the
+      // form from the previous cached project while that refresh is in flight;
+      // patchedProjectName prevents a second hydration for the same name.
+      if (this.store.loading()) {
+        return;
+      }
+
       const project = this.store.selectedProject();
       if (project?.name === this.currentName() && this.patchedProjectName !== project.name) {
         this.patchFromProject(project);
