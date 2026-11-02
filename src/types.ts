@@ -63,6 +63,7 @@ export interface ProjectEnvironmentSecret {
     source?: ProjectEnvironmentSecretSource;
     vaultSecretId?: string;
     infisicalSecretName?: string;
+    infisicalSecretPath?: string;
     exposure?: ProjectEnvironmentSecretExposure;
     helperCommand?: string;
 }

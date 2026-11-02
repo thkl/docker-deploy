@@ -94,6 +94,7 @@ interface ComposeSecretEnvironmentEntry extends ComposeEnvironmentEntry {
   source: ProjectEnvironmentSecretSource;
   vaultSecretId: string;
   infisicalSecretName: string;
+  infisicalSecretPath: string;
   exposure: ProjectEnvironmentSecretExposure;
 }
 
@@ -1367,8 +1368,8 @@ export class ProjectSettingsPage implements OnInit {
     this.loadBuilderFromCompose(composeOverride);
     this.composeMode.set('builder');
     this.traefikFormRevision.update((revision) => revision + 1);
-    this.applyProjectEnvSecrets(payload.compose?.envSecrets ?? payload.envSecrets ?? []);
     this.settingsState.patchInfisical(payload.infisical);
+    this.applyProjectEnvSecrets(payload.compose?.envSecrets ?? payload.envSecrets ?? []);
   }
 
   private resetForNewProject() {
@@ -1481,9 +1482,9 @@ export class ProjectSettingsPage implements OnInit {
     this.selectedNotificationChannelIds.set(project.notifications?.channelIds ?? []);
     this.selectedServerId.set(this.form.controls.serverId.value || 'local');
     this.selectedServerIds.set(ensureServerSelected(serverIds, this.form.controls.serverId.value || 'local'));
+    this.settingsState.patchInfisical(project.infisical);
     this.loadBuilderFromCompose(composeSection?.override ?? project.composeOverride ?? '');
     this.applyProjectEnvSecrets(composeSection?.envSecrets ?? project.envSecrets ?? []);
-    this.settingsState.patchInfisical(project.infisical);
   }
 
   private applyProjectEnvSecrets(secrets: ProjectEnvironmentSecret[]) {
@@ -1504,6 +1505,7 @@ export class ProjectSettingsPage implements OnInit {
           source: secret.source === 'vault' ? 'vault' : secret.source === 'infisical' ? 'infisical' : 'inline',
           vaultSecretId: secret.vaultSecretId ?? '',
           infisicalSecretName: secret.infisicalSecretName ?? '',
+          infisicalSecretPath: secret.infisicalSecretPath || this.settingsState.infisicalForm.controls.secretPath.value.trim() || '/',
           exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' : 'file'
         }))
       };
@@ -1516,12 +1518,13 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   protected testInfisicalConnection() {
-    const secretNames = this.builderServices()
+    const defaultPath = this.settingsState.infisicalForm.controls.secretPath.value.trim() || '/';
+    const secretBindings = this.builderServices()
       .flatMap((service) => service.secretEnvironment)
       .filter((secret) => secret.source === 'infisical')
-      .map((secret) => secret.infisicalSecretName.trim())
-      .filter(Boolean);
-    this.settingsState.testInfisicalConnection(this.currentProjectRef, secretNames);
+      .map((secret) => ({ name: secret.infisicalSecretName.trim(), path: secret.infisicalSecretPath.trim() || defaultPath }))
+      .filter((secret) => secret.name);
+    this.settingsState.testInfisicalConnection(this.currentProjectRef, secretBindings);
   }
 
   protected infisicalWebhookEndpoint() {
@@ -1569,7 +1572,8 @@ export class ProjectSettingsPage implements OnInit {
 
     this.form.controls.composeOverride.setValue(composeOverride, { emitEvent: false });
 
-    const envSecrets = this.composeMode() === 'builder' ? collectBuilderEnvSecrets(this.builderServices()) : this.currentProject()?.compose?.envSecrets ?? this.currentProject()?.envSecrets ?? [];
+    const defaultInfisicalPath = this.settingsState.infisicalForm.controls.secretPath.value.trim() || '/';
+    const envSecrets = this.composeMode() === 'builder' ? collectBuilderEnvSecrets(this.builderServices(), defaultInfisicalPath) : this.currentProject()?.compose?.envSecrets ?? this.currentProject()?.envSecrets ?? [];
     const traefikPortNumber = Number(value.traefikPort.trim());
     const groupedTraefik = {
       enabled: value.traefikEnabled,
@@ -2298,7 +2302,7 @@ function isShellEnvIdentifier(value: string) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
-function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): ProjectEnvironmentSecret[] {
+function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[], defaultInfisicalPath: string): ProjectEnvironmentSecret[] {
   return services.flatMap((service) =>
     service.secretEnvironment
       .map((secret) => ({
@@ -2310,7 +2314,10 @@ function collectBuilderEnvSecrets(services: ComposeBuilderRenderableService[]): 
         exposure: secret.mode === 'docker_secret' && secret.exposure === 'env' ? 'env' as const : 'file' as const,
         helperCommand: secret.mode === 'docker_secret' && secret.exposure === 'env' ? service.secretHelperCommand.trim() : '',
         ...(secret.source === 'vault' ? { vaultSecretId: secret.vaultSecretId.trim() } : {}),
-        ...(secret.source === 'infisical' ? { infisicalSecretName: secret.infisicalSecretName.trim() } : {})
+        ...(secret.source === 'infisical' ? {
+          infisicalSecretName: secret.infisicalSecretName.trim(),
+          infisicalSecretPath: secret.infisicalSecretPath.trim() || defaultInfisicalPath
+        } : {})
       }))
       .filter((secret) => secret.service && secret.key && (secret.source === 'vault' ? secret.vaultSecretId : secret.source === 'infisical' ? secret.infisicalSecretName : secret.value))
   );

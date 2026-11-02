@@ -6,7 +6,7 @@ import { GlobalSettings, ProjectSettings } from "./types.js";
 import { RuntimeLogStream } from "./deploy.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
-import { fetchInfisicalSecrets } from "./infisicalSecrets.js";
+import { fetchInfisicalSecrets, infisicalSecretReferenceKey } from "./infisicalSecrets.js";
 
 /**
  * Coordinates deployment lifecycle state with the worker execution layer.
@@ -935,7 +935,10 @@ export class DeploymentService {
                 projectId: "",
                 environment: "",
                 secretPath: "/"
-            }, infisicalBindings.map((secret) => secret.infisicalSecretName ?? ""))
+            }, infisicalBindings.map((secret) => ({
+                name: secret.infisicalSecretName ?? "",
+                path: secret.infisicalSecretPath?.trim() || appSettings.infisical?.secretPath || "/"
+            })))
             : new Map<string, string>();
 
         return {
@@ -943,7 +946,8 @@ export class DeploymentService {
             envSecrets: secrets.map((secret) => {
                 if (secret.source === "infisical") {
                     const secretName = secret.infisicalSecretName?.trim() ?? "";
-                    const value = infisicalValues.get(secretName);
+                    const secretPath = secret.infisicalSecretPath?.trim() || appSettings.infisical?.secretPath || "/";
+                    const value = infisicalValues.get(infisicalSecretReferenceKey(secretName, secretPath));
                     if (value === undefined) {
                         throw new Error("Infisical secret binding for " + secret.service + "." + secret.key + " could not be resolved.");
                     }

@@ -23,7 +23,7 @@ import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { NotificationService } from "./notificationService.js";
 import { NotificationStore } from "./notificationStore.js";
-import { fetchInfisicalSecrets } from "./infisicalSecrets.js";
+import { fetchInfisicalSecrets, InfisicalSecretReference, normalizeInfisicalSecretPath, normalizeInfisicalSecretReference } from "./infisicalSecrets.js";
 import { verifyInfisicalWebhookSignature } from "./infisicalWebhook.js";
 import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
@@ -834,6 +834,7 @@ function registerInfisicalRoutes(app: Express, dependencies: Pick<RouteDependenc
         const payload = req.body as {
             projectRef?: string;
             infisical?: Partial<ProjectInfisicalSettings>;
+            secretBindings?: unknown[];
             secretNames?: unknown[];
         };
         const projectRef = String(payload.projectRef ?? "").trim();
@@ -844,16 +845,26 @@ function registerInfisicalRoutes(app: Express, dependencies: Pick<RouteDependenc
             return;
         }
 
-        const secretNames = Array.isArray(payload.secretNames)
-            ? [...new Set(payload.secretNames.filter((name): name is string => typeof name === "string").map((name) => name.trim()).filter(Boolean))]
-            : [];
-        if (secretNames.length > 100) {
+        const secretBindings: Array<string | InfisicalSecretReference> = Array.isArray(payload.secretBindings)
+            ? payload.secretBindings.flatMap((binding) => {
+                if (!binding || typeof binding !== "object") return [];
+                const record = binding as { name?: unknown; path?: unknown };
+                if (typeof record.name !== "string" || !record.name.trim()) return [];
+                return [{
+                    name: record.name.trim(),
+                    path: typeof record.path === "string" && record.path.trim() ? normalizeInfisicalSecretPath(record.path) : settings.secretPath
+                }];
+            })
+            : Array.isArray(payload.secretNames)
+                ? [...new Set(payload.secretNames.filter((name): name is string => typeof name === "string").map((name) => name.trim()).filter(Boolean))]
+                : [];
+        if (secretBindings.length > 100) {
             res.status(400).json({ error: "Test up to 100 mapped secrets at a time." });
             return;
         }
 
         try {
-            const values = await fetchInfisicalSecrets(settings, secretNames);
+            const values = await fetchInfisicalSecrets(settings, secretBindings);
             res.json({
                 ok: true,
                 checkedSecrets: values.size,
@@ -914,8 +925,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const deploymentOnHold = payloadDeploymentOnHold(payload);
             const scaleToZero = payloadScaleToZero(payload);
             const composeOverride = payloadComposeOverride(payload);
-            const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload));
             const infisical = normalizeInfisicalSettings(payload.infisical);
+            const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), [], infisical?.secretPath);
             if (infisical?.deployOnSecretChange && (!infisical.enabled || !infisical.webhookSecret)) {
                 res.status(400).json({ error: "Enable Infisical and configure its webhook signing secret before enabling change deployments." });
                 return;
@@ -976,8 +987,8 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const existing = existingProject?.settings;
             const deploymentOnHold = payloadDeploymentOnHold(payload, existing?.deploymentOnHold ?? false);
             const scaleToZero = payloadScaleToZero(payload, existing?.scaleToZero);
-            const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), existing?.envSecrets);
             const infisical = normalizeInfisicalSettings(payload.infisical, existing?.infisical);
+            const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), existing?.envSecrets, infisical?.secretPath);
             if (infisical?.deployOnSecretChange && (!infisical.enabled || !infisical.webhookSecret)) {
                 res.status(400).json({ error: "Enable Infisical and configure its webhook signing secret before enabling change deployments." });
                 return;
@@ -1708,15 +1719,20 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
         const eventEnvironment = String(payload.project?.environment ?? "").trim().toLowerCase();
         const eventSecretPath = normalizeInfisicalWebhookPath(String(payload.project?.secretPath ?? ""));
         const configuredEnvironment = infisical.environment.trim().toLowerCase();
-        const configuredSecretPath = normalizeInfisicalWebhookPath(infisical.secretPath);
-        if (!eventEnvironment || eventEnvironment !== configuredEnvironment || eventSecretPath !== configuredSecretPath) {
+        const infisicalBindings = (settings.envSecrets ?? []).filter((secret) => secret.source === "infisical");
+        const configuredSecretPaths = new Set(infisicalBindings.map((secret) => normalizeInfisicalSecretReference({
+            name: secret.infisicalSecretName ?? "",
+            path: secret.infisicalSecretPath ?? infisical.secretPath
+        }, infisical.secretPath).path));
+        if (!configuredSecretPaths.size) configuredSecretPaths.add(normalizeInfisicalSecretPath(infisical.secretPath));
+        if (!eventEnvironment || eventEnvironment !== configuredEnvironment || !configuredSecretPaths.has(eventSecretPath)) {
             webhookStore.record({
                 projectId: settings.id,
                 projectName,
                 source: `infisical:${projectRef}`,
                 eventType,
                 status: "ignored",
-                reason: "Infisical event environment or secret path does not match this project configuration."
+                reason: "Infisical event environment or secret path does not match this project's mapped secrets."
             });
             res.status(202).send("Ignored out-of-scope Infisical event.");
             return;
@@ -2047,11 +2063,12 @@ function maskEnvSecrets(secrets: ProjectEnvironmentSecret[] | undefined) {
         exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const,
         helperCommand: secret.mode === "docker_secret" && secret.exposure === "env" ? secret.helperCommand ?? "" : "",
         ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {}),
-        ...(secret.infisicalSecretName ? { infisicalSecretName: secret.infisicalSecretName } : {})
+        ...(secret.infisicalSecretName ? { infisicalSecretName: secret.infisicalSecretName } : {}),
+        ...(secret.infisicalSecretPath ? { infisicalSecretPath: secret.infisicalSecretPath } : {})
     }));
 }
 
-function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, existing: ProjectEnvironmentSecret[] = []) {
+function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, existing: ProjectEnvironmentSecret[] = [], defaultInfisicalPath = "/") {
     if (!Array.isArray(payload)) {
         return [];
     }
@@ -2062,7 +2079,15 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
             const key = String(secret.key ?? "").trim();
             const source = secret.source === "vault" ? "vault" as const : secret.source === "infisical" ? "infisical" as const : "inline" as const;
             const vaultSecretId = String(secret.vaultSecretId ?? "").trim();
-            const infisicalSecretName = String(secret.infisicalSecretName ?? "").trim();
+            const rawInfisicalSecretName = String(secret.infisicalSecretName ?? "").trim();
+            const infisicalReference = source === "infisical"
+                ? normalizeInfisicalSecretReference({
+                    name: rawInfisicalSecretName,
+                    path: String(secret.infisicalSecretPath ?? "").trim() || defaultInfisicalPath
+                }, defaultInfisicalPath)
+                : undefined;
+            const infisicalSecretName = infisicalReference?.name ?? rawInfisicalSecretName;
+            const infisicalSecretPath = infisicalReference?.path;
             const value = source === "inline" ? String(secret.value ?? "").trim() : "";
             const mode = source === "vault" ? "docker_secret" as const : secret.mode === "env" ? "env" as const : "docker_secret" as const;
             const exposure = mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const;
@@ -2070,7 +2095,9 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
             const existingSecret = existing.find((candidate) =>
                 candidate.service === service &&
                 candidate.key === key &&
-                (source === "vault" ? candidate.vaultSecretId === vaultSecretId : source === "infisical" ? candidate.infisicalSecretName === infisicalSecretName : candidate.source !== "vault" && candidate.source !== "infisical")
+                (source === "vault" ? candidate.vaultSecretId === vaultSecretId : source === "infisical"
+                    ? candidate.infisicalSecretName === infisicalSecretName && normalizeInfisicalSecretPath(candidate.infisicalSecretPath?.trim() || defaultInfisicalPath) === infisicalSecretPath
+                    : candidate.source !== "vault" && candidate.source !== "infisical")
             );
             return {
                 service,
@@ -2081,7 +2108,7 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
                 exposure,
                 helperCommand,
                 ...(source === "vault" ? { vaultSecretId } : {}),
-                ...(source === "infisical" ? { infisicalSecretName } : {})
+                ...(source === "infisical" ? { infisicalSecretName, infisicalSecretPath } : {})
             };
         })
         .filter((secret) => secret.service && secret.key && (secret.source === "vault" ? secret.vaultSecretId : secret.source === "infisical" ? secret.infisicalSecretName : secret.value));

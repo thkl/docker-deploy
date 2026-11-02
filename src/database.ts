@@ -1140,6 +1140,7 @@ function encryptedProjectEnvSecretsJson(secrets: ProjectSettings["envSecrets"] =
                     mode,
                     source: "infisical" as const,
                     infisicalSecretName: secret.infisicalSecretName?.trim() ?? "",
+                    infisicalSecretPath: secret.infisicalSecretPath?.trim() ?? "",
                     exposure,
                     helperCommand: exposure === "env" ? secret.helperCommand?.trim() ?? "" : ""
                 };

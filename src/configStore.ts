@@ -279,6 +279,7 @@ function parseProjectEnvSecrets(value: string) {
                     source,
                     ...(secret.vaultSecretId ? { vaultSecretId: secret.vaultSecretId } : {}),
                     ...(secret.infisicalSecretName ? { infisicalSecretName: secret.infisicalSecretName } : {}),
+                    ...(secret.infisicalSecretPath ? { infisicalSecretPath: secret.infisicalSecretPath } : {}),
                     exposure: secret.mode === "docker_secret" && secret.exposure === "env" ? "env" as const : "file" as const,
                     helperCommand: secret.mode === "docker_secret" && secret.exposure === "env" ? secret.helperCommand ?? "" : ""
                 };

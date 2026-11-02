@@ -533,8 +533,12 @@ fieldset small {
 
 .secret-env-row {
   display: grid;
-  grid-template-columns: minmax(100px, 0.55fr) minmax(120px, 0.65fr) minmax(150px, 1fr) minmax(130px, 0.7fr) auto;
+  grid-template-columns: minmax(110px, 0.65fr) minmax(150px, 1fr) minmax(130px, 0.7fr) auto;
   max-height: none;
+}
+
+.secret-env-row.infisical-secret-env-row {
+  grid-template-columns: minmax(100px, 0.55fr) minmax(120px, 0.65fr) minmax(150px, 1fr) minmax(130px, 0.7fr) auto;
 }
 
 .secret-reference-note {

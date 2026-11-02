@@ -19,7 +19,7 @@ export class ProjectApi {
     return this.http.put<{ id?: string; name: string }>(`/api/projects/${encodeURIComponent(projectRef)}`, payload);
   }
 
-  testInfisicalConnection(payload: { projectRef?: string; infisical: Partial<ProjectInfisicalSettings>; secretNames: string[] }): Observable<{ ok: boolean; checkedSecrets: number; message: string }> {
+  testInfisicalConnection(payload: { projectRef?: string; infisical: Partial<ProjectInfisicalSettings>; secretBindings: Array<{ name: string; path: string }> }): Observable<{ ok: boolean; checkedSecrets: number; message: string }> {
     return this.http.post<{ ok: boolean; checkedSecrets: number; message: string }>('/api/infisical/test', payload);
   }
 

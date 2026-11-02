@@ -18,6 +18,7 @@ export interface ComposeSecretEnvironmentEntry {
   source: ProjectEnvironmentSecretSource;
   vaultSecretId: string;
   infisicalSecretName: string;
+  infisicalSecretPath: string;
   exposure: ProjectEnvironmentSecretExposure;
 }
 
@@ -131,13 +132,13 @@ export class ProjectSettingsPageStore {
     this.infisicalTestMessage.set('');
   }
 
-  testInfisicalConnection(projectRef: string, secretNames: string[]) {
+  testInfisicalConnection(projectRef: string, secretBindings: Array<{ name: string; path: string }>) {
     this.infisicalTestState.set('testing');
     this.infisicalTestMessage.set('Checking credentials and mapped secret access…');
     this.api.testInfisicalConnection({
       ...(projectRef ? { projectRef } : {}),
       infisical: this.infisicalPayload(),
-      secretNames,
+      secretBindings,
     }).subscribe({
       next: (result) => {
         this.infisicalTestState.set('success');
@@ -289,7 +290,7 @@ export class ProjectSettingsPageStore {
 
       return {
         ...service,
-        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', infisicalSecretName: '', exposure: 'file' }]
+        secretEnvironment: [...service.secretEnvironment, { key: 'SECRET_KEY', value: 'value', mode: 'docker_secret', source: 'inline', vaultSecretId: '', infisicalSecretName: '', infisicalSecretPath: '', exposure: 'file' }]
       };
     }));
   }
@@ -303,7 +304,7 @@ export class ProjectSettingsPageStore {
       }
 
       const entries = [...service.secretEnvironment];
-      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', infisicalSecretName: '', exposure: 'file' as const };
+      const current = entries[index] ?? { key: '', value: '', mode: 'docker_secret' as const, source: 'inline' as const, vaultSecretId: '', infisicalSecretName: '', infisicalSecretPath: '', exposure: 'file' as const };
       const next = field === 'delivery'
         ? { ...current }
         : { ...current, [field]: target.value };
@@ -313,17 +314,20 @@ export class ProjectSettingsPageStore {
         next.value = '';
         next.vaultSecretId = next.vaultSecretId || this.vaultSecrets()[0]?.id || '';
         next.infisicalSecretName = '';
+        next.infisicalSecretPath = '';
       }
       if (field === 'source' && target.value === 'infisical') {
         next.source = 'infisical';
         next.mode = 'docker_secret';
         next.value = '';
         next.vaultSecretId = '';
+        next.infisicalSecretPath = next.infisicalSecretPath || this.infisicalForm.controls.secretPath.value.trim() || '/';
       }
       if (field === 'source' && target.value === 'inline') {
         next.source = 'inline';
         next.vaultSecretId = '';
         next.infisicalSecretName = '';
+        next.infisicalSecretPath = '';
       }
       if (field === 'vaultSecretId') {
         next.source = 'vault';
@@ -331,6 +335,17 @@ export class ProjectSettingsPageStore {
         next.value = '';
       }
       if (field === 'infisicalSecretName') {
+        next.source = 'infisical';
+        next.mode = 'docker_secret';
+        next.value = '';
+        next.vaultSecretId = '';
+        const qualifiedRef = parseQualifiedInfisicalSecretName(target.value);
+        if (qualifiedRef) {
+          next.infisicalSecretName = qualifiedRef.name;
+          next.infisicalSecretPath = qualifiedRef.path;
+        }
+      }
+      if (field === 'infisicalSecretPath') {
         next.source = 'infisical';
         next.mode = 'docker_secret';
         next.value = '';
@@ -403,4 +418,21 @@ export class ProjectSettingsPageStore {
     const refs = secret.referencedByProjects ?? [];
     return refs.length ? refs.join(', ') : 'Unused';
   }
+}
+
+function parseQualifiedInfisicalSecretName(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('/')) {
+    return null;
+  }
+
+  const segments = trimmed.split('/').filter(Boolean);
+  if (!segments.length) {
+    return null;
+  }
+
+  return {
+    name: segments[segments.length - 1],
+    path: segments.length > 1 ? `/${segments.slice(0, -1).join('/')}` : '/',
+  };
 }
