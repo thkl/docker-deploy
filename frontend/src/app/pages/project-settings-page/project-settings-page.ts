@@ -51,6 +51,7 @@ interface ComposeBuilderService {
 }
 
 type ComposeHealthcheckMode = '' | 'http' | 'command' | 'disabled';
+type ComposeBuilderServiceTab = 'general' | 'network' | 'environment' | 'volumes' | 'advanced';
 
 interface ComposeBuilderNetwork {
   id: number;
@@ -155,6 +156,14 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly hostPathBrowserError = signal('');
   protected readonly hostPathBrowser = signal<{ serviceId: number; index: number; result: PathBrowseResult } | null>(null);
   protected readonly builderServices = this.settingsState.builderServices;
+  protected readonly builderServiceTabOptions: Array<{ id: ComposeBuilderServiceTab; label: string }> = [
+    { id: 'general', label: 'General' },
+    { id: 'network', label: 'Network' },
+    { id: 'environment', label: 'Environment' },
+    { id: 'volumes', label: 'Volumes' },
+    { id: 'advanced', label: 'Advanced' },
+  ];
+  protected readonly builderServiceTabs = signal<Record<number, ComposeBuilderServiceTab>>({});
   protected readonly builderNetworks = signal<ComposeBuilderNetwork[]>([]);
   protected readonly builderVolumes = signal<ComposeBuilderVolume[]>([]);
   protected readonly message = this.settingsState.message;
@@ -746,6 +755,27 @@ export class ProjectSettingsPage implements OnInit {
 
   protected setBuilderSection(section: 'services' | 'infisical' | 'secrets' | 'networks' | 'volumes' | 'traefik') {
     this.builderSection.set(section);
+  }
+
+  protected builderServiceTab(serviceId: number): ComposeBuilderServiceTab {
+    return this.builderServiceTabs()[serviceId] ?? 'general';
+  }
+
+  protected setBuilderServiceTab(serviceId: number, tab: ComposeBuilderServiceTab) {
+    this.builderServiceTabs.update((tabs) => ({ ...tabs, [serviceId]: tab }));
+  }
+
+  protected builderServiceTabCount(service: ComposeBuilderService, tab: ComposeBuilderServiceTab) {
+    switch (tab) {
+      case 'network':
+        return splitLines(service.networks).length + splitLines(service.ports).length + splitLines(service.expose).length;
+      case 'environment':
+        return this.builderEnvironmentEntries(service).length + this.settingsState.infisicalRuntimeBindings(service.id).length;
+      case 'volumes':
+        return this.builderVolumeMountEntries(service).length;
+      default:
+        return 0;
+    }
   }
 
   protected infisicalEnabled() {

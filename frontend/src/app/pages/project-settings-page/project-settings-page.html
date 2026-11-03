@@ -354,72 +354,108 @@
               </div>
             </div>
 
-            <div class="field-grid">
-              <label>
-                <span>Service name</span>
-                <input [value]="service.name" (input)="updateBuilderService(service.id, 'name', $event)"
-                  placeholder="app" />
-              </label>
-              <label>
-                <span>Image</span>
-                <input [value]="service.image" (input)="updateBuilderService(service.id, 'image', $event)"
-                  placeholder="ghcr.io/team/app:latest" />
-              </label>
-              <label>
-                <span>Build context</span>
-                <input [value]="visibleBuildFieldValue(service, 'build')"
-                  (input)="updateBuilderService(service.id, 'build', $event)" placeholder="."
-                  [disabled]="buildFieldDisabled()" />
-                @if (!buildContextAvailable()) {
-                <small>Disabled for image-only projects without a repository URL.</small>
-                } @else if (isSwarmMode() && service.build && registryDeployFromRegistry()) {
-                <small>Deploy will publish or pull this service through the configured registry image.</small>
-                } @else if (isSwarmMode() && registryDeployFromRegistry()) {
-                <small>Set a build context so Deploy can create the registry image.</small>
-                } @else if (isSwarmMode() && service.build) {
-                <small>Enable registry deployment or set a pullable image.</small>
+            <nav class="builder-service-tabs" [attr.aria-label]="(service.name || 'Service') + ' settings'">
+              @for (tab of builderServiceTabOptions; track tab.id) {
+              <button type="button" [class.active]="builderServiceTab(service.id) === tab.id"
+                [attr.aria-current]="builderServiceTab(service.id) === tab.id ? 'page' : null"
+                (click)="setBuilderServiceTab(service.id, tab.id)">
+                {{ tab.label }}
+                @if (builderServiceTabCount(service, tab.id) > 0) {
+                <span class="builder-service-tab-count">{{ builderServiceTabCount(service, tab.id) }}</span>
                 }
-              </label>
-              <label>
-                <span>Dockerfile</span>
-                <input [value]="visibleBuildFieldValue(service, 'dockerfile')"
-                  (input)="updateBuilderService(service.id, 'dockerfile', $event)" placeholder="Dockerfile"
-                  [disabled]="buildFieldDisabled()" />
-              </label>
-              <label>
-                <span>Build target</span>
-                <input [value]="visibleBuildFieldValue(service, 'buildTarget')"
-                  (input)="updateBuilderService(service.id, 'buildTarget', $event)" placeholder="runtime"
-                  [disabled]="buildFieldDisabled()" />
-              </label>
-              <label>
-                <span>Container name</span>
-                <input [value]="service.containerName"
-                  (input)="updateBuilderService(service.id, 'containerName', $event)" placeholder="sonos-autoplay"
-                  [disabled]="isSwarmMode()" />
-                @if (isSwarmMode() && service.containerName) {
-                <small>Stacks create service task containers automatically.</small>
-                }
-              </label>
-              <label>
-                <span>Run as user</span>
-                <input [value]="service.user" (input)="updateBuilderService(service.id, 'user', $event)"
-                  placeholder="${PUID:-1000}:${PGID:-1000}" />
-              </label>
-              <label>
-                <span>Restart policy</span>
-                <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)"
-                  [disabled]="isSwarmMode()">
-                  <option value="">none</option>
-                  <option value="unless-stopped">unless-stopped</option>
-                  <option value="always">always</option>
-                  <option value="on-failure">on-failure</option>
-                  <option value="no">no</option>
-                </select>
-                @if (isSwarmMode() && service.restart) {
-                <small>Use Swarm deploy policy instead of Compose restart.</small>
-                }
-              </label>
+              </button>
+              }
+            </nav>
+
+            <div class="builder-service-tab-content">
+              @if (builderServiceTab(service.id) === 'general') {
+              <div class="field-grid">
+                <label>
+                  <span>Service name</span>
+                  <input [value]="service.name" (input)="updateBuilderService(service.id, 'name', $event)" placeholder="app" />
+                </label>
+                <label>
+                  <span>Image</span>
+                  <input [value]="service.image" (input)="updateBuilderService(service.id, 'image', $event)" placeholder="ghcr.io/team/app:latest" />
+                </label>
+                <label>
+                  <span>Build context</span>
+                  <input [value]="visibleBuildFieldValue(service, 'build')"
+                    (input)="updateBuilderService(service.id, 'build', $event)" placeholder="."
+                    [disabled]="buildFieldDisabled()" />
+                  @if (!buildContextAvailable()) {
+                  <small>Disabled for image-only projects without a repository URL.</small>
+                  } @else if (isSwarmMode() && service.build && registryDeployFromRegistry()) {
+                  <small>Deploy will publish or pull this service through the configured registry image.</small>
+                  } @else if (isSwarmMode() && registryDeployFromRegistry()) {
+                  <small>Set a build context so Deploy can create the registry image.</small>
+                  } @else if (isSwarmMode() && service.build) {
+                  <small>Enable registry deployment or set a pullable image.</small>
+                  }
+                </label>
+                <label>
+                  <span>Dockerfile</span>
+                  <input [value]="visibleBuildFieldValue(service, 'dockerfile')"
+                    (input)="updateBuilderService(service.id, 'dockerfile', $event)" placeholder="Dockerfile"
+                    [disabled]="buildFieldDisabled()" />
+                </label>
+                <label>
+                  <span>Build target</span>
+                  <input [value]="visibleBuildFieldValue(service, 'buildTarget')"
+                    (input)="updateBuilderService(service.id, 'buildTarget', $event)" placeholder="runtime"
+                    [disabled]="buildFieldDisabled()" />
+                </label>
+                <label>
+                  <span>Container name</span>
+                  <input [value]="service.containerName" (input)="updateBuilderService(service.id, 'containerName', $event)"
+                    placeholder="sonos-autoplay" [disabled]="isSwarmMode()" />
+                  @if (isSwarmMode() && service.containerName) {
+                  <small>Stacks create service task containers automatically.</small>
+                  }
+                </label>
+                <label>
+                  <span>Run as user</span>
+                  <input [value]="service.user" (input)="updateBuilderService(service.id, 'user', $event)"
+                    placeholder="${PUID:-1000}:${PGID:-1000}" />
+                </label>
+                <label>
+                  <span>Restart policy</span>
+                  <select [value]="service.restart" (change)="updateBuilderService(service.id, 'restart', $event)"
+                    [disabled]="isSwarmMode()">
+                    <option value="">none</option><option value="unless-stopped">unless-stopped</option>
+                    <option value="always">always</option><option value="on-failure">on-failure</option><option value="no">no</option>
+                  </select>
+                  @if (isSwarmMode() && service.restart) {
+                  <small>Use Swarm deploy policy instead of Compose restart.</small>
+                  }
+                </label>
+                <label class="check-row inline-check">
+                  <input type="checkbox" [checked]="service.init"
+                    (change)="updateBuilderService(service.id, 'init', $event)" [disabled]="isSwarmMode()" />
+                  <span>Init process</span>
+                </label>
+                <label class="compose-field">
+                  <span>Command</span>
+                  <input [value]="service.command" (input)="updateBuilderService(service.id, 'command', $event)" placeholder="npm start" />
+                </label>
+                <fieldset>
+                  <legend>Profiles</legend>
+                  <div class="list-editor-head">
+                    <button type="button" class="secondary compact"
+                      (click)="addBuilderServiceListItem(service.id, 'profiles', 'dev')">Add profile</button>
+                  </div>
+                  @for (profile of builderServiceListItems(service, 'profiles'); track $index) {
+                  <div class="list-row">
+                    <input [value]="profile" (input)="updateBuilderServiceListItem(service.id, 'profiles', $index, $event)" placeholder="dev" />
+                    <button type="button" class="secondary compact"
+                      (click)="removeBuilderServiceListItem(service.id, 'profiles', $index)">Remove</button>
+                  </div>
+                  } @empty {
+                  <small>No profiles configured.</small>
+                  }
+                </fieldset>
+              </div>
+              } @else if (builderServiceTab(service.id) === 'network') {
               <label>
                 <span>Network mode</span>
                 <input [value]="service.networkMode" (input)="updateBuilderService(service.id, 'networkMode', $event)"
@@ -428,301 +464,202 @@
                 <small>Attach the service to Swarm networks instead.</small>
                 }
               </label>
-              <label class="check-row inline-check">
-                <input type="checkbox" [checked]="service.init"
-                  (change)="updateBuilderService(service.id, 'init', $event)" [disabled]="isSwarmMode()" />
-                <span>Init process</span>
-              </label>
-            </div>
-
-            <fieldset class="healthcheck-editor">
-              <legend>Healthcheck</legend>
-              <div class="field-grid compact-grid">
-                <label>
-                  <span>Check type</span>
-                  <select [value]="service.healthcheckMode"
-                    (change)="updateBuilderService(service.id, 'healthcheckMode', $event)">
-                    <option value="">none</option>
-                    <option value="http">HTTP endpoint</option>
-                    <option value="command">Command</option>
-                    <option value="disabled">Disable image healthcheck</option>
-                  </select>
-                </label>
-                @if (service.healthcheckMode === 'http') {
-                <label class="wide-field">
-                  <span>Endpoint</span>
-                  <input [value]="service.healthcheckHttpUrl"
-                    (input)="updateBuilderService(service.id, 'healthcheckHttpUrl', $event)"
-                    placeholder="http://localhost:3000/health" />
-                    <small>You can use shell environment variables like http://localhost:$&#123;SERVER_PORT:-3000&#125;/api/v1/health</small>
-                </label>
-                }
-                @if (service.healthcheckMode === 'command') {
-                <label class="wide-field">
-                  <span>Command</span>
-                  <input [value]="service.healthcheckCommand"
-                    (input)="updateBuilderService(service.id, 'healthcheckCommand', $event)"
-                    placeholder="curl -fsS http://localhost:3000/health || exit 1" />
-                    
-              </label>
-
-                }
-              </div>
-
-              @if (service.healthcheckMode && service.healthcheckMode !== 'disabled') {
-              <div class="field-grid timing-grid">
-                <label>
-                  <span>Interval</span>
-                  <input [value]="service.healthcheckInterval"
-                    (input)="updateBuilderService(service.id, 'healthcheckInterval', $event)" placeholder="30s" />
-                </label>
-                <label>
-                  <span>Timeout</span>
-                  <input [value]="service.healthcheckTimeout"
-                    (input)="updateBuilderService(service.id, 'healthcheckTimeout', $event)" placeholder="10s" />
-                </label>
-                <label>
-                  <span>Retries</span>
-                  <input [value]="service.healthcheckRetries"
-                    (input)="updateBuilderService(service.id, 'healthcheckRetries', $event)" placeholder="3" />
-                </label>
-                <label>
-                  <span>Start period</span>
-                  <input [value]="service.healthcheckStartPeriod"
-                    (input)="updateBuilderService(service.id, 'healthcheckStartPeriod', $event)" placeholder="40s" />
-                </label>
-              </div>
-              }
-
-              @if (service.healthcheckExtra) {
-              <label class="wide-field">
-                <span>Advanced healthcheck YAML</span>
-                <textarea [value]="service.healthcheckExtra"
-                  (input)="updateBuilderService(service.id, 'healthcheckExtra', $event)" rows="3"></textarea>
-              </label>
-              }
-            </fieldset>
-
-            <div class="choice-grid">
-              <fieldset>
-                <legend>Networks</legend>
-                @for (networkName of builderNetworkNames(); track networkName) {
-                <label class="check-row">
-                  <input type="checkbox" [checked]="isBuilderServiceListValueSelected(service, 'networks', networkName)"
-                    (change)="toggleBuilderServiceListValue(service.id, 'networks', networkName, $event)" />
-                  <span>{{ networkName }}</span>
-                </label>
-                } @empty {
-                <small>Add networks before assigning them to services.</small>
-                }
-                @if (detectedTraefikNetworkSuggestions().length) {
-                <div class="suggestion-row">
-                  @for (networkName of detectedTraefikNetworkSuggestions(); track networkName) {
-                  <button type="button" class="secondary compact"
-                    (click)="addDetectedTraefikNetwork(networkName, service.id)">Add {{ networkName }}</button>
+              <div class="structured-editors">
+                <fieldset>
+                  <legend>Networks</legend>
+                  @for (networkName of builderNetworkNames(); track networkName) {
+                  <label class="check-row">
+                    <input type="checkbox" [checked]="isBuilderServiceListValueSelected(service, 'networks', networkName)"
+                      (change)="toggleBuilderServiceListValue(service.id, 'networks', networkName, $event)" />
+                    <span>{{ networkName }}</span>
+                  </label>
+                  } @empty {
+                  <small>Add networks before assigning them to services.</small>
                   }
-                </div>
-                }
-                @if (unusableTraefikNetworkSuggestions().length) {
-                <small>Swarm overlay network {{ unusableTraefikNetworkSuggestions().join(', ') }} is not attachable for normal Compose containers.</small>
-                }
-              </fieldset>
-
+                  @if (detectedTraefikNetworkSuggestions().length) {
+                  <div class="suggestion-row">
+                    @for (networkName of detectedTraefikNetworkSuggestions(); track networkName) {
+                    <button type="button" class="secondary compact"
+                      (click)="addDetectedTraefikNetwork(networkName, service.id)">Add {{ networkName }}</button>
+                    }
+                  </div>
+                  }
+                  @if (unusableTraefikNetworkSuggestions().length) {
+                  <small>Swarm overlay network {{ unusableTraefikNetworkSuggestions().join(', ') }} is not attachable for normal Compose containers.</small>
+                  }
+                </fieldset>
+                <fieldset>
+                  <legend>Published ports</legend>
+                  <div class="list-editor-head">
+                    <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'ports', '8080:80')">Add port</button>
+                  </div>
+                  @for (port of builderServiceListItems(service, 'ports'); track $index) {
+                  <div class="list-row">
+                    <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'ports', $index, $event)" placeholder="8080:80" />
+                    <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'ports', $index)">Remove</button>
+                  </div>
+                  } @empty {
+                  <small>No host ports published.</small>
+                  }
+                </fieldset>
+                <fieldset>
+                  <legend>Expose container ports</legend>
+                  <div class="list-editor-head">
+                    <button type="button" class="secondary compact" (click)="addBuilderServiceListItem(service.id, 'expose', '3000')">Add port</button>
+                  </div>
+                  @for (port of builderServiceListItems(service, 'expose'); track $index) {
+                  <div class="list-row">
+                    <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'expose', $index, $event)" placeholder="3000" />
+                    <button type="button" class="secondary compact" (click)="removeBuilderServiceListItem(service.id, 'expose', $index)">Remove</button>
+                  </div>
+                  } @empty {
+                  <small>No additional exposed ports.</small>
+                  }
+                </fieldset>
+              </div>
+              } @else if (builderServiceTab(service.id) === 'environment') {
               <fieldset>
-                <legend>Depends on</legend>
-                @for (serviceName of builderServiceNames(); track serviceName) {
-                @if (serviceName !== service.name) {
-                <label class="check-row">
-                  <input type="checkbox"
-                    [checked]="isBuilderServiceListValueSelected(service, 'dependsOn', serviceName)"
-                    [disabled]="service.dependsOnAdvanced !== '' || isSwarmMode()"
-                    (change)="toggleBuilderServiceListValue(service.id, 'dependsOn', serviceName, $event)" />
-                  <span>{{ serviceName }}</span>
-                </label>
-                }
-                } @empty {
-                <small>Add another service before setting dependencies.</small>
-                }
-                @if (service.dependsOnAdvanced) {
-                <small>Advanced dependency options are preserved in YAML.</small>
-                } @else if (isSwarmMode()) {
-                <small>Swarm does not start services by Compose dependency order.</small>
-                }
-              </fieldset>
-            </div>
-
-            <div class="structured-editors">
-              
-              <fieldset>
-                <legend>Ports</legend>
-
+                <legend>Environment variables</legend>
                 <div class="list-editor-head">
-                  <button type="button" class="secondary compact"
-                    (click)="addBuilderServiceListItem(service.id, 'ports', '8080:80')">Add</button>
-                </div>
-                @for (port of builderServiceListItems(service, 'ports'); track $index) {
-                <div class="list-row">
-                  <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'ports', $index, $event)"
-                    placeholder="8080:80" />
-                  <button type="button" class="secondary compact"
-                    (click)="removeBuilderServiceListItem(service.id, 'ports', $index)">Remove</button>
-                </div>
-                } @empty {
-                <small>No published ports configured.</small>
-                }
-              </fieldset>
-
-              <fieldset>
-                <legend>Environment</legend>
-                <div class="list-editor-head">
-                  <button type="button" class="secondary compact"
-                    (click)="addBuilderEnvironmentEntry(service.id)">Add</button>
+                  <button type="button" class="secondary compact" (click)="addBuilderEnvironmentEntry(service.id)">Add variable</button>
                 </div>
                 @for (entry of builderEnvironmentEntries(service); track $index) {
                 <div class="list-row env-row">
-                  <input [value]="entry.key" (input)="updateBuilderEnvironmentEntry(service.id, $index, 'key', $event)"
-                    placeholder="NODE_ENV" />
-                  <input [value]="entry.value"
-                    (input)="updateBuilderEnvironmentEntry(service.id, $index, 'value', $event)"
-                    placeholder="production" />
-                  <button type="button" class="secondary compact"
-                    (click)="removeBuilderEnvironmentEntry(service.id, $index)">Remove</button>
+                  <input [value]="entry.key" (input)="updateBuilderEnvironmentEntry(service.id, $index, 'key', $event)" placeholder="NODE_ENV" />
+                  <input [value]="entry.value" (input)="updateBuilderEnvironmentEntry(service.id, $index, 'value', $event)" placeholder="production" />
+                  <button type="button" class="secondary compact" (click)="removeBuilderEnvironmentEntry(service.id, $index)">Remove</button>
                 </div>
                 } @empty {
                 <small>No environment variables configured.</small>
                 }
-                <app-project-settings-infisical-importer
-                  [serviceId]="service.id"
-                  [projectRef]="infisicalProjectRef()"
-                  (configureInfisical)="setBuilderSection('infisical')" />
               </fieldset>
-
+              <app-project-settings-infisical-importer [serviceId]="service.id" [projectRef]="infisicalProjectRef()"
+                (configureInfisical)="setBuilderSection('infisical')" />
+              } @else if (builderServiceTab(service.id) === 'volumes') {
               <fieldset>
-                <legend>Volumes</legend>
+                <legend>Service mounts</legend>
                 <div class="list-editor-head">
-                  <button type="button" class="secondary compact"
-                    (click)="addBuilderNamedVolumeMount(service.id)" [disabled]="builderVolumes().length === 0">Add volume</button>
-                  <button type="button" class="secondary compact" (click)="addBuilderBindMount(service.id)">Add bind</button>
+                  <button type="button" class="secondary compact" (click)="addBuilderNamedVolumeMount(service.id)"
+                    [disabled]="builderVolumes().length === 0">Add volume</button>
+                  <button type="button" class="secondary compact" (click)="addBuilderBindMount(service.id)">Add bind mount</button>
                 </div>
                 @for (mount of builderVolumeMountEntries(service); track $index) {
                 <div class="list-row volume-mount-row">
-                  <select [value]="mount.kind"
-                    (change)="updateBuilderVolumeMountEntry(service.id, $index, 'kind', $event)">
-                    <option value="volume">Volume</option>
-                    <option value="bind">Bind</option>
+                  <select [value]="mount.kind" (change)="updateBuilderVolumeMountEntry(service.id, $index, 'kind', $event)">
+                    <option value="volume">Volume</option><option value="bind">Bind</option>
                   </select>
                   @if (mount.kind === 'volume') {
-                  <select [value]="mount.source"
-                    (change)="updateBuilderVolumeMountEntry(service.id, $index, 'source', $event)">
+                  <select [value]="mount.source" (change)="updateBuilderVolumeMountEntry(service.id, $index, 'source', $event)">
                     @for (volume of builderVolumes(); track volume.id) {
                     <option [value]="volume.name">{{ volume.name || 'Unnamed volume' }}</option>
                     }
                   </select>
                   } @else {
                   <div class="path-field">
-                    <input [value]="mount.source"
-                      (input)="updateBuilderVolumeMountEntry(service.id, $index, 'source', $event)"
-                      placeholder="/srv/app/data" />
-                    <button type="button" class="secondary compact"
-                      (click)="toggleHostPathBrowser(service.id, $index, mount.source)"
-                      [disabled]="browsingHostPath()">
-                      {{ hostPathBrowserFor(service.id, $index) ? 'Close' : 'Browse' }}
-                    </button>
+                    <input [value]="mount.source" (input)="updateBuilderVolumeMountEntry(service.id, $index, 'source', $event)" placeholder="/srv/app/data" />
+                    <button type="button" class="secondary compact" (click)="toggleHostPathBrowser(service.id, $index, mount.source)"
+                      [disabled]="browsingHostPath()">{{ hostPathBrowserFor(service.id, $index) ? 'Close' : 'Browse' }}</button>
                   </div>
                   }
-                  <input [value]="mount.target"
-                    (input)="updateBuilderVolumeMountEntry(service.id, $index, 'target', $event)"
-                    placeholder="/data" />
-                  <input [value]="mount.mode"
-                    (input)="updateBuilderVolumeMountEntry(service.id, $index, 'mode', $event)"
-                    placeholder="ro" />
-                  <button type="button" class="secondary compact"
-                    (click)="removeBuilderVolumeMountEntry(service.id, $index)">Remove</button>
+                  <input [value]="mount.target" (input)="updateBuilderVolumeMountEntry(service.id, $index, 'target', $event)" placeholder="/data" />
+                  <input [value]="mount.mode" (input)="updateBuilderVolumeMountEntry(service.id, $index, 'mode', $event)" placeholder="ro" />
+                  <button type="button" class="secondary compact" (click)="removeBuilderVolumeMountEntry(service.id, $index)">Remove</button>
                 </div>
                 } @empty {
-                <small>Use a named volume for Docker-managed storage or a bind mount for a host path.</small>
+                <small>No mounts configured. Use named volumes for Docker-managed storage or bind mounts for host paths.</small>
                 }
                 @if (hostPathBrowserError()) {
                 <small class="field-error">{{ hostPathBrowserError() }}</small>
                 }
               </fieldset>
-
-              <fieldset>
-                <legend>Expose container ports</legend>
-                <div class="list-editor-head">
-                  <button type="button" class="secondary compact"
-                    (click)="addBuilderServiceListItem(service.id, 'expose', '3000')">Add</button>
+              } @else {
+              <fieldset class="healthcheck-editor">
+                <legend>Healthcheck</legend>
+                <div class="field-grid compact-grid">
+                  <label>
+                    <span>Check type</span>
+                    <select [value]="service.healthcheckMode" (change)="updateBuilderService(service.id, 'healthcheckMode', $event)">
+                      <option value="">none</option><option value="http">HTTP endpoint</option>
+                      <option value="command">Command</option><option value="disabled">Disable image healthcheck</option>
+                    </select>
+                  </label>
+                  @if (service.healthcheckMode === 'http') {
+                  <label class="wide-field">
+                    <span>Endpoint</span>
+                    <input [value]="service.healthcheckHttpUrl" (input)="updateBuilderService(service.id, 'healthcheckHttpUrl', $event)" placeholder="http://localhost:3000/health" />
+                    <small>You can use shell environment variables like http://localhost:$&#123;SERVER_PORT:-3000&#125;/api/v1/health</small>
+                  </label>
+                  }
+                  @if (service.healthcheckMode === 'command') {
+                  <label class="wide-field">
+                    <span>Command</span>
+                    <input [value]="service.healthcheckCommand" (input)="updateBuilderService(service.id, 'healthcheckCommand', $event)" placeholder="curl -fsS http://localhost:3000/health || exit 1" />
+                  </label>
+                  }
                 </div>
-                @for (port of builderServiceListItems(service, 'expose'); track $index) {
-                <div class="list-row">
-                  <input [value]="port" (input)="updateBuilderServiceListItem(service.id, 'expose', $index, $event)"
-                    placeholder="3000" />
-                  <button type="button" class="secondary compact"
-                    (click)="removeBuilderServiceListItem(service.id, 'expose', $index)">Remove</button>
+                @if (service.healthcheckMode && service.healthcheckMode !== 'disabled') {
+                <div class="field-grid timing-grid">
+                  <label><span>Interval</span><input [value]="service.healthcheckInterval" (input)="updateBuilderService(service.id, 'healthcheckInterval', $event)" placeholder="30s" /></label>
+                  <label><span>Timeout</span><input [value]="service.healthcheckTimeout" (input)="updateBuilderService(service.id, 'healthcheckTimeout', $event)" placeholder="10s" /></label>
+                  <label><span>Retries</span><input [value]="service.healthcheckRetries" (input)="updateBuilderService(service.id, 'healthcheckRetries', $event)" placeholder="3" /></label>
+                  <label><span>Start period</span><input [value]="service.healthcheckStartPeriod" (input)="updateBuilderService(service.id, 'healthcheckStartPeriod', $event)" placeholder="40s" /></label>
                 </div>
-                } @empty {
-                <small>No exposed container ports configured.</small>
+                }
+                @if (service.healthcheckExtra) {
+                <label class="wide-field">
+                  <span>Advanced healthcheck YAML</span>
+                  <textarea [value]="service.healthcheckExtra" (input)="updateBuilderService(service.id, 'healthcheckExtra', $event)" rows="3"></textarea>
+                </label>
                 }
               </fieldset>
-            
-            </div>
-
-            <div class="field-grid">
-              <fieldset>
-                <legend>Profiles</legend>
-                <div class="list-editor-head">
-                  <button type="button" class="secondary compact"
-                    (click)="addBuilderServiceListItem(service.id, 'profiles', 'dev')">Add</button>
-                </div>
-                @for (profile of builderServiceListItems(service, 'profiles'); track $index) {
-                <div class="list-row">
-                  <input [value]="profile"
-                    (input)="updateBuilderServiceListItem(service.id, 'profiles', $index, $event)" placeholder="dev" />
-                  <button type="button" class="secondary compact"
-                    (click)="removeBuilderServiceListItem(service.id, 'profiles', $index)">Remove</button>
-                </div>
-                } @empty {
-                <small>No profiles configured.</small>
-                }
-              </fieldset>
-              <fieldset>
-                <legend>Command</legend>
-                <input [value]="service.command" (input)="updateBuilderService(service.id, 'command', $event)"
-                  placeholder="npm start" />
-              </fieldset>
-            </div>
-
-            <fieldset>
-              <legend>Swarm deploy</legend>
-              <div class="field-grid">
-                <label>
-                  <span>Mode</span>
-                  <select [value]="service.deployMode" (change)="updateBuilderService(service.id, 'deployMode', $event)">
-                    <option value="">default</option>
-                    <option value="replicated">replicated</option>
-                    <option value="global">global</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Replicas</span>
-                  <input [value]="service.deployReplicas"
-                    (input)="updateBuilderService(service.id, 'deployReplicas', $event)" inputmode="numeric"
-                    placeholder="1" />
-                </label>
+              <div class="choice-grid">
+                <fieldset>
+                  <legend>Depends on</legend>
+                  @for (serviceName of builderServiceNames(); track serviceName) {
+                  @if (serviceName !== service.name) {
+                  <label class="check-row">
+                    <input type="checkbox" [checked]="isBuilderServiceListValueSelected(service, 'dependsOn', serviceName)"
+                      [disabled]="service.dependsOnAdvanced !== '' || isSwarmMode()"
+                      (change)="toggleBuilderServiceListValue(service.id, 'dependsOn', serviceName, $event)" />
+                    <span>{{ serviceName }}</span>
+                  </label>
+                  }
+                  } @empty {
+                  <small>Add another service before setting dependencies.</small>
+                  }
+                  @if (service.dependsOnAdvanced) {
+                  <small>Advanced dependency options are preserved in YAML.</small>
+                  } @else if (isSwarmMode()) {
+                  <small>Swarm does not start services by Compose dependency order.</small>
+                  }
+                </fieldset>
+                <fieldset>
+                  <legend>Swarm deploy</legend>
+                  <div class="field-grid">
+                    <label>
+                      <span>Mode</span>
+                      <select [value]="service.deployMode" (change)="updateBuilderService(service.id, 'deployMode', $event)">
+                        <option value="">default</option><option value="replicated">replicated</option><option value="global">global</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Replicas</span>
+                      <input [value]="service.deployReplicas" (input)="updateBuilderService(service.id, 'deployReplicas', $event)" inputmode="numeric" placeholder="1" />
+                    </label>
+                  </div>
+                  <label class="compose-field">
+                    <span>Placement constraints</span>
+                    <textarea [value]="service.deployPlacementConstraints" (input)="updateBuilderService(service.id, 'deployPlacementConstraints', $event)" placeholder="node.role == worker"></textarea>
+                  </label>
+                </fieldset>
               </div>
               <label class="compose-field">
-                <span>Placement constraints</span>
-                <textarea [value]="service.deployPlacementConstraints"
-                  (input)="updateBuilderService(service.id, 'deployPlacementConstraints', $event)"
-                  placeholder="node.role == worker"></textarea>
+                <span>Advanced service YAML</span>
+                <textarea [value]="service.extra" (input)="updateBuilderService(service.id, 'extra', $event)"
+                  placeholder="healthcheck:&#10;  test: ['CMD', 'curl', '-f', 'http://localhost']"></textarea>
               </label>
-            </fieldset>
-
-            <label class="compose-field">
-              <span>Advanced service YAML</span>
-              <textarea [value]="service.extra" (input)="updateBuilderService(service.id, 'extra', $event)"
-                placeholder="healthcheck:&#10;  test: ['CMD', 'curl', '-f', 'http://localhost']"></textarea>
-            </label>
+              }
+            </div>
           </section>
           }
           }

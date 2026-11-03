@@ -535,6 +535,52 @@ textarea {
   padding: 0.68rem;
 }
 
+.builder-service-tabs {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.builder-service-tabs button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  min-height: 38px;
+  padding: 0 0.65rem;
+  white-space: nowrap;
+}
+
+.builder-service-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+}
+
+.builder-service-tab-count {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  min-width: 1.25rem;
+  padding: 0.1rem 0.3rem;
+  text-align: center;
+}
+
+.builder-service-tab-content {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
 .choice-grid {
   display: grid;
   gap: 0.75rem;
@@ -971,17 +1017,25 @@ button.secondary:hover {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   }
 
-  ::ng-deep .list-row.infisical-runtime-row {
+  /* 1. Force the row container to be a left-to-right flex container */
+  .list-row.infisical-runtime-row {
     display: flex !important;
     flex-direction: row !important;
+    align-items: center !important;
     gap: 0.55rem !important;
+    max-height: none !important; /* Removes any conflicting height constraints */
   }
 
-  /* Set the two inputs and the span to 30% width each */
-  ::ng-deep .infisical-runtime-row input,
-  ::ng-deep .infisical-runtime-row .infisical-runtime-reference {
+  /* 2. Force both inputs and the span to take up exactly 30% width each */
+  .infisical-runtime-row input,
+  .infisical-runtime-row .infisical-runtime-reference {
     flex: 0 0 30% !important;
     box-sizing: border-box !important;
+  }
+
+  /* 3. Let the remove button take up the remaining space automatically */
+  .infisical-runtime-row button {
+    flex: 1 1 auto !important;
   }
 
   .infisical-runtime-row input,
