@@ -22,14 +22,13 @@ export async function listInfisicalSecretNames(settings: ProjectInfisicalSetting
         url.searchParams.set("environment", auth.environment);
         url.searchParams.set("secretPath", path);
         url.searchParams.set("viewSecretValue", "false");
-        url.searchParams.set("includeImports", "false");
-        url.searchParams.set("recursive", "false");
 
         const response = await fetchWithTimeout(url, {
             headers: { authorization: `Bearer ${auth.accessToken}` }
         });
         if (!response.ok) {
-            throw new Error(`Could not list Infisical secrets from '${path}' (HTTP ${response.status}). Check its project, environment, path, and identity access.`);
+            const detail = await readErrorMessage(response);
+            throw new Error(`Could not list Infisical secrets from '${path}' (HTTP ${response.status})${detail ? `: ${detail}` : ". Check its project, environment, path, and identity access."}`);
         }
 
         const body = await readJson(response, `Infisical returned an invalid secret list for '${path}'.`);
@@ -163,6 +162,16 @@ async function readJson(response: Response, errorMessage: string): Promise<Recor
         return asRecord(body) ?? {};
     } catch {
         throw new Error(errorMessage);
+    }
+}
+
+async function readErrorMessage(response: Response) {
+    try {
+        const body = asRecord(await response.json());
+        const message = readString(body?.message) ?? readString(body?.error);
+        return message?.replace(/\s+/g, " ").trim().slice(0, 240) ?? "";
+    } catch {
+        return "";
     }
 }
 
