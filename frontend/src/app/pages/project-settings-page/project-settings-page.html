@@ -291,6 +291,11 @@
             <strong>Services</strong>
             <span>{{ builderServices().length }}</span>
           </button>
+          <button type="button" [class.active]="builderSection() === 'infisical'"
+            (click)="setBuilderSection('infisical')">
+            <strong>Infisical</strong>
+            <span>{{ infisicalEnabled() ? 'on' : 'off' }}</span>
+          </button>
           <button type="button" [class.active]="builderSection() === 'secrets'"
             (click)="setBuilderSection('secrets')">
             <strong>Secrets</strong>
@@ -586,6 +591,10 @@
                 } @empty {
                 <small>No environment variables configured.</small>
                 }
+                <app-project-settings-infisical-importer
+                  [serviceId]="service.id"
+                  [projectRef]="infisicalProjectRef()"
+                  (configureInfisical)="setBuilderSection('infisical')" />
               </fieldset>
 
               <fieldset>
@@ -718,11 +727,15 @@
           }
           }
 
+          @if (builderSection() === 'infisical') {
+          <app-project-settings-infisical-section
+            [webhookEndpoint]="infisicalWebhookEndpoint()"
+            (testConnection)="testInfisicalConnection()" />
+          }
+
           @if (builderSection() === 'secrets') {
           <app-project-settings-secrets-section
-            [webhookEndpoint]="infisicalWebhookEndpoint()"
-            [projectRef]="infisicalProjectRef()"
-            (testConnection)="testInfisicalConnection()" />
+          />
           }
 
           @if (builderSection() === 'networks') {

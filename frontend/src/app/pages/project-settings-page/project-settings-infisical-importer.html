@@ -1,0 +1,79 @@
+<div class="infisical-runtime-bindings">
+  <div class="infisical-runtime-head">
+    <div class="head-category">
+      <strong>Infisical runtime variables</strong>
+      <span>Values are injected into this service's environment during deployment.</span>
+    </div>
+    @if (!state.infisicalForm.controls.enabled.value) {
+      <button type="button" class="secondary compact" (click)="configureInfisical.emit()">Configure Infisical</button>
+    }
+  </div>
+
+  @for (binding of state.infisicalRuntimeBindings(serviceId()); track binding.index) {
+    <div class="list-row infisical-runtime-row">
+      <input [value]="binding.entry.key"
+        (input)="state.updateInfisicalRuntimeBinding(serviceId(), binding.index, 'key', $event)"
+        aria-label="Runtime environment variable name" />
+      <span class="infisical-runtime-reference">
+        {{ binding.entry.infisicalSecretName }} <small>{{ binding.entry.infisicalSecretPath }}</small>
+      </span>
+      <input [value]="binding.entry.infisicalSecretPath"
+        (input)="state.updateInfisicalRuntimeBinding(serviceId(), binding.index, 'infisicalSecretPath', $event)"
+        aria-label="Infisical secret path" />
+      <button type="button" class="secondary compact"
+        (click)="state.removeBuilderSecretEnvironmentEntry(serviceId(), binding.index)">Remove</button>
+    </div>
+  } @empty {
+    <small>No Infisical runtime variables selected for this service.</small>
+  }
+
+  <div class="infisical-import-panel">
+    <div class="head-category">
+      <strong>Import settings</strong>
+      <span>Load key names from one or more paths, then select what this service needs.</span>
+    </div>
+
+    @if (state.infisicalForm.controls.enabled.value) {
+      <label>
+        <span>Infisical paths (one per line)</span>
+        <textarea rows="2" [value]="pathValue()" (input)="updatePath($event)" placeholder="/database&#10;/oidc"></textarea>
+      </label>
+      <button type="button" class="secondary compact" (click)="loadSecretNames()"
+        [disabled]="loading() || !state.infisicalReady()">
+        {{ loading() ? 'Loading names...' : 'Load variable names' }}
+      </button>
+      <small>Only key names are loaded. Selected values stay in Infisical until deployment and are injected as runtime environment variables.</small>
+
+      @if (importError()) {
+        <p class="notice error" role="alert">{{ importError() }}</p>
+      }
+      @if (importMessage()) {
+        <p class="notice" role="status">{{ importMessage() }}</p>
+      }
+      @if (secretNames().length) {
+        <div class="infisical-import-list-head">
+          <label class="check-row compact">
+            <input type="checkbox" [checked]="selectedSecretIds().length === secretNames().length"
+              (change)="selectAll($event)" />
+            <span>Select all ({{ secretNames().length }})</span>
+          </label>
+          <button type="button" class="secondary compact" (click)="addSelected()"
+            [disabled]="!selectedSecretIds().length">
+            Add {{ selectedSecretIds().length }} selected
+          </button>
+        </div>
+        <div class="infisical-import-list">
+          @for (secret of secretNames(); track secret.id) {
+            <label class="check-row compact infisical-import-item">
+              <input type="checkbox" [checked]="selectedSecretIds().includes(secret.id)"
+                (change)="toggleSelection(secret.id, $event)" />
+              <span><code>{{ secret.name }}</code><small>{{ secret.path }}</small></span>
+            </label>
+          }
+        </div>
+      }
+    } @else {
+      <p class="notice">Enable Infisical in the Infisical section to import runtime variables.</p>
+    }
+  </div>
+</div>

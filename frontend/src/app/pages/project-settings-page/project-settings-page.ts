@@ -7,6 +7,8 @@ import { ComposeInspection, ComposeServiceInspection, ComposeValidation, Deploym
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 import { ProjectSettingsPageStore } from './project-settings-page.store';
+import { ProjectSettingsInfisicalImporter } from './project-settings-infisical-importer';
+import { ProjectSettingsInfisicalSection } from './project-settings-infisical-section';
 import { ProjectSettingsSecretsSection } from './project-settings-secrets-section';
 
 interface ComposeBuilderService {
@@ -122,7 +124,7 @@ interface StrategySummary {
 
 @Component({
   selector: 'app-project-settings-page',
-  imports: [ReactiveFormsModule, ProjectSettingsSecretsSection],
+  imports: [ReactiveFormsModule, ProjectSettingsInfisicalImporter, ProjectSettingsInfisicalSection, ProjectSettingsSecretsSection],
   templateUrl: './project-settings-page.html',
   styleUrl: './project-settings-page.scss',
   providers: [ProjectSettingsPageStore],
@@ -148,7 +150,7 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly composeValidation = signal<ComposeValidation | null>(null);
   protected readonly traefikDiagnostics = signal<TraefikDiagnostics | null>(null);
   protected readonly composeMode = signal<'builder' | 'yaml'>('builder');
-  protected readonly builderSection = signal<'services' | 'secrets' | 'networks' | 'volumes' | 'traefik'>('services');
+  protected readonly builderSection = signal<'services' | 'infisical' | 'secrets' | 'networks' | 'volumes' | 'traefik'>('services');
   protected readonly browsingHostPath = signal(false);
   protected readonly hostPathBrowserError = signal('');
   protected readonly hostPathBrowser = signal<{ serviceId: number; index: number; result: PathBrowseResult } | null>(null);
@@ -742,8 +744,12 @@ export class ProjectSettingsPage implements OnInit {
     this.form.controls.traefikNetwork.setValue(network);
   }
 
-  protected setBuilderSection(section: 'services' | 'secrets' | 'networks' | 'volumes' | 'traefik') {
+  protected setBuilderSection(section: 'services' | 'infisical' | 'secrets' | 'networks' | 'volumes' | 'traefik') {
     this.builderSection.set(section);
+  }
+
+  protected infisicalEnabled() {
+    return this.settingsState.infisicalForm.controls.enabled.value;
   }
 
   protected addBuilderService() {

@@ -1,0 +1,83 @@
+<div class="section-toolbar">
+  <div>
+    <strong>Infisical</strong>
+    <span>Connect the project and configure its secret source.</span>
+  </div>
+</div>
+
+<section class="project-secrets-panel infisical-panel" [formGroup]="state.infisicalForm">
+  <div class="project-secrets-head">
+    <div class="head-category">
+      <strong>Infisical connection</strong>
+      <span>Service environment variables and secret bindings share this connection.</span>
+    </div>
+    <div class="builder-actions">
+      <button type="button" class="secondary compact" (click)="testConnection.emit()"
+        [disabled]="state.infisicalTestState() === 'testing' || !state.infisicalForm.controls.enabled.value">
+        {{ state.infisicalTestState() === 'testing' ? 'Testing...' : 'Test connection' }}
+      </button>
+      <label class="check-row compact">
+        <input type="checkbox" formControlName="enabled" />
+        <span>Enable Infisical</span>
+      </label>
+    </div>
+  </div>
+
+  @if (state.infisicalForm.controls.enabled.value) {
+    <div class="field-grid">
+      <label>
+        <span>Instance URL</span>
+        <input formControlName="siteUrl" autocomplete="url" placeholder="https://app.infisical.com" />
+      </label>
+      <label>
+        <span>Infisical project ID</span>
+        <input formControlName="projectId" autocomplete="off" placeholder="project ID" />
+      </label>
+      <label>
+        <span>Environment slug</span>
+        <input formControlName="environment" autocomplete="off" placeholder="prod" />
+      </label>
+      <label>
+        <span>Default secret path</span>
+        <input formControlName="secretPath" autocomplete="off" placeholder="/" />
+      </label>
+      <label>
+        <span>Machine identity client ID</span>
+        <input formControlName="clientId" autocomplete="off" placeholder="client ID" />
+      </label>
+      <label>
+        <span>Machine identity client secret</span>
+        <input type="password" formControlName="clientSecret" autocomplete="new-password"
+          [placeholder]="state.infisicalSecretConfigured() ? 'leave blank to keep the saved secret' : 'client secret'" />
+      </label>
+    </div>
+    <small>Use a Universal Auth machine identity with read access to this project, environment, and every path used by a binding. The default path fills new bindings; each binding can override it. Credentials are encrypted in the updater database. Only selected or mapped secrets are fetched at deploy time.</small>
+
+    <label class="check-row">
+      <input type="checkbox" formControlName="deployOnSecretChange" />
+      <span>Deploy this project when Infisical secrets change</span>
+    </label>
+    @if (state.infisicalForm.controls.deployOnSecretChange.value) {
+      @if (webhookEndpoint()) {
+        <div class="field-grid">
+          <label>
+            <span>Webhook endpoint URL</span>
+            <input [value]="webhookEndpoint()" readonly />
+          </label>
+          <label>
+            <span>Webhook signing secret</span>
+            <input type="password" formControlName="webhookSecret" autocomplete="new-password"
+              [placeholder]="state.infisicalWebhookSecretConfigured() ? 'leave blank to keep the saved secret' : 'set a shared secret'" />
+          </label>
+        </div>
+      } @else {
+        <p class="notice">Save the project first to get its webhook endpoint URL.</p>
+      }
+      <small>Create a General webhook in Infisical, select the <code>secrets.modified</code> event, and use this endpoint. Set the same signing secret in both places. Limit the webhook to this project’s environment and mapped secret paths. The updater endpoint must be publicly reachable over HTTPS.</small>
+    }
+  }
+
+  @if (state.infisicalTestState() !== 'idle') {
+    <p class="notice" [class.error]="state.infisicalTestState() === 'error'" role="status">{{ state.infisicalTestMessage() }}</p>
+  }
+</section>

@@ -159,6 +159,7 @@ export class ProjectSettingsPageStore {
       if (service.id !== serviceId) return service;
 
       const secretEnvironment = [...service.secretEnvironment];
+      const environmentKeys = new Set(service.environment.split(/\r?\n/).map((entry) => entry.split('=')[0]?.trim()).filter(Boolean));
       const seenReferences = new Set<string>();
       for (const binding of secretBindings) {
         const secretName = binding.name.trim();
@@ -167,7 +168,7 @@ export class ProjectSettingsPageStore {
         const referenceId = JSON.stringify([infisicalSecretPath || '/', secretName]);
         if (seenReferences.has(referenceId)) continue;
         seenReferences.add(referenceId);
-        if (secretEnvironment.some((secret) => secret.key.trim() === secretName)) {
+        if (environmentKeys.has(secretName) || secretEnvironment.some((secret) => secret.key.trim() === secretName)) {
           skipped += 1;
           continue;
         }
@@ -186,6 +187,32 @@ export class ProjectSettingsPageStore {
       return { ...service, secretEnvironment };
     }));
     return { added, skipped };
+  }
+
+  infisicalRuntimeBindings(serviceId: number) {
+    const service = this.builderServices().find((candidate) => candidate.id === serviceId);
+    return (service?.secretEnvironment ?? [])
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => entry.source === 'infisical' && entry.mode === 'env');
+  }
+
+  secretEnvironmentBindings(service: ComposeBuilderService) {
+    return service.secretEnvironment
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => !(entry.source === 'infisical' && entry.mode === 'env'));
+  }
+
+  updateInfisicalRuntimeBinding(serviceId: number, index: number, field: 'key' | 'infisicalSecretPath', event: Event) {
+    const value = (event.target as HTMLInputElement).value;
+    this.resetInfisicalTest();
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== serviceId) return service;
+      const secretEnvironment = [...service.secretEnvironment];
+      const entry = secretEnvironment[index];
+      if (!entry || entry.source !== 'infisical' || entry.mode !== 'env') return service;
+      secretEnvironment[index] = { ...entry, [field]: value };
+      return { ...service, secretEnvironment };
+    }));
   }
 
   infisicalPayload(): ProjectInfisicalSettings {
@@ -435,7 +462,7 @@ export class ProjectSettingsPageStore {
   }
 
   builderSecretCount() {
-    return this.builderServices().reduce((count, service) => count + service.secretEnvironment.length, 0);
+    return this.builderServices().reduce((count, service) => count + this.secretEnvironmentBindings(service).length, 0);
   }
 
   vaultSecretLabel(secret: VaultSecret) {

@@ -342,6 +342,36 @@ textarea {
   font-size: 0.72rem;
 }
 
+.infisical-runtime-bindings {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.infisical-runtime-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: space-between;
+}
+
+.infisical-runtime-row {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.8fr) auto;
+  max-height: none;
+}
+
+.infisical-runtime-reference {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.infisical-runtime-reference small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.72rem;
+}
+
 .project-secrets-head,
 .project-secret-item {
   align-items: center;
@@ -935,6 +965,10 @@ button.secondary:hover {
   .env-row,
   .secret-env-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .infisical-runtime-row {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .infisical-import-list {
