@@ -40,6 +40,82 @@ p {
   padding: 0.64rem;
 }
 
+.settings-page-tabs,
+.project-settings-tabs {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.64rem;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0.25rem;
+  width: fit-content;
+}
+
+.settings-page-tabs button,
+.project-settings-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  flex: 0 0 auto;
+  font-weight: 520;
+  min-height: 30px;
+  padding: 0 0.68rem;
+  white-space: nowrap;
+}
+
+.settings-page-tabs button.active,
+.project-settings-tabs button.active {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.settings-page-panels,
+.project-settings-panels {
+  display: grid;
+  min-width: 0;
+}
+
+.settings-page-panels {
+  grid-template-rows: minmax(0, 1fr);
+  height: clamp(28rem, calc(100vh - 15rem), 62rem);
+}
+
+.settings-page-panel,
+.project-settings-panel {
+  grid-area: 1 / 1;
+  min-width: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.settings-page-panel {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.settings-page-panel.active,
+.project-settings-panel.active {
+  pointer-events: auto;
+  visibility: visible;
+}
+
+.settings-page-panel:not(.active) .project-settings-panel {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.project-settings-panel {
+  align-content: start;
+  display: grid;
+  gap: 0.75rem;
+}
+
 .panel-head {
   border-bottom: 1px solid var(--line);
   display: flex;
@@ -600,7 +676,12 @@ textarea {
 .builder-service-tab-content {
   display: grid;
   gap: 0.75rem;
+  height: clamp(16rem, 48vh, 38rem);
   min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.1rem 0.3rem 0.1rem 0;
+  scrollbar-gutter: stable;
 }
 
 .choice-grid {

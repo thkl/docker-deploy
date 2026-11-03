@@ -20,13 +20,36 @@
 }
 
 <form [formGroup]="form" (ngSubmit)="save('save')" class="settings-form">
-  <section class="form-panel">
+  <nav class="settings-page-tabs" role="tablist" aria-label="Project configuration">
+    <button type="button" role="tab" [attr.aria-selected]="settingsPageTab() === 'project'"
+      [class.active]="settingsPageTab() === 'project'" (click)="setSettingsPageTab('project')">Project</button>
+    <button type="button" role="tab" [attr.aria-selected]="settingsPageTab() === 'compose'"
+      [class.active]="settingsPageTab() === 'compose'" (click)="setSettingsPageTab('compose')">Docker Compose</button>
+  </nav>
+
+  <div class="settings-page-panels">
+  <section class="form-panel settings-page-panel" [class.active]="settingsPageTab() === 'project'"
+    [attr.aria-hidden]="settingsPageTab() === 'project' ? null : 'true'"
+    [attr.inert]="settingsPageTab() === 'project' ? null : ''">
     <div class="panel-head">
-      <h3>Repository</h3>
-      <span>Source and deployment identity</span>
+      <h3>Project</h3>
+      <span>Repository, deployment, and notifications</span>
     </div>
 
-    <div class="field-grid">
+    <nav class="project-settings-tabs" role="tablist" aria-label="Project settings">
+      <button type="button" role="tab" [attr.aria-selected]="projectSettingsTab() === 'details'"
+        [class.active]="projectSettingsTab() === 'details'" (click)="setProjectSettingsTab('details')">Details</button>
+      <button type="button" role="tab" [attr.aria-selected]="projectSettingsTab() === 'deployment'"
+        [class.active]="projectSettingsTab() === 'deployment'" (click)="setProjectSettingsTab('deployment')">Deployment</button>
+      <button type="button" role="tab" [attr.aria-selected]="projectSettingsTab() === 'notifications'"
+        [class.active]="projectSettingsTab() === 'notifications'" (click)="setProjectSettingsTab('notifications')">Notifications</button>
+    </nav>
+
+    <div class="project-settings-panels">
+      <section class="project-settings-panel" [class.active]="projectSettingsTab() === 'details'"
+        [attr.aria-hidden]="projectSettingsTab() === 'details' ? null : 'true'"
+        [attr.inert]="projectSettingsTab() === 'details' ? null : ''">
+      <div class="field-grid">
       <label>
         <span>Repository name</span>
         <input formControlName="name" autocomplete="off" placeholder="service-a" />
@@ -81,7 +104,13 @@
         <input formControlName="deployToken" autocomplete="new-password" placeholder="leave blank to keep or skip"
           type="password" />
       </label>
+      </div>
+      </section>
 
+      <section class="project-settings-panel" [class.active]="projectSettingsTab() === 'deployment'"
+        [attr.aria-hidden]="projectSettingsTab() === 'deployment' ? null : 'true'"
+        [attr.inert]="projectSettingsTab() === 'deployment' ? null : ''">
+      <div class="field-grid">
       <label>
         <span>Deployment mode</span>
         <select formControlName="deploymentStrategy">
@@ -154,8 +183,27 @@
         <span>Registry tag</span>
         <input formControlName="registryImageTag" autocomplete="off" placeholder="latest" />
       </label>
-    </div>
+      </div>
 
+      @if (strategySummary(); as strategy) {
+      <section class="strategy-summary">
+        <div>
+          <small>Deployment strategy</small>
+          <strong>{{ strategy.label }}</strong>
+          <span>{{ strategy.reason }}</span>
+        </div>
+        <ul>
+          @for (detail of strategy.details; track detail) {
+          <li>{{ detail }}</li>
+          }
+        </ul>
+      </section>
+      }
+      </section>
+
+      <section class="project-settings-panel" [class.active]="projectSettingsTab() === 'notifications'"
+        [attr.aria-hidden]="projectSettingsTab() === 'notifications' ? null : 'true'"
+        [attr.inert]="projectSettingsTab() === 'notifications' ? null : ''">
     <section class="strategy-summary notification-summary">
       <div>
         <small>Notifications</small>
@@ -205,24 +253,13 @@
         </fieldset>
       }
     </section>
-
-    @if (strategySummary(); as strategy) {
-    <section class="strategy-summary">
-      <div>
-        <small>Deployment strategy</small>
-        <strong>{{ strategy.label }}</strong>
-        <span>{{ strategy.reason }}</span>
-      </div>
-      <ul>
-        @for (detail of strategy.details; track detail) {
-        <li>{{ detail }}</li>
-        }
-      </ul>
-    </section>
-    }
+      </section>
+    </div>
   </section>
 
-  <section class="form-panel">
+  <section class="form-panel settings-page-panel" [class.active]="settingsPageTab() === 'compose'"
+    [attr.aria-hidden]="settingsPageTab() === 'compose' ? null : 'true'"
+    [attr.inert]="settingsPageTab() === 'compose' ? null : ''">
     <div class="panel-head split">
       <div>
         <h3>Docker Compose</h3>
@@ -964,6 +1001,7 @@
     </div>
     }
   </section>
+  </div>
 
   @if (hostPathBrowser(); as browserState) {
   <div class="path-browser-backdrop" (click)="closeHostPathBrowserFromBackdrop($event)">
