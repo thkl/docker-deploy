@@ -1728,11 +1728,22 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
         const signature = readHeader(req.headers[signatureHeaderName]);
         const signatureCheck = inspectInfisicalWebhookSignature(infisical.webhookSecret, signature, rawBody);
         if (!signatureCheck.valid) {
+            const receivedSignatureHeaderNames = Object.keys(req.headers).filter((name) => /signature/i.test(name));
+            const diagnostics = signatureCheck.diagnostics;
+            const diagnosticSummary = [
+                `reason=${diagnostics.reason}`,
+                `configuredHeader=${signatureHeaderName}`,
+                `receivedHeaders=${receivedSignatureHeaderNames.join(",") || "none"}`,
+                `timestamp=${diagnostics.timestamp ?? "missing"} (${diagnostics.timestampUnit ?? "unknown"}, age=${diagnostics.timestampAgeSeconds ?? "unknown"}s)`,
+                `body=${diagnostics.rawBodyBytes} bytes, sha256=${diagnostics.rawBodySha256 ?? "missing"}`,
+                `signature=${diagnostics.signaturePrefix ?? "unlabeled"}/${diagnostics.signatureEncoding ?? "unknown"}/${diagnostics.signatureLength} chars`,
+                `checkedFormats=${diagnostics.checkedFormats.join(",") || "none"}`
+            ].join("; ");
             console.warn("[infisical-webhook] Signature verification failed", {
                 projectRef,
                 configuredHeaderName: signatureHeaderName,
-                receivedSignatureHeaderNames: Object.keys(req.headers).filter((name) => /signature/i.test(name)),
-                ...signatureCheck.diagnostics
+                receivedSignatureHeaderNames,
+                ...diagnostics
             });
             webhookStore.record({
                 projectId: settings.id,
@@ -1740,7 +1751,7 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
                 source: `infisical:${projectRef}`,
                 eventType: "secrets.modified",
                 status: "error",
-                reason: "Infisical webhook signature was missing, invalid, or expired."
+                reason: `Infisical webhook signature failed: ${diagnosticSummary}`
             });
             res.status(401).send("Invalid Infisical webhook signature.");
             return;
@@ -2192,7 +2203,8 @@ function normalizeInfisicalSettings(input: Partial<ProjectInfisicalSettings> | u
             ? String(input.secretPath ?? "/").trim() || "/"
             : `/${String(input.secretPath).trim()}`,
         deployOnSecretChange: Boolean(input.deployOnSecretChange ?? existing?.deployOnSecretChange),
-        webhookSecret
+        webhookSecret,
+        webhookSignatureHeader: String(input.webhookSignatureHeader ?? existing?.webhookSignatureHeader ?? "X-Infisical-Signature").trim() || "X-Infisical-Signature"
     };
     if (!settings.enabled && !settings.clientId && !settings.clientSecret && !settings.projectId && !settings.deployOnSecretChange && !settings.webhookSecret) return undefined;
     return settings;
