@@ -356,14 +356,36 @@ textarea {
   justify-content: space-between;
 }
 
-.infisical-runtime-row {
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.8fr) auto;
+.list-row.infisical-runtime-row {
+  align-items: center;
+  display: grid;
+  flex-direction: initial;
+  grid-template-columns: minmax(9rem, 1.15fr) minmax(8rem, 1fr) minmax(9rem, 1.15fr) auto;
+  justify-content: initial;
   max-height: none;
 }
 
 .infisical-runtime-reference {
+  display: grid;
+  gap: 0.12rem;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.infisical-runtime-reference strong {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.infisical-runtime-row input {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.infisical-runtime-row button {
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .infisical-runtime-reference small {
@@ -1017,38 +1039,29 @@ button.secondary:hover {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   }
 
-  /* 1. Force the row container to be a left-to-right flex container */
+
   .list-row.infisical-runtime-row {
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    gap: 0.55rem !important;
-    max-height: none !important; /* Removes any conflicting height constraints */
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "key remove"
+      "reference reference"
+      "path path";
   }
 
-  /* 2. Force both inputs and the span to take up exactly 30% width each */
-  .infisical-runtime-row input,
-  .infisical-runtime-row .infisical-runtime-reference {
-    flex: 0 0 30% !important;
-    box-sizing: border-box !important;
+  .infisical-runtime-row > input:first-child {
+    grid-area: key;
   }
 
-  /* 3. Let the remove button take up the remaining space automatically */
-  .infisical-runtime-row button {
-    flex: 1 1 auto !important;
+  .infisical-runtime-row > .infisical-runtime-reference {
+    grid-area: reference;
   }
 
-  .infisical-runtime-row input,
-  .infisical-runtime-row .infisical-runtime-reference {
-    width: 30%;
+  .infisical-runtime-row > input:nth-of-type(2) {
+    grid-area: path;
   }
 
-  .infisical-runtime-row input {
-    width: 30%;
-  }
-
-  .infisical-runtime-row input {
-    width: 30%;
+  .infisical-runtime-row > button {
+    grid-area: remove;
   }
 
   .infisical-import-list {

@@ -15,7 +15,8 @@
         (input)="state.updateInfisicalRuntimeBinding(serviceId(), binding.index, 'key', $event)"
         aria-label="Runtime environment variable name" />
       <span class="infisical-runtime-reference">
-        {{ binding.entry.infisicalSecretName }} <small>{{ binding.entry.infisicalSecretPath }}</small>
+        <strong>{{ binding.entry.infisicalSecretName }}</strong>
+        <small>Infisical source key</small>
       </span>
       <input [value]="binding.entry.infisicalSecretPath"
         (input)="state.updateInfisicalRuntimeBinding(serviceId(), binding.index, 'infisicalSecretPath', $event)"
