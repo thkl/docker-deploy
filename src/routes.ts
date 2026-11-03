@@ -24,7 +24,7 @@ import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { NotificationService } from "./notificationService.js";
 import { NotificationStore } from "./notificationStore.js";
 import { fetchInfisicalSecrets, InfisicalSecretReference, listInfisicalSecretNames, normalizeInfisicalSecretPath, normalizeInfisicalSecretReference } from "./infisicalSecrets.js";
-import { verifyInfisicalWebhookSignature } from "./infisicalWebhook.js";
+import { inspectInfisicalWebhookSignature } from "./infisicalWebhook.js";
 import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
@@ -1726,7 +1726,14 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
         const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
         const signatureHeaderName = infisical.webhookSignatureHeader?.trim().toLowerCase() || "x-infisical-signature";
         const signature = readHeader(req.headers[signatureHeaderName]);
-        if (!verifyInfisicalWebhookSignature(infisical.webhookSecret, signature, rawBody)) {
+        const signatureCheck = inspectInfisicalWebhookSignature(infisical.webhookSecret, signature, rawBody);
+        if (!signatureCheck.valid) {
+            console.warn("[infisical-webhook] Signature verification failed", {
+                projectRef,
+                configuredHeaderName: signatureHeaderName,
+                receivedSignatureHeaderNames: Object.keys(req.headers).filter((name) => /signature/i.test(name)),
+                ...signatureCheck.diagnostics
+            });
             webhookStore.record({
                 projectId: settings.id,
                 projectName,
@@ -1738,6 +1745,15 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             res.status(401).send("Invalid Infisical webhook signature.");
             return;
         }
+        console.info("[infisical-webhook] Signature verified", {
+            projectRef,
+            configuredHeaderName: signatureHeaderName,
+            timestampUnit: signatureCheck.diagnostics.timestampUnit,
+            timestampAgeSeconds: signatureCheck.diagnostics.timestampAgeSeconds,
+            rawBodyBytes: signatureCheck.diagnostics.rawBodyBytes,
+            rawBodySha256: signatureCheck.diagnostics.rawBodySha256,
+            matchedFormat: signatureCheck.diagnostics.matchedFormat
+        });
 
         const payload = req.body && typeof req.body === "object" ? req.body as {
             event?: unknown;
