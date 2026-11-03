@@ -96,6 +96,7 @@ export class ProjectSettingsPageStore {
     secretPath: ['/'],
     deployOnSecretChange: [false],
     webhookSecret: [''],
+    webhookSignatureHeader: ['X-Infisical-Signature'],
   });
 
   constructor() {
@@ -120,6 +121,7 @@ export class ProjectSettingsPageStore {
       secretPath: settings?.secretPath || '/',
       deployOnSecretChange: Boolean(settings?.deployOnSecretChange),
       webhookSecret: '',
+      webhookSignatureHeader: settings?.webhookSignatureHeader || 'X-Infisical-Signature',
     });
   }
 
@@ -227,6 +229,7 @@ export class ProjectSettingsPageStore {
       secretPath: value.secretPath.trim() || '/',
       deployOnSecretChange: value.deployOnSecretChange,
       webhookSecret: value.webhookSecret.trim(),
+      webhookSignatureHeader: value.webhookSignatureHeader.trim() || 'X-Infisical-Signature',
     };
   }
 

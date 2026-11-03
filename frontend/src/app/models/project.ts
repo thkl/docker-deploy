@@ -168,6 +168,7 @@ export interface ProjectInfisicalSettings {
   hasClientSecret?: boolean;
   deployOnSecretChange?: boolean;
   webhookSecret?: string;
+  webhookSignatureHeader?: string;
   hasWebhookSecret?: boolean;
 }
 

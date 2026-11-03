@@ -959,6 +959,10 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const composeOverride = payloadComposeOverride(payload);
             const infisical = normalizeInfisicalSettings(payload.infisical);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), [], infisical?.secretPath);
+            if (infisical && !isValidHttpHeaderName(infisical.webhookSignatureHeader ?? "X-Infisical-Signature")) {
+                res.status(400).json({ error: "Infisical signature header name must be a valid HTTP header name." });
+                return;
+            }
             if (infisical?.deployOnSecretChange && (!infisical.enabled || !infisical.webhookSecret)) {
                 res.status(400).json({ error: "Enable Infisical and configure its webhook signing secret before enabling change deployments." });
                 return;
@@ -1021,6 +1025,10 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const scaleToZero = payloadScaleToZero(payload, existing?.scaleToZero);
             const infisical = normalizeInfisicalSettings(payload.infisical, existing?.infisical);
             const envSecrets = normalizeEnvSecrets(payloadEnvSecrets(payload), existing?.envSecrets, infisical?.secretPath);
+            if (infisical && !isValidHttpHeaderName(infisical.webhookSignatureHeader ?? "X-Infisical-Signature")) {
+                res.status(400).json({ error: "Infisical signature header name must be a valid HTTP header name." });
+                return;
+            }
             if (infisical?.deployOnSecretChange && (!infisical.enabled || !infisical.webhookSecret)) {
                 res.status(400).json({ error: "Enable Infisical and configure its webhook signing secret before enabling change deployments." });
                 return;
@@ -1716,7 +1724,8 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
         }
 
         const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
-        const signature = readHeader(req.headers["x-infisical-signature"]);
+        const signatureHeaderName = infisical.webhookSignatureHeader?.trim().toLowerCase() || "x-infisical-signature";
+        const signature = readHeader(req.headers[signatureHeaderName]);
         if (!verifyInfisicalWebhookSignature(infisical.webhookSecret, signature, rawBody)) {
             webhookStore.record({
                 projectId: settings.id,
@@ -2176,6 +2185,10 @@ function normalizeInfisicalSettings(input: Partial<ProjectInfisicalSettings> | u
 function normalizeInfisicalWebhookPath(value: string) {
     const segments = value.trim().split("/").map((segment) => segment.trim()).filter(Boolean);
     return `/${segments.join("/")}`;
+}
+
+function isValidHttpHeaderName(value: string) {
+    return /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(value);
 }
 
 function isMaskedSecretValue(value: string) {

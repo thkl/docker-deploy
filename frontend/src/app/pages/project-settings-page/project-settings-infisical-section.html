@@ -69,11 +69,17 @@
             <input type="password" formControlName="webhookSecret" autocomplete="new-password"
               [placeholder]="state.infisicalWebhookSecretConfigured() ? 'leave blank to keep the saved secret' : 'set a shared secret'" />
           </label>
+          <label>
+            <span>Signature header name</span>
+            <input formControlName="webhookSignatureHeader" autocomplete="off"
+              placeholder="X-Infisical-Signature" />
+            <small>Set this to the header your webhook sender uses.</small>
+          </label>
         </div>
       } @else {
         <p class="notice">Save the project first to get its webhook endpoint URL.</p>
       }
-      <small>Create a General webhook in Infisical, select the <code>secrets.modified</code> event, and use this endpoint. Set the same signing secret in both places. Limit the webhook to this project’s environment and mapped secret paths. The updater endpoint must be publicly reachable over HTTPS.</small>
+      <small>Create a General webhook, select the <code>secrets.modified</code> event, and use this endpoint. Set the same signing secret and header name in both places. Limit the webhook to this project’s environment and mapped secret paths. The updater endpoint must be publicly reachable over HTTPS.</small>
     }
   }
 

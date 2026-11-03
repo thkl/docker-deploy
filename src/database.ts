@@ -1172,7 +1172,8 @@ function encryptedInfisicalSettingsJson(settings: ProjectSettings["infisical"]) 
         environment: settings.environment.trim(),
         secretPath: settings.secretPath.trim() || "/",
         deployOnSecretChange: Boolean(settings.deployOnSecretChange),
-        webhookSecret: settings.webhookSecret?.trim() ?? ""
+        webhookSecret: settings.webhookSecret?.trim() ?? "",
+        webhookSignatureHeader: settings.webhookSignatureHeader?.trim() || "X-Infisical-Signature"
     };
     return encryptSecret(JSON.stringify(normalized));
 }

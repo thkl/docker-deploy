@@ -302,7 +302,8 @@ function parseInfisicalSettings(value: string) {
             environment: String(parsed.environment ?? "prod"),
             secretPath: String(parsed.secretPath ?? "/"),
             deployOnSecretChange: Boolean(parsed.deployOnSecretChange),
-            webhookSecret: String(parsed.webhookSecret ?? "")
+            webhookSecret: String(parsed.webhookSecret ?? ""),
+            webhookSignatureHeader: String(parsed.webhookSignatureHeader ?? "X-Infisical-Signature")
         };
     } catch {
         return undefined;
