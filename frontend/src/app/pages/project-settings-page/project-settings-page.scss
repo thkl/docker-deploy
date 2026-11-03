@@ -615,10 +615,9 @@ fieldset small {
 }
 
 .secret-env-row.infisical-secret-env-row {
-  grid-template-columns: minmax(0, 0.55fr) minmax(0, 0.65fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(
-      0,
-      0.7fr
-    ) auto;
+  grid-template-columns:
+    minmax(0, 0.55fr) minmax(0, 0.65fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.7fr)
+    auto;
 }
 
 .secret-reference-note {
@@ -638,10 +637,9 @@ fieldset small {
 
 .volume-mount-row {
   display: grid;
-  grid-template-columns: minmax(86px, 0.6fr) minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(
-      60px,
-      0.45fr
-    ) auto;
+  grid-template-columns:
+    minmax(86px, 0.6fr) minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(60px, 0.45fr)
+    auto;
 }
 
 .path-field {
@@ -973,12 +971,17 @@ button.secondary:hover {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   }
 
-  .infisical-runtime-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+  ::ng-deep .list-row.infisical-runtime-row {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 0.55rem !important;
   }
 
-  .list-row.infisical-runtime-row {
-    flex-direction: row;
+  /* Set the two inputs and the span to 30% width each */
+  ::ng-deep .infisical-runtime-row input,
+  ::ng-deep .infisical-runtime-row .infisical-runtime-reference {
+    flex: 0 0 30% !important;
+    box-sizing: border-box !important;
   }
 
   .infisical-runtime-row input,
