@@ -23,6 +23,10 @@ export class ProjectApi {
     return this.http.post<{ ok: boolean; checkedSecrets: number; message: string }>('/api/infisical/test', payload);
   }
 
+  listInfisicalSecretNames(payload: { projectRef?: string; infisical: Partial<ProjectInfisicalSettings>; paths: string[] }): Observable<{ paths: string[]; secretNames: Array<{ name: string; path: string }> }> {
+    return this.http.post<{ paths: string[]; secretNames: Array<{ name: string; path: string }> }>('/api/infisical/list', payload);
+  }
+
   deleteProject(projectRef: string, payload: DeleteProjectPayload): Observable<DeleteProjectResult> {
     return this.http.delete<DeleteProjectResult>(`/api/projects/${encodeURIComponent(projectRef)}`, { body: payload });
   }

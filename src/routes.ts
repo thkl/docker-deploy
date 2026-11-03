@@ -23,7 +23,7 @@ import { RuntimeOperationStore } from "./runtimeOperationStore.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { NotificationService } from "./notificationService.js";
 import { NotificationStore } from "./notificationStore.js";
-import { fetchInfisicalSecrets, InfisicalSecretReference, normalizeInfisicalSecretPath, normalizeInfisicalSecretReference } from "./infisicalSecrets.js";
+import { fetchInfisicalSecrets, InfisicalSecretReference, listInfisicalSecretNames, normalizeInfisicalSecretPath, normalizeInfisicalSecretReference } from "./infisicalSecrets.js";
 import { verifyInfisicalWebhookSignature } from "./infisicalWebhook.js";
 import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
@@ -829,6 +829,38 @@ async function readResponseError(response: globalThis.Response) {
  */
 function registerInfisicalRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore">) {
     const { configStore } = dependencies;
+
+    app.post("/api/infisical/list", async (req: Request, res: Response) => {
+        const payload = req.body as {
+            projectRef?: string;
+            infisical?: Partial<ProjectInfisicalSettings>;
+            paths?: unknown[];
+            path?: unknown;
+        };
+        const projectRef = String(payload.projectRef ?? "").trim();
+        const existingSettings = projectRef ? configStore.resolveProject(projectRef)?.settings.infisical : undefined;
+        const settings = normalizeInfisicalSettings(payload.infisical, existingSettings);
+        if (!settings?.enabled) {
+            res.status(400).json({ error: "Enable and complete Infisical settings before loading variables." });
+            return;
+        }
+
+        const requestedPaths = Array.isArray(payload.paths)
+            ? payload.paths.filter((path): path is string => typeof path === "string")
+            : typeof payload.path === "string" ? [payload.path] : [settings.secretPath];
+        const paths = [...new Set(requestedPaths.map(normalizeInfisicalSecretPath))];
+        if (!paths.length) paths.push(normalizeInfisicalSecretPath(settings.secretPath));
+        if (paths.length > 20) {
+            res.status(400).json({ error: "Load up to 20 Infisical paths at a time." });
+            return;
+        }
+        try {
+            const secretNames = await listInfisicalSecretNames(settings, paths);
+            res.json({ paths, secretNames });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not list Infisical variables." });
+        }
+    });
 
     app.post("/api/infisical/test", async (req: Request, res: Response) => {
         const payload = req.body as {

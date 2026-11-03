@@ -151,6 +151,43 @@ export class ProjectSettingsPageStore {
     });
   }
 
+  addInfisicalEnvironmentBindings(serviceId: number, secretBindings: Array<{ name: string; path: string }>) {
+    let added = 0;
+    let skipped = 0;
+    this.resetInfisicalTest();
+    this.builderServices.update((services) => services.map((service) => {
+      if (service.id !== serviceId) return service;
+
+      const secretEnvironment = [...service.secretEnvironment];
+      const seenReferences = new Set<string>();
+      for (const binding of secretBindings) {
+        const secretName = binding.name.trim();
+        const infisicalSecretPath = binding.path.trim().startsWith('/') ? binding.path.trim() : `/${binding.path.trim()}`;
+        if (!secretName) continue;
+        const referenceId = JSON.stringify([infisicalSecretPath || '/', secretName]);
+        if (seenReferences.has(referenceId)) continue;
+        seenReferences.add(referenceId);
+        if (secretEnvironment.some((secret) => secret.key.trim() === secretName)) {
+          skipped += 1;
+          continue;
+        }
+        secretEnvironment.push({
+          key: secretName,
+          value: '',
+          mode: 'env',
+          source: 'infisical',
+          vaultSecretId: '',
+          infisicalSecretName: secretName,
+          infisicalSecretPath: infisicalSecretPath || '/',
+          exposure: 'file'
+        });
+        added += 1;
+      }
+      return { ...service, secretEnvironment };
+    }));
+    return { added, skipped };
+  }
+
   infisicalPayload(): ProjectInfisicalSettings {
     const value = this.infisicalForm.getRawValue();
     return {

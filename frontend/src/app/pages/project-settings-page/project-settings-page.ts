@@ -1534,6 +1534,10 @@ export class ProjectSettingsPage implements OnInit {
     return new URL(`/webhook/infisical/${encodeURIComponent(this.currentProjectRef)}`, window.location.origin).toString();
   }
 
+  protected infisicalProjectRef() {
+    return this.currentProjectRef;
+  }
+
   private currentProject() {
     const projectRef = this.currentProjectRef || this.currentName();
     return this.store.projects().find((project) => project.id === projectRef || project.name === projectRef) ?? null;

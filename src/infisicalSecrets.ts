@@ -7,6 +7,43 @@ export interface InfisicalSecretReference {
     path?: string;
 }
 
+export interface InfisicalSecretNameBinding {
+    name: string;
+    path: string;
+}
+
+/** Lists secret keys in the requested paths without requesting their values. */
+export async function listInfisicalSecretNames(settings: ProjectInfisicalSettings, secretPaths: string[]): Promise<InfisicalSecretNameBinding[]> {
+    const auth = await authenticateInfisical(settings);
+    const paths = [...new Set(secretPaths.map(normalizeInfisicalSecretPath))];
+    const pathBindings = await Promise.all(paths.map(async (path) => {
+        const url = new URL(`${auth.siteUrl}/api/v4/secrets`);
+        url.searchParams.set("projectId", auth.projectId);
+        url.searchParams.set("environment", auth.environment);
+        url.searchParams.set("secretPath", path);
+        url.searchParams.set("viewSecretValue", "false");
+        url.searchParams.set("includeImports", "false");
+        url.searchParams.set("recursive", "false");
+
+        const response = await fetchWithTimeout(url, {
+            headers: { authorization: `Bearer ${auth.accessToken}` }
+        });
+        if (!response.ok) {
+            throw new Error(`Could not list Infisical secrets from '${path}' (HTTP ${response.status}). Check its project, environment, path, and identity access.`);
+        }
+
+        const body = await readJson(response, `Infisical returned an invalid secret list for '${path}'.`);
+        const secrets = Array.isArray(body.secrets) ? body.secrets : [];
+        const secretNames = [...new Set(secrets.flatMap((entry) => {
+            const secret = asRecord(entry);
+            const name = readString(secret?.secretKey)?.trim();
+            return name ? [name] : [];
+        }))].sort((left, right) => left.localeCompare(right));
+        return secretNames.map((name) => ({ name, path }));
+    }));
+    return pathBindings.flat();
+}
+
 /** Fetches only the explicitly mapped project secrets from Infisical. */
 export async function fetchInfisicalSecrets(settings: ProjectInfisicalSettings, secretReferences: Array<string | InfisicalSecretReference>) {
     const defaultPath = normalizeInfisicalSecretPath(settings.secretPath);
@@ -14,7 +51,36 @@ export async function fetchInfisicalSecrets(settings: ProjectInfisicalSettings, 
         .map((reference) => normalizeInfisicalSecretReference(reference, defaultPath))
         .filter((reference) => reference.name);
     const uniqueReferences = [...new Map(references.map((reference) => [infisicalSecretReferenceKey(reference.name, reference.path), reference])).values()];
-    if (!settings.enabled) throw new Error("Infisical secret bindings are configured, but the Infisical integration is disabled.");
+    const auth = await authenticateInfisical(settings);
+    if (!uniqueReferences.length) return new Map<string, string>();
+
+    const values = await Promise.all(uniqueReferences.map(async (reference) => {
+        if (!/^[A-Za-z0-9_.-]+$/.test(reference.name)) {
+            throw new Error(`Infisical secret name '${reference.name}' contains unsupported characters.`);
+        }
+        const url = new URL(`${auth.siteUrl}/api/v4/secrets/${encodeURIComponent(reference.name)}`);
+        url.searchParams.set("projectId", auth.projectId);
+        url.searchParams.set("environment", auth.environment);
+        url.searchParams.set("secretPath", reference.path);
+        const response = await fetchWithTimeout(url, {
+            headers: { authorization: `Bearer ${auth.accessToken}` }
+        });
+        if (!response.ok) {
+            throw new Error(`Could not fetch Infisical secret '${reference.name}' from '${reference.path}' (HTTP ${response.status}). Check its project, environment, path, and identity access.`);
+        }
+
+        const body = await readJson(response, `Infisical returned an invalid response for secret '${reference.name}'.`);
+        const secret = asRecord(body.secret) ?? asRecord(asRecord(body.data)?.secret) ?? asRecord(body.data) ?? body;
+        const value = readString(secret.secretValue);
+        if (value === undefined) throw new Error(`Infisical did not return a value for secret '${reference.name}'.`);
+        return [infisicalSecretReferenceKey(reference.name, reference.path), value] as const;
+    }));
+
+    return new Map(values);
+}
+
+async function authenticateInfisical(settings: ProjectInfisicalSettings) {
+    if (!settings.enabled) throw new Error("Infisical is disabled for this project.");
 
     const siteUrl = normalizeInfisicalSiteUrl(settings.siteUrl);
     const clientId = settings.clientId.trim();
@@ -36,31 +102,7 @@ export async function fetchInfisicalSecrets(settings: ProjectInfisicalSettings, 
     const loginBody = await readJson(loginResponse, "Infisical returned an invalid authentication response.");
     const accessToken = readString(loginBody.accessToken);
     if (!accessToken) throw new Error("Infisical authentication succeeded without returning an access token.");
-    if (!uniqueReferences.length) return new Map<string, string>();
-
-    const values = await Promise.all(uniqueReferences.map(async (reference) => {
-        if (!/^[A-Za-z0-9_.-]+$/.test(reference.name)) {
-            throw new Error(`Infisical secret name '${reference.name}' contains unsupported characters.`);
-        }
-        const url = new URL(`${siteUrl}/api/v4/secrets/${encodeURIComponent(reference.name)}`);
-        url.searchParams.set("projectId", projectId);
-        url.searchParams.set("environment", environment);
-        url.searchParams.set("secretPath", reference.path);
-        const response = await fetchWithTimeout(url, {
-            headers: { authorization: `Bearer ${accessToken}` }
-        });
-        if (!response.ok) {
-            throw new Error(`Could not fetch Infisical secret '${reference.name}' from '${reference.path}' (HTTP ${response.status}). Check its project, environment, path, and identity access.`);
-        }
-
-        const body = await readJson(response, `Infisical returned an invalid response for secret '${reference.name}'.`);
-        const secret = asRecord(body.secret) ?? asRecord(asRecord(body.data)?.secret) ?? asRecord(body.data) ?? body;
-        const value = readString(secret.secretValue);
-        if (value === undefined) throw new Error(`Infisical did not return a value for secret '${reference.name}'.`);
-        return [infisicalSecretReferenceKey(reference.name, reference.path), value] as const;
-    }));
-
-    return new Map(values);
+    return { siteUrl, projectId, environment, accessToken };
 }
 
 export function normalizeInfisicalSecretReference(reference: string | InfisicalSecretReference, defaultPath: string) {
