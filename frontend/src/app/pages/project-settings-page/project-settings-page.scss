@@ -615,7 +615,10 @@ fieldset small {
 }
 
 .secret-env-row.infisical-secret-env-row {
-  grid-template-columns: minmax(0, 0.55fr) minmax(0, 0.65fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.7fr) auto;
+  grid-template-columns: minmax(0, 0.55fr) minmax(0, 0.65fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(
+      0,
+      0.7fr
+    ) auto;
 }
 
 .secret-reference-note {
@@ -635,7 +638,10 @@ fieldset small {
 
 .volume-mount-row {
   display: grid;
-  grid-template-columns: minmax(86px, 0.6fr) minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(60px, 0.45fr) auto;
+  grid-template-columns: minmax(86px, 0.6fr) minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(
+      60px,
+      0.45fr
+    ) auto;
 }
 
 .path-field {
@@ -745,7 +751,7 @@ fieldset small {
   border-color: var(--muted);
   border-style: solid;
   border-width: 1px 1px 0 0;
-  content: "";
+  content: '';
   height: 5px;
   left: 4px;
   position: absolute;
@@ -756,7 +762,7 @@ fieldset small {
 
 .file-entry .path-entry-marker::after {
   background: var(--muted);
-  content: "";
+  content: '';
   height: 6px;
   left: 5px;
   position: absolute;
@@ -766,7 +772,7 @@ fieldset small {
 
 .parent-entry .path-entry-marker::after {
   background: var(--muted);
-  content: "";
+  content: '';
   height: 1px;
   left: 3px;
   position: absolute;
@@ -969,6 +975,23 @@ button.secondary:hover {
 
   .infisical-runtime-row {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .list-row.infisical-runtime-row {
+    flex-direction: row;
+  }
+
+  .infisical-runtime-row input,
+  .infisical-runtime-row .infisical-runtime-reference {
+    width: 30%;
+  }
+
+  .infisical-runtime-row input {
+    width: 30%;
+  }
+
+  .infisical-runtime-row input {
+    width: 30%;
   }
 
   .infisical-import-list {
