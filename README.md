@@ -28,6 +28,25 @@ docker compose up -d
 
 The controller listens on `PORT`, defaulting to `3999`.
 
+For a project using SPIFFE/SPIRE X.509 certificate authentication, mount the
+controller host's SPIRE agent Workload API socket into the controller container:
+
+```bash
+SPIFFE_AGENT_SOCKET_PATH=/run/spire/agent.sock \
+  docker compose -f docker-compose.yaml -f docker-compose.spiffe.yaml up -d
+```
+
+Register the controller workload with SPIRE and configure that same SPIFFE ID
+in the project's credential settings. The controller fetches the current
+X.509-SVID when it reads credentials; the private key is held in memory only.
+Remote deployment agents do not need the socket because the controller resolves
+credentials before dispatching deployment jobs. In this mode, the updater skips
+the client ID/secret login and presents the certificate directly to secret-list
+and secret-read requests. ZeroSecrets should require mTLS, validate the client
+certificate against its SPIFFE trust bundle, and authorize the exact SPIFFE URI
+SAN. If a reverse proxy terminates TLS, it must validate the client certificate
+and prevent callers from supplying or overriding any forwarded identity header.
+
 Optional admin token:
 
 ```bash

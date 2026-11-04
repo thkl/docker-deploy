@@ -1,0 +1,6 @@
+services:
+  deploy:
+    environment:
+      SPIFFE_ENDPOINT_SOCKET: unix:///run/spire/agent.sock
+    volumes:
+      - ${SPIFFE_AGENT_SOCKET_PATH:-/run/spire/agent.sock}:/run/spire/agent.sock:ro

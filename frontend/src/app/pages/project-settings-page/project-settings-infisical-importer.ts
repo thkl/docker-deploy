@@ -38,7 +38,7 @@ export class ProjectSettingsInfisicalImporter {
     this.secretNames.set([]);
     this.selectedSecretIds.set([]);
     if (!this.state.infisicalReady()) {
-      this.importError.set('Complete the Infisical connection settings first.');
+      this.importError.set('Complete the credential system connection settings first.');
       return;
     }
     if (!this.state.builderServices().some((service) => service.id === this.serviceId())) {
@@ -73,7 +73,7 @@ export class ProjectSettingsInfisicalImporter {
       },
       error: (error) => {
         if (requestId !== this.requestId) return;
-        this.importError.set(error?.error?.error || 'Could not load Infisical secret names.');
+        this.importError.set(error?.error?.error || 'Could not load credential system secret names.');
         this.loading.set(false);
       }
     });
@@ -107,7 +107,7 @@ export class ProjectSettingsInfisicalImporter {
       return;
     }
     if (this.loadedScope() !== this.scope(this.currentPaths())) {
-      this.importError.set('Infisical settings or paths changed. Load the variable names again before adding them.');
+      this.importError.set('Credential system settings or paths changed. Load the variable names again before adding them.');
       return;
     }
 

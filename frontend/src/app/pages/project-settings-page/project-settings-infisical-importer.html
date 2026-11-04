@@ -1,11 +1,11 @@
 <div class="infisical-runtime-bindings">
   <div class="infisical-runtime-head">
     <div class="head-category">
-      <strong>Infisical runtime variables</strong>
+      <strong>Credential system runtime variables</strong>
       <span>Values are injected into this service's environment during deployment.</span>
     </div>
     @if (!state.infisicalForm.controls.enabled.value) {
-      <button type="button" class="secondary compact" (click)="configureInfisical.emit()">Configure Infisical</button>
+      <button type="button" class="secondary compact" (click)="configureInfisical.emit()">Configure credential system</button>
     }
   </div>
 
@@ -16,16 +16,16 @@
         aria-label="Runtime environment variable name" />
       <span class="infisical-runtime-reference">
         <strong>{{ binding.entry.infisicalSecretName }}</strong>
-        <small>Infisical source key</small>
+        <small>Source secret key</small>
       </span>
       <input [value]="binding.entry.infisicalSecretPath"
         (input)="state.updateInfisicalRuntimeBinding(serviceId(), binding.index, 'infisicalSecretPath', $event)"
-        aria-label="Infisical secret path" />
+        aria-label="Source secret path" />
       <button type="button" class="secondary compact"
         (click)="state.removeBuilderSecretEnvironmentEntry(serviceId(), binding.index)">Remove</button>
     </div>
   } @empty {
-    <small>No Infisical runtime variables selected for this service.</small>
+    <small>No credential system runtime variables selected for this service.</small>
   }
 
   <div class="infisical-import-panel">
@@ -36,14 +36,14 @@
 
     @if (state.infisicalForm.controls.enabled.value) {
       <label>
-        <span>Infisical paths (one per line)</span>
+        <span>Secret paths (one per line)</span>
         <textarea rows="2" [value]="pathValue()" (input)="updatePath($event)" placeholder="/database&#10;/oidc"></textarea>
       </label>
       <button type="button" class="secondary compact" (click)="loadSecretNames()"
         [disabled]="loading() || !state.infisicalReady()">
         {{ loading() ? 'Loading names...' : 'Load variable names' }}
       </button>
-      <small>Only key names are loaded. Selected values stay in Infisical until deployment and are injected as runtime environment variables.</small>
+      <small>Only key names are loaded. Selected values stay in the credential system until deployment and are injected as runtime environment variables.</small>
 
       @if (importError()) {
         <p class="notice error" role="alert">{{ importError() }}</p>
@@ -74,7 +74,7 @@
         </div>
       }
     } @else {
-      <p class="notice">Enable Infisical in the Infisical section to import runtime variables.</p>
+      <p class="notice">Enable the credential system in its settings section to import runtime variables.</p>
     }
   </div>
 </div>

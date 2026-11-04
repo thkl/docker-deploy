@@ -296,8 +296,10 @@ function parseInfisicalSettings(value: string) {
         return {
             enabled: Boolean(parsed.enabled),
             siteUrl: String(parsed.siteUrl ?? ""),
+            authMethod: parsed.authMethod === "spiffe-x509" ? "spiffe-x509" as const : "universal-auth" as const,
             clientId: String(parsed.clientId ?? ""),
             clientSecret: String(parsed.clientSecret ?? ""),
+            spiffeId: String(parsed.spiffeId ?? ""),
             projectId: String(parsed.projectId ?? ""),
             environment: String(parsed.environment ?? "prod"),
             secretPath: String(parsed.secretPath ?? "/"),

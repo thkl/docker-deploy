@@ -1,14 +1,14 @@
 <div class="section-toolbar">
   <div>
-    <strong>Infisical</strong>
-    <span>Connect the project and configure its secret source.</span>
+    <strong>Credential system</strong>
+    <span>Connect an Infisical-compatible secret API and configure its secret source.</span>
   </div>
 </div>
 
 <section class="project-secrets-panel infisical-panel" [formGroup]="state.infisicalForm">
   <div class="project-secrets-head">
     <div class="head-category">
-      <strong>Infisical connection</strong>
+      <strong>Credential system connection</strong>
       <span>Service environment variables and secret bindings share this connection.</span>
     </div>
     <div class="builder-actions">
@@ -18,7 +18,7 @@
       </button>
       <label class="check-row compact">
         <input type="checkbox" formControlName="enabled" />
-        <span>Enable Infisical</span>
+        <span>Enable credential system</span>
       </label>
     </div>
   </div>
@@ -26,11 +26,11 @@
   @if (state.infisicalForm.controls.enabled.value) {
     <div class="field-grid">
       <label>
-        <span>Instance URL</span>
-        <input formControlName="siteUrl" autocomplete="url" placeholder="https://app.infisical.com" />
+        <span>Credential system URL</span>
+        <input formControlName="siteUrl" autocomplete="url" placeholder="https://credentials.example.com" />
       </label>
       <label>
-        <span>Infisical project ID</span>
+        <span>Credential system project ID</span>
         <input formControlName="projectId" autocomplete="off" placeholder="project ID" />
       </label>
       <label>
@@ -42,20 +42,38 @@
         <input formControlName="secretPath" autocomplete="off" placeholder="/" />
       </label>
       <label>
-        <span>Machine identity client ID</span>
-        <input formControlName="clientId" autocomplete="off" placeholder="client ID" />
+        <span>Authentication</span>
+        <select formControlName="authMethod">
+          <option value="universal-auth">Client ID and client secret</option>
+          <option value="spiffe-x509">SPIFFE/SPIRE X.509 certificate (mTLS)</option>
+        </select>
       </label>
-      <label>
-        <span>Machine identity client secret</span>
-        <input type="password" formControlName="clientSecret" autocomplete="new-password"
-          [placeholder]="state.infisicalSecretConfigured() ? 'leave blank to keep the saved secret' : 'client secret'" />
-      </label>
+      @if (state.infisicalForm.controls.authMethod.value === 'universal-auth') {
+        <label>
+          <span>Machine identity client ID</span>
+          <input formControlName="clientId" autocomplete="off" placeholder="client ID" />
+        </label>
+        <label>
+          <span>Machine identity client secret</span>
+          <input type="password" formControlName="clientSecret" autocomplete="new-password"
+            [placeholder]="state.infisicalSecretConfigured() ? 'leave blank to keep the saved secret' : 'client secret'" />
+        </label>
+      } @else {
+        <label>
+          <span>SPIFFE ID to use</span>
+          <input formControlName="spiffeId" autocomplete="off" placeholder="spiffe://example.org/updater" />
+        </label>
+      }
     </div>
-    <small>Use a Universal Auth machine identity with read access to this project, environment, and every path used by a binding. The default path fills new bindings; each binding can override it. Credentials are encrypted in the updater database. Only selected or mapped secrets are fetched at deploy time.</small>
+    @if (state.infisicalForm.controls.authMethod.value === 'universal-auth') {
+      <small>Use a Universal Auth machine identity with read access to this project, environment, and every path used by a binding. The default path fills new bindings; each binding can override it. Credentials are encrypted in the updater database. Only selected or mapped secrets are fetched at deploy time.</small>
+    } @else {
+      <small>The updater fetches the selected X.509-SVID and private key from the local SPIFFE Workload API when it accesses secrets, then presents them over mutual TLS. The certificate and key stay in memory and are not saved. Saving this mode clears any saved client ID and secret. On the updater host, set <code>SPIFFE_ENDPOINT_SOCKET=unix:///run/spire/agent.sock</code> and mount the SPIRE agent socket at that path in the controller container. Register the controller workload with the selected SPIFFE ID. ZeroSecrets must trust the issuing SPIFFE bundle and authorize that ID. The credential system URL must use HTTPS.</small>
+    }
 
     <label class="check-row">
       <input type="checkbox" formControlName="deployOnSecretChange" />
-      <span>Deploy this project when Infisical secrets change</span>
+      <span>Deploy this project when credential system secrets change</span>
     </label>
     @if (state.infisicalForm.controls.deployOnSecretChange.value) {
       @if (webhookEndpoint()) {
@@ -80,6 +98,7 @@
         <p class="notice">Save the project first to get its webhook endpoint URL.</p>
       }
       <small>Create a General webhook, select the <code>secrets.modified</code> event, and use this endpoint. Set the same signing secret and header name in both places. Limit the webhook to this project’s environment and mapped secret paths. The updater endpoint must be publicly reachable over HTTPS.</small>
+      <small>The webhook signature is separate from the authentication method used when the updater fetches secrets.</small>
     }
   }
 

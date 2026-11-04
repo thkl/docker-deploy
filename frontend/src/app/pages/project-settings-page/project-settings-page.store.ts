@@ -89,8 +89,10 @@ export class ProjectSettingsPageStore {
   readonly infisicalForm = this.fb.group({
     enabled: [false],
     siteUrl: ['https://app.infisical.com'],
+    authMethod: ['universal-auth' as 'universal-auth' | 'spiffe-x509'],
     clientId: [''],
     clientSecret: [''],
+    spiffeId: [''],
     projectId: [''],
     environment: ['prod'],
     secretPath: ['/'],
@@ -114,8 +116,10 @@ export class ProjectSettingsPageStore {
     this.infisicalForm.reset({
       enabled: Boolean(settings?.enabled),
       siteUrl: settings?.siteUrl || 'https://app.infisical.com',
+      authMethod: settings?.authMethod || 'universal-auth',
       clientId: settings?.clientId ?? '',
       clientSecret: '',
+      spiffeId: settings?.spiffeId ?? '',
       projectId: settings?.projectId ?? '',
       environment: settings?.environment || 'prod',
       secretPath: settings?.secretPath || '/',
@@ -136,7 +140,7 @@ export class ProjectSettingsPageStore {
 
   testInfisicalConnection(projectRef: string, secretBindings: Array<{ name: string; path: string }>) {
     this.infisicalTestState.set('testing');
-    this.infisicalTestMessage.set('Checking credentials and mapped secret access…');
+    this.infisicalTestMessage.set('Checking the credential system connection and mapped secret access…');
     this.api.testInfisicalConnection({
       ...(projectRef ? { projectRef } : {}),
       infisical: this.infisicalPayload(),
@@ -148,7 +152,7 @@ export class ProjectSettingsPageStore {
       },
       error: (error) => {
         this.infisicalTestState.set('error');
-        this.infisicalTestMessage.set(error?.error?.error || 'Could not verify Infisical settings.');
+        this.infisicalTestMessage.set(error?.error?.error || 'Could not verify credential system settings.');
       },
     });
   }
@@ -222,8 +226,10 @@ export class ProjectSettingsPageStore {
     return {
       ...value,
       siteUrl: value.siteUrl.trim(),
+      authMethod: value.authMethod,
       clientId: value.clientId.trim(),
       clientSecret: value.clientSecret.trim(),
+      spiffeId: value.spiffeId.trim(),
       projectId: value.projectId.trim(),
       environment: value.environment.trim(),
       secretPath: value.secretPath.trim() || '/',
@@ -242,13 +248,11 @@ export class ProjectSettingsPageStore {
 
   infisicalReady() {
     const value = this.infisicalForm.getRawValue();
-    return value.enabled && Boolean(
-      value.siteUrl.trim() &&
-      value.clientId.trim() &&
-      (value.clientSecret.trim() || this.infisicalSecretConfigured()) &&
-      value.projectId.trim() &&
-      value.environment.trim()
-    );
+    if (!value.enabled || !value.siteUrl.trim() || !value.projectId.trim() || !value.environment.trim()) return false;
+    if (value.authMethod === 'spiffe-x509') {
+      return value.siteUrl.trim().startsWith('https://') && value.spiffeId.trim().startsWith('spiffe://');
+    }
+    return Boolean(value.clientId.trim() && (value.clientSecret.trim() || this.infisicalSecretConfigured()));
   }
 
   setProjectName(name: string) {

@@ -71,8 +71,10 @@ export interface ProjectEnvironmentSecret {
 export interface ProjectInfisicalSettings {
     enabled: boolean;
     siteUrl: string;
+    authMethod?: "universal-auth" | "spiffe-x509";
     clientId: string;
     clientSecret?: string;
+    spiffeId?: string;
     projectId: string;
     environment: string;
     secretPath: string;

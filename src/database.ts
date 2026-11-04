@@ -1166,8 +1166,10 @@ function encryptedInfisicalSettingsJson(settings: ProjectSettings["infisical"]) 
     const normalized = {
         enabled: Boolean(settings.enabled),
         siteUrl: settings.siteUrl.trim(),
+        authMethod: settings.authMethod === "spiffe-x509" ? "spiffe-x509" : "universal-auth",
         clientId: settings.clientId.trim(),
         clientSecret: settings.clientSecret?.trim() ?? "",
+        spiffeId: settings.spiffeId?.trim() ?? "",
         projectId: settings.projectId.trim(),
         environment: settings.environment.trim(),
         secretPath: settings.secretPath.trim() || "/",

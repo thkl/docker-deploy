@@ -841,7 +841,7 @@ function registerInfisicalRoutes(app: Express, dependencies: Pick<RouteDependenc
         const existingSettings = projectRef ? configStore.resolveProject(projectRef)?.settings.infisical : undefined;
         const settings = normalizeInfisicalSettings(payload.infisical, existingSettings);
         if (!settings?.enabled) {
-            res.status(400).json({ error: "Enable and complete Infisical settings before loading variables." });
+            res.status(400).json({ error: "Enable and complete the credential system settings before loading variables." });
             return;
         }
 
@@ -851,14 +851,14 @@ function registerInfisicalRoutes(app: Express, dependencies: Pick<RouteDependenc
         const paths = [...new Set(requestedPaths.map(normalizeInfisicalSecretPath))];
         if (!paths.length) paths.push(normalizeInfisicalSecretPath(settings.secretPath));
         if (paths.length > 20) {
-            res.status(400).json({ error: "Load up to 20 Infisical paths at a time." });
+            res.status(400).json({ error: "Load up to 20 secret paths at a time." });
             return;
         }
         try {
             const secretNames = await listInfisicalSecretNames(settings, paths);
             res.json({ paths, secretNames });
         } catch (error) {
-            res.status(400).json({ error: error instanceof Error ? error.message : "Could not list Infisical variables." });
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not list credential system variables." });
         }
     });
 
@@ -873,7 +873,7 @@ function registerInfisicalRoutes(app: Express, dependencies: Pick<RouteDependenc
         const existingSettings = projectRef ? configStore.resolveProject(projectRef)?.settings.infisical : undefined;
         const settings = normalizeInfisicalSettings(payload.infisical, existingSettings);
         if (!settings) {
-            res.status(400).json({ error: "Enter Infisical connection settings before testing." });
+            res.status(400).json({ error: "Enter credential system connection settings before testing." });
             return;
         }
 
@@ -902,10 +902,10 @@ function registerInfisicalRoutes(app: Express, dependencies: Pick<RouteDependenc
                 checkedSecrets: values.size,
                 message: values.size
                     ? `Connected and verified access to ${values.size} mapped secret${values.size === 1 ? "" : "s"}.`
-                    : "Authentication succeeded. Add an Infisical binding to verify access to a secret."
+                    : "Authentication succeeded. Add a credential system binding to verify access to a secret."
             });
         } catch (error) {
-            res.status(400).json({ error: error instanceof Error ? error.message : "Could not verify Infisical settings." });
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not verify credential system settings." });
         }
     });
 }
@@ -2184,10 +2184,17 @@ function normalizeEnvSecrets(payload: ProjectEnvironmentSecret[] | undefined, ex
 
 function normalizeInfisicalSettings(input: Partial<ProjectInfisicalSettings> | undefined, existing?: ProjectInfisicalSettings): ProjectInfisicalSettings | undefined {
     if (!input) return existing;
+    const authMethod = input.authMethod === "spiffe-x509"
+        ? "spiffe-x509" as const
+        : input.authMethod === "universal-auth"
+            ? "universal-auth" as const
+            : existing?.authMethod ?? "universal-auth" as const;
     const clientSecretInput = String(input.clientSecret ?? "").trim();
-    const clientSecret = !clientSecretInput || isMaskedSecretValue(clientSecretInput)
-        ? existing?.clientSecret ?? ""
-        : clientSecretInput;
+    const clientSecret = authMethod === "spiffe-x509"
+        ? ""
+        : (!clientSecretInput || isMaskedSecretValue(clientSecretInput)
+            ? existing?.clientSecret ?? ""
+            : clientSecretInput);
     const webhookSecretInput = String(input.webhookSecret ?? "").trim();
     const webhookSecret = !webhookSecretInput || isMaskedSecretValue(webhookSecretInput)
         ? existing?.webhookSecret ?? ""
@@ -2195,8 +2202,10 @@ function normalizeInfisicalSettings(input: Partial<ProjectInfisicalSettings> | u
     const settings = {
         enabled: Boolean(input.enabled),
         siteUrl: String(input.siteUrl ?? "").trim().replace(/\/+$/, ""),
-        clientId: String(input.clientId ?? "").trim(),
+        authMethod,
+        clientId: authMethod === "spiffe-x509" ? "" : String(input.clientId ?? "").trim(),
         clientSecret,
+        spiffeId: String(input.spiffeId ?? existing?.spiffeId ?? "").trim(),
         projectId: String(input.projectId ?? "").trim(),
         environment: String(input.environment ?? "prod").trim() || "prod",
         secretPath: (String(input.secretPath ?? "/").trim() || "/").startsWith("/")
@@ -2206,7 +2215,7 @@ function normalizeInfisicalSettings(input: Partial<ProjectInfisicalSettings> | u
         webhookSecret,
         webhookSignatureHeader: String(input.webhookSignatureHeader ?? existing?.webhookSignatureHeader ?? "X-Infisical-Signature").trim() || "X-Infisical-Signature"
     };
-    if (!settings.enabled && !settings.clientId && !settings.clientSecret && !settings.projectId && !settings.deployOnSecretChange && !settings.webhookSecret) return undefined;
+    if (!settings.enabled && !settings.clientId && !settings.clientSecret && !settings.spiffeId && !settings.projectId && !settings.deployOnSecretChange && !settings.webhookSecret) return undefined;
     return settings;
 }
 

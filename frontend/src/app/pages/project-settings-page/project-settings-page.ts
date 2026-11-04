@@ -1870,7 +1870,7 @@ export class ProjectSettingsPage implements OnInit {
     }
 
     if (this.builderServices().some((service) => service.secretEnvironment.some((secret) => secret.source === 'infisical')) && !this.settingsState.infisicalReady()) {
-      diagnostics.push('Complete the enabled Infisical connection details before adding Infisical secret bindings.');
+      diagnostics.push('Complete the enabled credential system connection details before adding credential system secret bindings.');
     }
 
     const traefik = this.currentTraefikComposeSettings();

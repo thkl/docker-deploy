@@ -1,4 +1,6 @@
 import { ProjectInfisicalSettings } from "./types.js";
+import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
+import { SpiffeX509Identity, fetchSpiffeX509Identity } from "./spiffeWorkloadApi.js";
 
 const infisicalRequestTimeoutMs = 15_000;
 
@@ -24,14 +26,14 @@ export async function listInfisicalSecretNames(settings: ProjectInfisicalSetting
         url.searchParams.set("viewSecretValue", "false");
 
         const response = await fetchWithTimeout(url, {
-            headers: { authorization: `Bearer ${auth.accessToken}` }
-        });
+            headers: credentialHeaders(auth)
+        }, auth.tlsIdentity);
         if (!response.ok) {
             const detail = await readErrorMessage(response);
-            throw new Error(`Could not list Infisical secrets from '${path}' (HTTP ${response.status})${detail ? `: ${detail}` : ". Check its project, environment, path, and identity access."}`);
+            throw new Error(`Could not list secrets from '${path}' (HTTP ${response.status})${detail ? `: ${detail}` : ". Check the project, environment, path, and workload identity access."}`);
         }
 
-        const body = await readJson(response, `Infisical returned an invalid secret list for '${path}'.`);
+        const body = await readJson(response, `The credential system returned an invalid secret list for '${path}'.`);
         const secrets = Array.isArray(body.secrets) ? body.secrets : [];
         const secretNames = [...new Set(secrets.flatMap((entry) => {
             const secret = asRecord(entry);
@@ -43,7 +45,7 @@ export async function listInfisicalSecretNames(settings: ProjectInfisicalSetting
     return pathBindings.flat();
 }
 
-/** Fetches only the explicitly mapped project secrets from Infisical. */
+/** Fetches only the explicitly mapped project secrets from the configured credential system. */
 export async function fetchInfisicalSecrets(settings: ProjectInfisicalSettings, secretReferences: Array<string | InfisicalSecretReference>) {
     const defaultPath = normalizeInfisicalSecretPath(settings.secretPath);
     const references = secretReferences
@@ -55,23 +57,23 @@ export async function fetchInfisicalSecrets(settings: ProjectInfisicalSettings, 
 
     const values = await Promise.all(uniqueReferences.map(async (reference) => {
         if (!/^[A-Za-z0-9_.-]+$/.test(reference.name)) {
-            throw new Error(`Infisical secret name '${reference.name}' contains unsupported characters.`);
+            throw new Error(`Secret name '${reference.name}' contains unsupported characters.`);
         }
         const url = new URL(`${auth.siteUrl}/api/v4/secrets/${encodeURIComponent(reference.name)}`);
         url.searchParams.set("projectId", auth.projectId);
         url.searchParams.set("environment", auth.environment);
         url.searchParams.set("secretPath", reference.path);
         const response = await fetchWithTimeout(url, {
-            headers: { authorization: `Bearer ${auth.accessToken}` }
-        });
+            headers: credentialHeaders(auth)
+        }, auth.tlsIdentity);
         if (!response.ok) {
-            throw new Error(`Could not fetch Infisical secret '${reference.name}' from '${reference.path}' (HTTP ${response.status}). Check its project, environment, path, and identity access.`);
+            throw new Error(`Could not fetch secret '${reference.name}' from '${reference.path}' (HTTP ${response.status}). Check the project, environment, path, and workload identity access.`);
         }
 
-        const body = await readJson(response, `Infisical returned an invalid response for secret '${reference.name}'.`);
+        const body = await readJson(response, `The credential system returned an invalid response for secret '${reference.name}'.`);
         const secret = asRecord(body.secret) ?? asRecord(asRecord(body.data)?.secret) ?? asRecord(body.data) ?? body;
         const value = readString(secret.secretValue);
-        if (value === undefined) throw new Error(`Infisical did not return a value for secret '${reference.name}'.`);
+        if (value === undefined) throw new Error(`The credential system did not return a value for secret '${reference.name}'.`);
         return [infisicalSecretReferenceKey(reference.name, reference.path), value] as const;
     }));
 
@@ -79,15 +81,27 @@ export async function fetchInfisicalSecrets(settings: ProjectInfisicalSettings, 
 }
 
 async function authenticateInfisical(settings: ProjectInfisicalSettings) {
-    if (!settings.enabled) throw new Error("Infisical is disabled for this project.");
+    if (!settings.enabled) throw new Error("The credential system is disabled for this project.");
 
     const siteUrl = normalizeInfisicalSiteUrl(settings.siteUrl);
-    const clientId = settings.clientId.trim();
-    const clientSecret = settings.clientSecret?.trim() ?? "";
     const projectId = settings.projectId.trim();
     const environment = settings.environment.trim();
-    if (!clientId || !clientSecret || !projectId || !environment) {
-        throw new Error("Infisical is enabled, but the instance URL, client ID, client secret, project ID, or environment is missing.");
+    if (!projectId || !environment) {
+        throw new Error("The credential system project ID or environment is missing.");
+    }
+
+    if (settings.authMethod === "spiffe-x509") {
+        if (!siteUrl.startsWith("https://")) {
+            throw new Error("SPIFFE certificate authentication requires an HTTPS credential system URL.");
+        }
+        const tlsIdentity = await fetchSpiffeX509Identity(settings.spiffeId ?? "");
+        return { siteUrl, projectId, environment, tlsIdentity };
+    }
+
+    const clientId = settings.clientId.trim();
+    const clientSecret = settings.clientSecret?.trim() ?? "";
+    if (!clientId || !clientSecret) {
+        throw new Error("Client ID and client secret authentication is selected, but its credentials are incomplete.");
     }
 
     const loginResponse = await fetchWithTimeout(`${siteUrl}/api/v1/auth/universal-auth/login`, {
@@ -96,12 +110,16 @@ async function authenticateInfisical(settings: ProjectInfisicalSettings) {
         body: new URLSearchParams({ clientId, clientSecret })
     });
     if (!loginResponse.ok) {
-        throw new Error(`Infisical authentication failed (HTTP ${loginResponse.status}). Check the machine identity credentials and instance URL.`);
+        throw new Error(`Credential system login failed (HTTP ${loginResponse.status}). Check the machine identity credentials and URL.`);
     }
-    const loginBody = await readJson(loginResponse, "Infisical returned an invalid authentication response.");
+    const loginBody = await readJson(loginResponse, "The credential system returned an invalid login response.");
     const accessToken = readString(loginBody.accessToken);
-    if (!accessToken) throw new Error("Infisical authentication succeeded without returning an access token.");
+    if (!accessToken) throw new Error("Credential system login succeeded without returning an access token.");
     return { siteUrl, projectId, environment, accessToken };
+}
+
+function credentialHeaders(auth: { accessToken?: string }): Record<string, string> {
+    return auth.accessToken ? { authorization: `Bearer ${auth.accessToken}` } : {};
 }
 
 export function normalizeInfisicalSecretReference(reference: string | InfisicalSecretReference, defaultPath: string) {
@@ -133,27 +151,103 @@ function normalizeInfisicalSiteUrl(value: string) {
     try {
         url = new URL(value.trim());
     } catch {
-        throw new Error("Enter a valid Infisical instance URL, including https://.");
+        throw new Error("Enter a valid credential system URL, including https://.");
     }
     const isLoopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
     if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
-        throw new Error("The Infisical instance URL must use HTTPS. HTTP is allowed only for localhost.");
+        throw new Error("The credential system URL must use HTTPS. HTTP is allowed only for localhost with client ID/secret authentication.");
     }
     if (url.username || url.password || url.search || url.hash) {
-        throw new Error("The Infisical instance URL cannot contain credentials, query parameters, or a fragment.");
+        throw new Error("The credential system URL cannot contain credentials, query parameters, or a fragment.");
     }
     return url.toString().replace(/\/+$/, "");
 }
 
-async function fetchWithTimeout(input: string | URL, init: RequestInit) {
+async function fetchWithTimeout(input: string | URL, init: RequestInit, tlsIdentity?: SpiffeX509Identity): Promise<Response> {
+    if (tlsIdentity) return fetchWithClientCertificate(input, init, tlsIdentity);
     try {
         return await fetch(input, { ...init, redirect: "error", signal: AbortSignal.timeout(infisicalRequestTimeoutMs) });
     } catch (error) {
         if (error instanceof Error && error.name === "TimeoutError") {
-            throw new Error("Timed out while connecting to Infisical.");
+            throw new Error("Timed out while connecting to the credential system.");
         }
-        throw new Error("Could not connect to the configured Infisical instance.");
+        throw new Error("Could not connect to the configured credential system.");
     }
+}
+
+function fetchWithClientCertificate(input: string | URL, init: RequestInit, identity: SpiffeX509Identity): Promise<Response> {
+    const url = input instanceof URL ? input : new URL(input);
+    if (url.protocol !== "https:") throw new Error("SPIFFE certificate authentication requires HTTPS.");
+
+    const agent = new HttpsAgent({
+        cert: identity.certificate,
+        key: identity.privateKey,
+        rejectUnauthorized: true,
+        keepAlive: false
+    });
+    const headers = new Headers(init.headers);
+    const requestHeaders: Record<string, string> = {};
+    headers.forEach((value, key) => { requestHeaders[key] = value; });
+    requestHeaders["accept-encoding"] ??= "identity";
+    const body = requestBodyBuffer(init.body);
+
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => request.destroy(new Error("TimeoutError")), infisicalRequestTimeoutMs);
+        timer.unref();
+        const finishError = (error: unknown) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            agent.destroy();
+            const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.message === "TimeoutError");
+            reject(new Error(timedOut ? "Timed out while connecting to the credential system over mTLS." : "Could not connect to the credential system using its configured SPIFFE identity."));
+        };
+
+        const request = httpsRequest(url, {
+            method: init.method ?? "GET",
+            headers: requestHeaders,
+            agent
+        }, (response) => {
+            const chunks: Buffer[] = [];
+            response.on("data", (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+            response.on("error", finishError);
+            response.on("end", () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                agent.destroy();
+                const status = response.statusCode ?? 500;
+                if (status >= 300 && status < 400) {
+                    reject(new Error("The credential system redirected an mTLS request. Configure its final HTTPS URL directly."));
+                    return;
+                }
+                const responseHeaders = new Headers();
+                for (const [name, value] of Object.entries(response.headers)) {
+                    if (Array.isArray(value)) value.forEach((item) => responseHeaders.append(name, item));
+                    else if (typeof value === "string") responseHeaders.set(name, value);
+                }
+                const responseBody = [204, 205, 304].includes(status) ? null : Buffer.concat(chunks);
+                resolve(new Response(responseBody, {
+                    status,
+                    statusText: response.statusMessage,
+                    headers: responseHeaders
+                }));
+            });
+        });
+        request.on("error", finishError);
+        if (body) request.write(body);
+        request.end();
+    });
+}
+
+function requestBodyBuffer(body: BodyInit | null | undefined) {
+    if (body === null || body === undefined) return undefined;
+    if (typeof body === "string") return Buffer.from(body);
+    if (body instanceof URLSearchParams) return Buffer.from(body.toString());
+    if (body instanceof ArrayBuffer) return Buffer.from(body);
+    if (ArrayBuffer.isView(body)) return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+    throw new Error("The mTLS request body type is not supported.");
 }
 
 async function readJson(response: Response, errorMessage: string): Promise<Record<string, unknown>> {
