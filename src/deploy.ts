@@ -101,6 +101,8 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
     const secretOverlayScript = renderSecretComposeOverlayScript(appSettings.envSecrets, deploymentStrategy, composeProjectName);
+    const secretConsumerRecreateScript = renderSecretConsumerRecreateScript(appSettings.forceRecreateSecretServices, deploymentStrategy, composeProjectName);
+    const secretRefreshOnlyScript = renderSecretRefreshOnlyScript(secretOverlayScript, secretConsumerRecreateScript, deploymentStrategy, composeProjectName);
     const projectRootEnvFileScript = renderProjectRootEnvFileScript(appSettings.envFilePath);
     const tempBuildContextRewriteScript = renderTempBuildContextRewriteScript();
     const persistedEnvFileRewriteScript = renderPersistedEnvFileRewriteScript('"$COMPOSE_WORKSPACE/docker-compose.deploy.yml"');
@@ -131,6 +133,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 REGISTRY_ENABLED=${shellQuote(registryEnabled ? "true" : "false")}
                 REGISTRY_PUBLISH=${shellQuote(registryPublish ? "true" : "false")}
                 REGISTRY_DEPLOY_FROM_REGISTRY=${shellQuote(registryDeployFromRegistry ? "true" : "false")}
+                SECRET_REFRESH_ONLY=${shellQuote(Boolean(appSettings.secretRefreshOnly))}
                 REGISTRY_ADDRESS=${shellQuote(registryAddress)}
                 REGISTRY_USERNAME=${shellQuote(registryUsername)}
                 REGISTRY_PASSWORD=${shellQuote(registryPassword)}
@@ -148,6 +151,8 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 trap cleanup_deploy_active_marker EXIT
                 trap 'cleanup_deploy_active_marker; exit 130' INT
                 trap 'cleanup_deploy_active_marker; exit 143' TERM
+
+${secretRefreshOnlyScript}
 
                 if [ -n "${quotedRepositoryUrl}" ]; then
                     echo "--> Preparing temporary deployment checkout..."
@@ -415,6 +420,7 @@ ${externalNetworkEnsureScript}
                         echo "--> Recreating changed services from registry images..."
                         docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
                         if [ $? -eq 0 ]; then
+${secretConsumerRecreateScript}
                             echo "--> Deployment successful."
                         else
                             echo "--> CRITICAL: Compose up failed after pulling registry images. Existing containers were not intentionally removed by Deploy."
@@ -427,6 +433,7 @@ ${externalNetworkEnsureScript}
                             echo "--> Build succeeded! Recreating changed services via compose..."
                             docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
                             if [ $? -eq 0 ]; then
+${secretConsumerRecreateScript}
                                 echo "--> Deployment successful."
                             else
                                 echo "--> CRITICAL: Compose up failed after a successful build. Existing containers were not intentionally removed by Deploy."
@@ -1029,6 +1036,193 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
 
     lines.push("                COMPOSE_FILES=\"$COMPOSE_FILES -f $COMPOSE_WORKSPACE/docker-compose.secrets.yml\"");
     return lines.join("\n");
+}
+
+function renderSecretConsumerRecreateScript(services: string[] | undefined, deploymentStrategy: DeploymentStrategy, projectName: string) {
+    const serviceNames = [...new Set((services ?? []).map((service) => service.trim()).filter(Boolean))];
+    if (deploymentStrategy !== "compose" || !serviceNames.length) {
+        return "";
+    }
+
+    return [
+        "                            echo \"--> Restarting services mapped to refreshed Infisical secrets...\"",
+        `                            docker compose -p ${shellQuote(projectName)} $COMPOSE_FILES up -d --no-build --pull never --no-deps --force-recreate ${serviceNames.map(shellQuote).join(" ")}`,
+        "                            if [ $? -ne 0 ]; then",
+        "                                echo \"--> CRITICAL: Could not restart services after refreshing Infisical secrets.\"",
+        "                                exit 1",
+        "                            fi"
+    ].join("\n");
+}
+
+function renderSecretRefreshOnlyScript(secretOverlayScript: string, secretConsumerRecreateScript: string, deploymentStrategy: DeploymentStrategy, projectName: string) {
+    if (!secretOverlayScript || (deploymentStrategy === "compose" && !secretConsumerRecreateScript)) {
+        return "";
+    }
+
+    const lines = [
+        "                if [ \"$SECRET_REFRESH_ONLY\" = \"true\" ]; then",
+        "                    if [ ! -f \"$COMPOSE_WORKSPACE/docker-compose.deploy.yml\" ]; then",
+        "                        echo \"--> CRITICAL: Cannot refresh secrets because this project has no persisted Compose deployment. Run a full deployment first.\"",
+        "                        exit 1",
+        "                    fi",
+        "                    echo \"--> Applying refreshed Infisical secrets to the persisted Compose deployment...\"",
+        "                    COMPOSE_FILES=\"-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml\"",
+        secretOverlayScript
+    ];
+
+    if (deploymentStrategy === "compose") {
+        lines.push(
+            `                    docker compose -p ${shellQuote(projectName)} $COMPOSE_FILES config --no-interpolate > "$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml"`,
+            "                    if [ $? -ne 0 ]; then",
+            "                        echo \"--> CRITICAL: Could not render the Compose deployment with refreshed Infisical secrets.\"",
+            "                        exit 1",
+            "                    fi",
+            "                    mv \"$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml\" \"$COMPOSE_WORKSPACE/docker-compose.deploy.yml\"",
+            "                    rm -f \"$COMPOSE_WORKSPACE/docker-compose.secrets.yml\"",
+            "                    COMPOSE_FILES=\"-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml\"",
+            secretConsumerRecreateScript
+        );
+    } else {
+        lines.push(
+            "                    if [ \"$(docker info --format '{{.Swarm.ControlAvailable}}' 2>/dev/null || echo false)\" != \"true\" ]; then",
+            "                        echo \"--> CRITICAL: Swarm secret refresh must run on a Docker Swarm manager agent.\"",
+            "                        exit 1",
+            "                    fi",
+            "                    echo \"--> Rendering refreshed Swarm stack configuration...\"",
+            "                    docker compose -p \"$PROJECT_NAME\" $COMPOSE_FILES config --format json > /tmp/deploy-compose-secret-refresh-stack.json",
+            "                    if [ $? -ne 0 ]; then",
+            "                        echo \"--> CRITICAL: Could not render the Swarm stack with refreshed Infisical secrets.\"",
+            "                        exit 1",
+            "                    fi",
+            "                    node - /tmp/deploy-compose-secret-refresh-stack.json \"$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml\" << 'DEPLOY_SECRET_REFRESH_SWARM_SANITIZE_JS'",
+            renderSwarmComposeSanitizeScript(),
+            "DEPLOY_SECRET_REFRESH_SWARM_SANITIZE_JS",
+            "                    if [ $? -ne 0 ]; then",
+            "                        echo \"--> CRITICAL: Could not prepare the refreshed Swarm stack configuration.\"",
+            "                        exit 1",
+            "                    fi",
+            "                    if [ \"$REGISTRY_DEPLOY_FROM_REGISTRY\" = \"true\" ] && [ -n \"$REGISTRY_USERNAME\" ]; then",
+            "                        if [ -z \"$REGISTRY_PASSWORD\" ]; then",
+            "                            echo \"--> CRITICAL: Registry username is configured, but the registry password is empty.\"",
+            "                            exit 1",
+            "                        fi",
+            "                        printf '%s' \"$REGISTRY_PASSWORD\" | docker login \"$REGISTRY_ADDRESS\" --username \"$REGISTRY_USERNAME\" --password-stdin >/dev/null",
+            "                        if [ $? -ne 0 ]; then",
+            "                            echo \"--> CRITICAL: Registry login failed before the Swarm secret refresh.\"",
+            "                            exit 1",
+            "                        fi",
+            "                    fi",
+            "                    echo \"--> Updating Swarm services with refreshed secret versions...\"",
+            "                    if [ \"$REGISTRY_DEPLOY_FROM_REGISTRY\" = \"true\" ]; then",
+            "                        docker stack deploy --resolve-image never --with-registry-auth -c \"$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml\" \"$PROJECT_NAME\"",
+            "                    else",
+            "                        docker stack deploy --resolve-image never -c \"$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml\" \"$PROJECT_NAME\"",
+            "                    fi",
+            "                    if [ $? -ne 0 ]; then",
+            "                        echo \"--> CRITICAL: Swarm stack update failed after refreshing secrets.\"",
+            "                        exit 1",
+            "                    fi",
+            "                    mv \"$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml\" \"$COMPOSE_WORKSPACE/docker-compose.deploy.yml\"",
+            "                    rm -f \"$COMPOSE_WORKSPACE/docker-compose.secrets.yml\"",
+            renderSwarmSecretCleanupScript()
+        );
+    }
+
+    lines.push(
+        "                    echo \"--> Secret refresh successful.\"",
+        "                    exit 0",
+        "                fi"
+    );
+    return lines.join("\n");
+}
+
+function renderSwarmComposeSanitizeScript() {
+    return String.raw`const fs = require("node:fs");
+
+const inputPath = process.argv[2];
+const outputPath = process.argv[3];
+const data = JSON.parse(fs.readFileSync(inputPath, "utf8") || "{}");
+const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+const isEmptyObject = (value) => isObject(value) && Object.keys(value).length === 0;
+
+if (isObject(data)) {
+  delete data.name;
+}
+
+for (const section of ["networks", "volumes"]) {
+  const resources = isObject(data) ? data[section] : undefined;
+  if (!isObject(resources)) continue;
+  for (const resource of Object.values(resources)) {
+    if (!isObject(resource)) continue;
+    delete resource.name;
+    for (const key of ["ipam", "driver_opts", "labels"]) {
+      if (isEmptyObject(resource[key])) delete resource[key];
+    }
+  }
+}
+
+const services = isObject(data) ? data.services : undefined;
+if (isObject(services)) {
+  for (const service of Object.values(services)) {
+    if (!isObject(service)) continue;
+    for (const key of ["command", "entrypoint"]) {
+      if (service[key] === null) delete service[key];
+    }
+    if (isObject(service.networks) && Object.values(service.networks).every((value) => value === null)) {
+      service.networks = Object.keys(service.networks);
+    }
+    if (isObject(service.labels)) {
+      for (const key of Object.keys(service.labels)) {
+        if (key.startsWith("traefik.")) delete service.labels[key];
+      }
+      if (isEmptyObject(service.labels)) delete service.labels;
+    } else if (Array.isArray(service.labels)) {
+      service.labels = service.labels.filter((label) => !String(label).startsWith("traefik."));
+      if (!service.labels.length) delete service.labels;
+    }
+    if (Array.isArray(service.volumes)) {
+      for (const volume of service.volumes) {
+        if (isObject(volume) && isEmptyObject(volume.volume)) delete volume.volume;
+      }
+    }
+    const deploy = service.deploy;
+    if (!isObject(deploy)) continue;
+    if (isObject(deploy.labels)) {
+      deploy.labels = Object.entries(deploy.labels).map(([key, value]) => String(key) + "=" + String(value));
+    }
+    if (isEmptyObject(deploy.resources)) delete deploy.resources;
+    const constraints = isObject(deploy.placement) ? deploy.placement.constraints : undefined;
+    if (Array.isArray(constraints)) {
+      const seen = new Set();
+      deploy.placement.constraints = constraints.filter((item) => {
+        if (seen.has(item)) return false;
+        seen.add(item);
+        return true;
+      });
+    }
+  }
+}
+
+fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\n");`;
+}
+
+function renderSwarmSecretCleanupScript() {
+    return [
+        "                    if [ -f /tmp/deploy-current-secret-bases ] && [ -f /tmp/deploy-current-secret-names ]; then",
+        "                        echo \"--> Cleaning up old Docker secrets no longer referenced by this stack.\"",
+        "                        sort -u /tmp/deploy-current-secret-bases | while IFS= read -r SECRET_BASE; do",
+        "                            if [ -z \"$SECRET_BASE\" ]; then",
+        "                                continue",
+        "                            fi",
+        "                            docker secret ls -q --filter \"label=deploy.project=$PROJECT_NAME\" --filter \"label=deploy.secret-base=$SECRET_BASE\" | while IFS= read -r SECRET_ID; do",
+        "                                SECRET_NAME=\"$(docker secret inspect --format '{{.Spec.Name}}' \"$SECRET_ID\" 2>/dev/null || true)\"",
+        "                                if [ -n \"$SECRET_NAME\" ] && ! grep -Fx \"$SECRET_NAME\" /tmp/deploy-current-secret-names >/dev/null 2>&1; then",
+        "                                    docker secret rm \"$SECRET_NAME\" >/dev/null 2>&1 || true",
+        "                                fi",
+        "                            done",
+        "                        done",
+        "                    fi"
+    ].join("\n");
 }
 
 function renderDockerSecretCreateLines(projectName: string, secret: ProjectEnvironmentSecret) {

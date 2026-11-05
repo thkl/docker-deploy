@@ -47,6 +47,10 @@ export interface ProjectSettings {
     registry?: ProjectRegistrySettings;
     notifications?: ProjectNotificationSettings;
     traefik?: TraefikSettings;
+    /** Runtime-only list of services mapped to Infisical secrets for webhook refreshes. */
+    forceRecreateSecretServices?: string[];
+    /** Runtime-only hint to apply refreshed Infisical secrets without building images. */
+    secretRefreshOnly?: boolean;
 }
 
 export type ProjectConfig = Record<string, ProjectSettings>;

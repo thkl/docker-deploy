@@ -1830,7 +1830,12 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
         }
 
         try {
-            const deployment = deploymentService.startDeployment(projectName, settings, "webhook");
+            const forceRecreateSecretServices = [...new Set(infisicalBindings.map((secret) => secret.service.trim()).filter(Boolean))];
+            const deployment = deploymentService.startDeployment(projectName, {
+                ...settings,
+                forceRecreateSecretServices,
+                secretRefreshOnly: forceRecreateSecretServices.length > 0
+            }, "webhook");
             recentInfisicalEvents.set(eventKey, now);
             webhookStore.record({
                 projectId: settings.id,
