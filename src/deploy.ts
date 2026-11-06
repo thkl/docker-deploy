@@ -112,6 +112,8 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const registryRewriteScript = renderRegistryComposeRewriteScript();
     const registryStripBuildScript = renderRegistryStripBuildScript();
     const externalNetworkEnsureScript = renderExternalNetworkEnsureScript();
+    const buildDecisionScript = renderBuildDecisionScript();
+    const saveBuildStateScript = renderSaveBuildStateScript();
     const quotedHostAppsPath = shellQuote(hostAppsPath);
     const envFileVolume = renderEnvFileVolume(appSettings.envFilePath, hostAppsPath);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
@@ -140,6 +142,8 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 REGISTRY_PASSWORD=${shellQuote(registryPassword)}
                 REGISTRY_IMAGE_NAMESPACE=${shellQuote(registryImageNamespace)}
                 REGISTRY_IMAGE_TAG=${shellQuote(registryImageTag)}
+                GIT_SHA=""
+                BUILD_REQUIRED="true"
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/tmpdeploy"
                 RELEASE_DEPLOY="$PROJECT_ROOT/.updater/release"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
@@ -176,6 +180,11 @@ ${secretRefreshOnlyScript}
                     echo "--> Fetching latest changes..."
                     git pull --ff-only
                 fi
+                if [ -d "$TMP_DEPLOY/.git" ]; then
+                    GIT_SHA="$(git -C "$TMP_DEPLOY" rev-parse HEAD 2>/dev/null || true)"
+                elif [ -d "$PROJECT_ROOT/.git" ]; then
+                    GIT_SHA="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)"
+                fi
                 if [ "$PWD" = "$TMP_DEPLOY" ]; then
                     echo "--> Updating stable release checkout..."
                     rm -rf "$RELEASE_DEPLOY"
@@ -206,6 +215,7 @@ ${persistedStorageGuardScript}
                 cleanup_release_if_unused
                 COMPOSE_FILES="-f $COMPOSE_WORKSPACE/docker-compose.deploy.yml"
                 cd "$PROJECT_ROOT"
+${buildDecisionScript}
 
                 if [ "$REGISTRY_ENABLED" = "true" ]; then
                     if [ -z "$REGISTRY_ADDRESS" ]; then
@@ -227,23 +237,25 @@ ${registryRewriteScript}
                 fi
 
                 if [ "$REGISTRY_PUBLISH" = "true" ]; then
-                    echo "--> Building registry-tagged images..."
                     REGISTRY_SERVICES="$(cat /tmp/deploy-registry-services 2>/dev/null || true)"
                     if [ -z "$REGISTRY_SERVICES" ]; then
                         echo "--> No build-backed services found to publish."
-                    else
-                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build $REGISTRY_SERVICES
-                    if [ $? -ne 0 ]; then
-                        echo "--> CRITICAL: Registry image build failed."
-                        exit 1
-                    fi
+                    elif [ "$BUILD_REQUIRED" = "true" ]; then
+                        echo "--> Building registry-tagged images because the source or build inputs changed..."
+                        docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build $REGISTRY_SERVICES
+                        if [ $? -ne 0 ]; then
+                            echo "--> CRITICAL: Registry image build failed."
+                            exit 1
+                        fi
 
-                    echo "--> Pushing images to registry..."
-                    docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES push $REGISTRY_SERVICES
-                    if [ $? -ne 0 ]; then
-                        echo "--> CRITICAL: Registry image push failed."
-                        exit 1
-                    fi
+                        echo "--> Pushing images to registry..."
+                        docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES push $REGISTRY_SERVICES
+                        if [ $? -ne 0 ]; then
+                            echo "--> CRITICAL: Registry image push failed."
+                            exit 1
+                        fi
+                    else
+                        echo "--> Source commit and build inputs are unchanged; skipping image build and push."
                     fi
                 fi
 
@@ -389,6 +401,7 @@ DEPLOY_SWARM_VALIDATE_JS
                     fi
                     if [ $? -eq 0 ]; then
                         echo "--> Swarm stack deployment successful."
+${saveBuildStateScript}
                         if [ -f /tmp/deploy-current-secret-bases ] && [ -f /tmp/deploy-current-secret-names ]; then
                             echo "--> Cleaning up old Docker secrets no longer referenced by this stack."
                             sort -u /tmp/deploy-current-secret-bases | while IFS= read -r SECRET_BASE; do
@@ -422,26 +435,33 @@ ${externalNetworkEnsureScript}
                         docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
                         if [ $? -eq 0 ]; then
 ${secretConsumerRecreateScript}
+${saveBuildStateScript}
                             echo "--> Deployment successful."
                         else
                             echo "--> CRITICAL: Compose up failed after pulling registry images. Existing containers were not intentionally removed by Deploy."
                             exit 1
                         fi
                     else
-                        echo "--> Testing build for new changes..."
-                        docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build
-                        if [ $? -eq 0 ]; then
-                            echo "--> Build succeeded! Recreating changed services via compose..."
-                            docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
-                            if [ $? -eq 0 ]; then
-${secretConsumerRecreateScript}
-                                echo "--> Deployment successful."
-                            else
-                                echo "--> CRITICAL: Compose up failed after a successful build. Existing containers were not intentionally removed by Deploy."
+                        if [ "$BUILD_REQUIRED" = "true" ]; then
+                            echo "--> Building images because the source or build inputs changed..."
+                            docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES build
+                            if [ $? -ne 0 ]; then
+                                echo "--> CRITICAL: Build failed! Keeping the old container running."
                                 exit 1
                             fi
+                            echo "--> Build succeeded."
                         else
-                            echo "--> CRITICAL: Build failed! Keeping the old container running."
+                            echo "--> Source commit and build inputs are unchanged; skipping image build."
+                        fi
+
+                        echo "--> Recreating changed services via compose..."
+                        docker compose -p ${shellQuote(composeProjectName)} $COMPOSE_FILES up -d --no-build --remove-orphans
+                        if [ $? -eq 0 ]; then
+${secretConsumerRecreateScript}
+${saveBuildStateScript}
+                            echo "--> Deployment successful."
+                        else
+                            echo "--> CRITICAL: Compose up failed. Existing containers were not intentionally removed by Deploy."
                             exit 1
                         fi
                     fi
@@ -537,7 +557,9 @@ export async function captureProjectReleaseSnapshot(repoName: string, appSetting
                 fi
 
                 GIT_SHA=""
-                if [ -d "$RELEASE_DEPLOY/.git" ]; then
+                if [ -f "$PROJECT_ROOT/.updater/compose/source-git-sha" ]; then
+                    GIT_SHA="$(cat "$PROJECT_ROOT/.updater/compose/source-git-sha" 2>/dev/null || true)"
+                elif [ -d "$RELEASE_DEPLOY/.git" ]; then
                     GIT_SHA="$(git -C "$RELEASE_DEPLOY" rev-parse HEAD 2>/dev/null || true)"
                 elif [ -d "$PROJECT_ROOT/.git" ]; then
                     GIT_SHA="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)"
@@ -1377,6 +1399,99 @@ for (const [key, network] of Object.entries(networks)) {
   }
 }
 DEPLOY_EXTERNAL_NETWORKS_JS`;
+}
+
+function renderBuildDecisionScript() {
+    return `
+                echo "--> Comparing Git revision and Docker build inputs..."
+                docker compose -p "$PROJECT_NAME" $COMPOSE_FILES config --format json > /tmp/deploy-compose-build-inputs.json
+                if [ $? -ne 0 ]; then
+                    echo "--> CRITICAL: Could not inspect Docker build inputs."
+                    exit 1
+                fi
+                node - /tmp/deploy-compose-build-inputs.json "$COMPOSE_WORKSPACE/build-state.json" "$TMP_DEPLOY" "$RELEASE_DEPLOY" "$GIT_SHA" "$REGISTRY_ADDRESS" "$REGISTRY_IMAGE_NAMESPACE" "$REGISTRY_IMAGE_TAG" "$REGISTRY_PUBLISH" "$PROJECT_NAME" << 'DEPLOY_BUILD_DECISION_JS'
+const fs = require("node:fs");
+const path = require("node:path");
+const { createHash } = require("node:crypto");
+
+const [configPath, statePath, tmpRoot, releaseRoot, gitSha, registryAddress, namespace, tag, publishValue, projectName] = process.argv.slice(2);
+const config = JSON.parse(fs.readFileSync(configPath, "utf8") || "{}");
+const services = config && typeof config === "object" && config.services && typeof config.services === "object" ? config.services : {};
+const buildSpecs = {};
+let safeToSkip = true;
+const tmp = path.resolve(tmpRoot);
+const release = path.resolve(releaseRoot);
+const isInside = (root, candidate) => candidate === root || candidate.startsWith(root + path.sep);
+
+for (const [name, service] of Object.entries(services)) {
+  if (!service || typeof service !== "object" || service.build == null) continue;
+  const build = service.build;
+  const context = typeof build === "string" ? build : (build.context || ".");
+  if (typeof context !== "string" || /^(https?:|git@|ssh:|docker-image:)/i.test(context)) {
+    safeToSkip = false;
+  } else {
+    try {
+      const resolvedContext = fs.realpathSync(path.resolve(path.isAbsolute(context) ? context : path.join(release, context)));
+      if (!isInside(tmp, resolvedContext) && !isInside(release, resolvedContext)) safeToSkip = false;
+    } catch {
+      safeToSkip = false;
+    }
+  }
+  if (build && typeof build === "object") {
+    const hasValues = (value) => Array.isArray(value) ? value.length > 0 : Boolean(value && Object.keys(value).length);
+    if (hasValues(build.additional_contexts) || hasValues(build.secrets) || hasValues(build.ssh)) safeToSkip = false;
+  }
+  buildSpecs[name] = { image: service.image || "", build };
+}
+
+const canonicalize = (value) => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+};
+const publish = publishValue === "true";
+const registryTarget = publish ? { registryAddress, namespace, tag, projectName } : null;
+const buildFingerprint = createHash("sha256").update(JSON.stringify(canonicalize(buildSpecs))).digest("hex");
+const registryTargetFingerprint = registryTarget
+  ? createHash("sha256").update(JSON.stringify(canonicalize(registryTarget))).digest("hex")
+  : null;
+let previous;
+try {
+  previous = JSON.parse(fs.readFileSync(statePath, "utf8"));
+} catch {
+  previous = undefined;
+}
+
+const hasBuilds = Object.keys(buildSpecs).length > 0;
+const sameBuildInputs = Boolean(previous && gitSha && previous.gitSha === gitSha && previous.buildFingerprint === buildFingerprint);
+const needsRegistryImage = publish && (previous?.publish !== true || previous.registryTargetFingerprint !== registryTargetFingerprint);
+const buildRequired = hasBuilds && (!gitSha || !safeToSkip || !sameBuildInputs || needsRegistryImage);
+const state = { gitSha, buildFingerprint, registryTargetFingerprint, publish, buildServices: Object.keys(buildSpecs).sort() };
+
+fs.writeFileSync("/tmp/deploy-current-build-state.json", JSON.stringify(state) + "\\n", { mode: 0o600 });
+fs.writeFileSync("/tmp/deploy-build-required", buildRequired ? "true\\n" : "false\\n");
+console.log(buildRequired
+  ? "--> Build required: source or build inputs changed, the registry image needs its first publish, or inputs cannot be safely compared."
+  : hasBuilds
+    ? "--> Build can be skipped: Git revision and build inputs match the last successful deployment."
+    : "--> No build-backed services are configured.");
+DEPLOY_BUILD_DECISION_JS
+                if [ $? -ne 0 ]; then
+                    echo "--> CRITICAL: Could not compare Docker build inputs."
+                    exit 1
+                fi
+                BUILD_REQUIRED="$(cat /tmp/deploy-build-required 2>/dev/null || echo true)"
+                if [ "$BUILD_REQUIRED" != "true" ]; then BUILD_REQUIRED="false"; fi`;
+}
+
+function renderSaveBuildStateScript() {
+    return `
+                        printf '%s\\n' "$GIT_SHA" > "$COMPOSE_WORKSPACE/source-git-sha"
+                        chmod 600 "$COMPOSE_WORKSPACE/source-git-sha"
+                        if [ -f /tmp/deploy-current-build-state.json ]; then
+                            cp /tmp/deploy-current-build-state.json "$COMPOSE_WORKSPACE/build-state.json" || echo "--> WARNING: Could not save the last successful build fingerprint."
+                            chmod 600 "$COMPOSE_WORKSPACE/build-state.json" 2>/dev/null || true
+                        fi`;
 }
 
 function composeSecretMountTarget(service: string, key: string) {
