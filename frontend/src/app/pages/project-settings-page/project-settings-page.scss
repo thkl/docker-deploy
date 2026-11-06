@@ -81,7 +81,7 @@ p {
 
 .settings-page-panels {
   grid-template-rows: minmax(0, 1fr);
-  height: clamp(28rem, calc(100vh - 15rem), 62rem);
+  height: calc(100vh - 17rem);
 }
 
 .settings-page-panel,
