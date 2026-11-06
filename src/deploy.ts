@@ -129,6 +129,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
                 PROJECT_ROOT=${quotedHostAppsPath}
                 PROJECT_ROOT="\${PROJECT_ROOT%/}"
                 PROJECT_NAME=${shellQuote(composeProjectName)}
+                COMPOSE_PROJECT_NAME="$PROJECT_NAME"
                 DEPLOYMENT_STRATEGY=${shellQuote(deploymentStrategy)}
                 REGISTRY_ENABLED=${shellQuote(registryEnabled ? "true" : "false")}
                 REGISTRY_PUBLISH=${shellQuote(registryPublish ? "true" : "false")}

@@ -148,7 +148,7 @@ ${overrideContent}TRAEFIK_EOF
                     # but it cannot contain the current scale-to-zero token and
                     # updater URL. Always apply this runtime overlay so those
                     # labels are present in the effective deployment file.
-                    docker compose -f docker-compose.updater.source.yml -f docker-compose.traefik.yml config --no-interpolate > docker-compose.updater.yml
+                    docker compose -p "$PROJECT_NAME" -f docker-compose.updater.source.yml -f docker-compose.traefik.yml config --no-interpolate > docker-compose.updater.yml
                     COMPOSE_FILES="-f docker-compose.updater.yml"
                 else
                     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.traefik.yml"

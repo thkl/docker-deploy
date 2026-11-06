@@ -115,7 +115,7 @@ export function renderPersistedStorageRewriteScript(targetFile: string) {
                     TMP_DEPLOY_NO_SLASH="\${TMP_DEPLOY%/}"
                     RELEASE_DEPLOY_NO_SLASH="\${RELEASE_DEPLOY%/}"
                     echo "--> Rewriting persisted temporary-checkout paths."
-                    if docker compose -f ${targetFile} config --format json > /tmp/deploy-compose-persisted-before.json 2> /tmp/deploy-compose-persisted-rewrite-error.txt; then
+                    if docker compose -p "$PROJECT_NAME" -f ${targetFile} config --format json > /tmp/deploy-compose-persisted-before.json 2> /tmp/deploy-compose-persisted-rewrite-error.txt; then
                         node - "$PROJECT_ROOT_NO_SLASH" "$TMP_DEPLOY_NO_SLASH" "$RELEASE_DEPLOY_NO_SLASH" /tmp/deploy-compose-persisted-before.json /tmp/deploy-compose-persisted-after.json << 'DEPLOY_STORAGE_REWRITE_JS'
 const fs = require("node:fs");
 
@@ -180,7 +180,7 @@ if (isObject(data.services)) {
 
 fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
 DEPLOY_STORAGE_REWRITE_JS
-                        docker compose -f /tmp/deploy-compose-persisted-after.json config --no-interpolate > ${targetFile}
+                        docker compose -p "$PROJECT_NAME" -f /tmp/deploy-compose-persisted-after.json config --no-interpolate > ${targetFile}
                     else
                         cat /tmp/deploy-compose-persisted-rewrite-error.txt >&2
                         exit 1
@@ -256,7 +256,7 @@ export function renderPersistedStorageGuardScript(targetFile: string) {
     return `
                 if [ -f ${targetFile} ] && [ -n "$TMP_DEPLOY" ]; then
                     TMP_DEPLOY_NO_SLASH="\${TMP_DEPLOY%/}"
-                    if docker compose -f ${targetFile} config --format json > /tmp/deploy-compose-persisted.json 2> /tmp/deploy-compose-persisted-error.txt; then
+                    if docker compose -p "$PROJECT_NAME" -f ${targetFile} config --format json > /tmp/deploy-compose-persisted.json 2> /tmp/deploy-compose-persisted-error.txt; then
                         if node - "$TMP_DEPLOY_NO_SLASH" /tmp/deploy-compose-persisted.json << 'DEPLOY_STORAGE_GUARD_JS'
 const fs = require("node:fs");
 
@@ -318,7 +318,7 @@ export function renderPersistedSecretFileRewriteScript(targetFile: string) {
                     # path when resolving a relative secret file.
                     sed -i "s|$TMP_DEPLOY_NO_SLASH//secrets/|$COMPOSE_WORKSPACE_NO_SLASH/secrets/|g" ${targetFile}
                     sed -i "s|$TMP_DEPLOY_NO_SLASH/secrets/|$COMPOSE_WORKSPACE_NO_SLASH/secrets/|g" ${targetFile}
-                    if docker compose -f ${targetFile} config --format json > /tmp/deploy-compose-secret-source.json 2> /tmp/deploy-compose-secret-rewrite-error.txt; then
+                    if docker compose -p "$PROJECT_NAME" -f ${targetFile} config --format json > /tmp/deploy-compose-secret-source.json 2> /tmp/deploy-compose-secret-rewrite-error.txt; then
                         node - "$TMP_DEPLOY_NO_SLASH" "$COMPOSE_WORKSPACE_NO_SLASH" /tmp/deploy-compose-secret-source.json /tmp/deploy-compose-secret-after.json << 'DEPLOY_SECRET_PATH_REWRITE_JS'
 const fs = require("node:fs");
 
@@ -346,7 +346,7 @@ if (isObject(data.secrets)) {
 
 fs.writeFileSync(outputPath, JSON.stringify(data, null, 2) + "\\n");
 DEPLOY_SECRET_PATH_REWRITE_JS
-                        docker compose -f /tmp/deploy-compose-secret-after.json config --no-interpolate > ${targetFile}
+                        docker compose -p "$PROJECT_NAME" -f /tmp/deploy-compose-secret-after.json config --no-interpolate > ${targetFile}
                     else
                         cat /tmp/deploy-compose-secret-rewrite-error.txt >&2
                     fi

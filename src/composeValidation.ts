@@ -1,4 +1,5 @@
 import { exec } from "node:child_process";
+import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
@@ -21,6 +22,7 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
     const checkedAt = new Date().toISOString();
     const composeOverride = appSettings.composeOverride?.trim();
     const projectRoot = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
+    const composeProjectName = basename(projectRoot.replace(/\/+$/, "")) || projectName;
     const quotedProjectVolume = shellQuote(`${projectRoot}:${projectRoot}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
     const quotedProjectRoot = shellQuote(projectRoot);
@@ -43,6 +45,8 @@ ${envFileVolumeMount}            -v ${quotedSshKeyPath} \
                 apk add --no-cache docker-cli docker-cli-compose git openssh-client > /dev/null 2>&1
 
                 PROJECT_ROOT=${quotedProjectRoot}
+                PROJECT_NAME=${shellQuote(composeProjectName)}
+                COMPOSE_PROJECT_NAME="$PROJECT_NAME"
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/inspect"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
                 mkdir -p "$COMPOSE_WORKSPACE"
