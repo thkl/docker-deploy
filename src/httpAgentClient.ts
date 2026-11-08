@@ -1,11 +1,11 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowsePathJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectContainersJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, TestRegistryJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowseContainerFilesJobPayload, BrowsePathJobPayload, ContainerActionJobPayload, ContainerIdJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectContainersJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, TestRegistryJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
 import { ControllerKeyState } from "./keyStore.js";
-import { ContainerInventory, ContainerLogs, GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerRecord, TraefikDefaultsPayload } from "./types.js";
+import { ContainerAction, ContainerActionResult, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileListing, ContainerInventory, ContainerLogs, GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ServerRecord, TraefikDefaultsPayload } from "./types.js";
 
 /**
  * Controller-side client for a remote Deploy agent.
@@ -284,6 +284,38 @@ export class HttpAgentClient implements AgentClient {
             payload: { containerId, tail } satisfies ContainerLogsJobPayload
         });
         return this.connectRuntimeLogStream(accepted, hooks);
+    }
+
+    async containerEnvironment(containerId: string): Promise<ContainerEnvironmentVariable[]> {
+        const accepted = await this.postJob<{ result: ContainerEnvironmentVariable[] }>({
+            jobType: "containerEnvironment",
+            payload: { containerId } satisfies ContainerIdJobPayload
+        });
+        return accepted.result;
+    }
+
+    async browseContainerFiles(containerId: string, path: string): Promise<ContainerFileListing> {
+        const accepted = await this.postJob<{ result: ContainerFileListing }>({
+            jobType: "browseContainerFiles",
+            payload: { containerId, path } satisfies BrowseContainerFilesJobPayload
+        });
+        return accepted.result;
+    }
+
+    async readContainerFile(containerId: string, path: string): Promise<ContainerFileContent> {
+        const accepted = await this.postJob<{ result: ContainerFileContent }>({
+            jobType: "readContainerFile",
+            payload: { containerId, path } satisfies BrowseContainerFilesJobPayload
+        });
+        return accepted.result;
+    }
+
+    async containerAction(containerId: string, action: ContainerAction): Promise<ContainerActionResult> {
+        const accepted = await this.postJob<{ result: ContainerActionResult }>({
+            jobType: "containerAction",
+            payload: { containerId, action } satisfies ContainerActionJobPayload
+        });
+        return accepted.result;
     }
 
     /**

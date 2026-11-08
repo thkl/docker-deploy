@@ -1,7 +1,7 @@
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { ContainerFleetInventory, ContainerRecord, ContainerStatsSample, ProjectSummary } from '../../models/project';
+import { ContainerAction, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileEntry, ContainerFileListing, ContainerFleetInventory, ContainerRecord, ContainerStatsSample, ProjectSummary } from '../../models/project';
 import { ContainerLogStreamService, ContainerLogStreamEvent } from '../../services/container-log-stream';
 import { ContainerStatsStreamEvent, ContainerStatsStreamService } from '../../services/container-stats-stream';
 import { ProjectApi } from '../../services/project-api';
@@ -82,6 +82,22 @@ export class ContainersPage implements OnInit, OnDestroy {
   protected readonly logOutput = signal('');
   protected readonly logState = signal<'connecting' | 'live' | 'closed' | 'error'>('closed');
   protected readonly logError = signal('');
+  protected readonly inspectorTab = signal<'logs' | 'environment' | 'files'>('logs');
+  protected readonly environment = signal<ContainerEnvironmentVariable[]>([]);
+  protected readonly environmentLoaded = signal(false);
+  protected readonly environmentLoading = signal(false);
+  protected readonly environmentError = signal('');
+  protected readonly showEnvironmentValues = signal(false);
+  protected readonly containerFiles = signal<ContainerFileListing | null>(null);
+  protected readonly containerFilePath = signal('/');
+  protected readonly containerFilesLoading = signal(false);
+  protected readonly containerFilesError = signal('');
+  protected readonly selectedFile = signal<ContainerFileContent | null>(null);
+  protected readonly selectedFileLoading = signal(false);
+  protected readonly selectedFileError = signal('');
+  protected readonly containerActionPending = signal<ContainerAction | ''>('');
+  protected readonly containerActionError = signal('');
+  protected readonly containerActionMessage = signal('');
 
   protected readonly containers = computed<ContainerRow[]>(() => (this.inventory()?.servers ?? []).flatMap((server) =>
     server.containers.map((container) => ({ ...container, serverId: server.serverId, serverName: server.serverName })),
@@ -178,8 +194,11 @@ export class ContainersPage implements OnInit, OnDestroy {
   }
 
   protected openLogs(container: ContainerRow) {
+    const changedContainer = this.selectedContainerKey() !== this.keyFor(container);
     this.logSubscription?.unsubscribe();
     this.selectedContainerKey.set(this.keyFor(container));
+    this.inspectorTab.set('logs');
+    if (changedContainer) this.resetContainerInspectorData();
     this.logOutput.set('');
     this.logSearch.set('');
     this.logError.set('');
@@ -200,9 +219,118 @@ export class ContainersPage implements OnInit, OnDestroy {
     this.logSubscription?.unsubscribe();
     this.logSubscription = undefined;
     this.selectedContainerKey.set('');
+    this.inspectorTab.set('logs');
     this.logOutput.set('');
     this.logState.set('closed');
     this.logError.set('');
+    this.resetContainerInspectorData();
+  }
+
+  protected selectInspectorTab(tab: 'logs' | 'environment' | 'files') {
+    this.inspectorTab.set(tab);
+    const container = this.selectedContainer();
+    if (!container) return;
+    if (tab === 'environment' && !this.environmentLoaded() && !this.environmentLoading()) {
+      this.loadContainerEnvironment(container);
+    } else if (tab === 'files' && !this.containerFiles() && !this.containerFilesLoading()) {
+      this.browseContainerPath('/');
+    } else if (tab === 'logs' && this.logState() === 'closed') {
+      this.openLogs(container);
+    }
+  }
+
+  protected toggleEnvironmentValues() {
+    this.showEnvironmentValues.update((visible) => !visible);
+  }
+
+  protected browseContainerPath(path: string) {
+    const container = this.selectedContainer();
+    if (!container) return;
+    const selectedKey = this.keyFor(container);
+    this.containerFilePath.set(path);
+    this.containerFilesLoading.set(true);
+    this.containerFilesError.set('');
+    this.selectedFile.set(null);
+    this.selectedFileError.set('');
+    this.api.browseContainerFiles(container.serverId, container.id, path).subscribe({
+      next: (listing) => {
+        if (this.selectedContainerKey() !== selectedKey) return;
+        this.containerFiles.set(listing);
+        this.containerFilesLoading.set(false);
+      },
+      error: (error) => {
+        if (this.selectedContainerKey() !== selectedKey) return;
+        this.containerFilesError.set(error?.error?.error || 'Could not browse this container directory.');
+        this.containerFiles.set(null);
+        this.containerFilesLoading.set(false);
+      },
+    });
+  }
+
+  protected selectContainerFile(entry: ContainerFileEntry) {
+    if (entry.type === 'directory') {
+      this.browseContainerPath(entry.path);
+      return;
+    }
+    if (entry.type !== 'file') return;
+    const container = this.selectedContainer();
+    if (!container) return;
+    const selectedKey = this.keyFor(container);
+    this.selectedFile.set(null);
+    this.selectedFileError.set('');
+    this.selectedFileLoading.set(true);
+    this.api.readContainerFile(container.serverId, container.id, entry.path).subscribe({
+      next: (file) => {
+        if (this.selectedContainerKey() !== selectedKey) return;
+        this.selectedFile.set(file);
+        this.selectedFileLoading.set(false);
+      },
+      error: (error) => {
+        if (this.selectedContainerKey() !== selectedKey) return;
+        this.selectedFileError.set(error?.error?.error || 'Could not read this file.');
+        this.selectedFileLoading.set(false);
+      },
+    });
+  }
+
+  protected performContainerAction(action: ContainerAction) {
+    const container = this.selectedContainer();
+    if (!container || this.containerActionPending()) return;
+    if (action === 'remove' && !window.confirm(`Remove stopped container “${container.name}”? Its writable container layer will be deleted.`)) return;
+    const selectedKey = this.keyFor(container);
+    this.containerActionPending.set(action);
+    this.containerActionError.set('');
+    this.containerActionMessage.set('');
+    this.api.runContainerAction(container.serverId, container.id, action).subscribe({
+      next: (result) => {
+        if (this.selectedContainerKey() === selectedKey) {
+          this.containerActionPending.set('');
+          this.containerActionMessage.set(result.output);
+          this.environmentLoaded.set(false);
+        }
+        this.refresh();
+        if (action !== 'remove' && this.selectedContainerKey() === selectedKey) {
+          if (this.inspectorTab() === 'logs') this.openLogs(this.selectedContainer() ?? container);
+          else if (this.inspectorTab() === 'environment') this.loadContainerEnvironment(container);
+        }
+      },
+      error: (error) => {
+        if (this.selectedContainerKey() === selectedKey) {
+          this.containerActionPending.set('');
+          this.containerActionError.set(error?.error?.error || `Could not ${action} container.`);
+        }
+      },
+    });
+  }
+
+  protected fileSizeLabel(size: number) {
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  protected isSecretEnvironmentName(name: string) {
+    return /(secret|token|password|passwd|credential|private.?key|api.?key|auth)/i.test(name);
   }
 
   protected keyFor(container: ContainerRow) {
@@ -223,6 +351,18 @@ export class ContainersPage implements OnInit, OnDestroy {
     if (container.state === 'running') return 'good';
     if (container.state === 'exited' || container.state === 'dead') return 'bad';
     return 'neutral';
+  }
+
+  protected canStartContainer(container: ContainerRecord) {
+    return ['created', 'exited', 'dead'].includes(container.state);
+  }
+
+  protected canRestartContainer(container: ContainerRecord) {
+    return ['running', 'paused'].includes(container.state);
+  }
+
+  protected canRemoveContainer(container: ContainerRecord) {
+    return ['created', 'exited', 'dead'].includes(container.state);
   }
 
   protected healthTone(health?: string) {
@@ -291,6 +431,43 @@ export class ContainersPage implements OnInit, OnDestroy {
       });
       this.statsSubscriptions.set(serverId, subscription);
     }
+  }
+
+  private loadContainerEnvironment(container: ContainerRow) {
+    const selectedKey = this.keyFor(container);
+    this.environmentLoading.set(true);
+    this.environmentError.set('');
+    this.api.getContainerEnvironment(container.serverId, container.id).subscribe({
+      next: (environment) => {
+        if (this.selectedContainerKey() !== selectedKey) return;
+        this.environment.set(environment);
+        this.environmentLoaded.set(true);
+        this.environmentLoading.set(false);
+      },
+      error: (error) => {
+        if (this.selectedContainerKey() !== selectedKey) return;
+        this.environmentError.set(error?.error?.error || 'Could not read container environment.');
+        this.environmentLoading.set(false);
+      },
+    });
+  }
+
+  private resetContainerInspectorData() {
+    this.environment.set([]);
+    this.environmentLoaded.set(false);
+    this.environmentLoading.set(false);
+    this.environmentError.set('');
+    this.showEnvironmentValues.set(false);
+    this.containerFiles.set(null);
+    this.containerFilePath.set('/');
+    this.containerFilesLoading.set(false);
+    this.containerFilesError.set('');
+    this.selectedFile.set(null);
+    this.selectedFileLoading.set(false);
+    this.selectedFileError.set('');
+    this.containerActionPending.set('');
+    this.containerActionError.set('');
+    this.containerActionMessage.set('');
   }
 
   private handleStatsStreamEvent(serverId: string, event: ContainerStatsStreamEvent) {

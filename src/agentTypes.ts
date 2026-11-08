@@ -1,9 +1,9 @@
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
-import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ComposeInspection, ComposeValidation, ContainerInventory, ContainerLogs, DockerTopology, GlobalSettings, PathBrowseResult, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics } from "./types.js";
+import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ComposeInspection, ComposeValidation, ContainerAction, ContainerActionResult, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileListing, ContainerInventory, ContainerLogs, DockerTopology, GlobalSettings, PathBrowseResult, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics } from "./types.js";
 
-export type AgentJobType = "deploy" | "deployReleaseSnapshot" | "captureReleaseSnapshot" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "inspectCheckoutBindMounts" | "inspectDocker" | "testRegistry" | "browsePath" | "detectTraefik" | "backupTraefik" | "validateTraefik" | "applyTraefikDefaults" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow" | "inspectContainers" | "containerLogs" | "containerLogsFollow" | "containerStatsFollow" | "runtimeAction" | "runtimeActionFollow";
+export type AgentJobType = "deploy" | "deployReleaseSnapshot" | "captureReleaseSnapshot" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "inspectCheckoutBindMounts" | "inspectDocker" | "testRegistry" | "browsePath" | "detectTraefik" | "backupTraefik" | "validateTraefik" | "applyTraefikDefaults" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow" | "inspectContainers" | "containerLogs" | "containerLogsFollow" | "containerStatsFollow" | "containerEnvironment" | "browseContainerFiles" | "readContainerFile" | "containerAction" | "runtimeAction" | "runtimeActionFollow";
 
 export interface DeployJobPayload {
     projectName: string;
@@ -34,6 +34,18 @@ export interface InspectContainersJobPayload {}
 export interface ContainerLogsJobPayload {
     containerId: string;
     tail: number;
+}
+
+export interface ContainerIdJobPayload {
+    containerId: string;
+}
+
+export interface BrowseContainerFilesJobPayload extends ContainerIdJobPayload {
+    path: string;
+}
+
+export interface ContainerActionJobPayload extends ContainerIdJobPayload {
+    action: ContainerAction;
 }
 
 export interface RuntimeActionJobPayload extends DeployJobPayload {
@@ -77,7 +89,7 @@ export interface DiagnoseTraefikJobPayload extends DeployJobPayload {}
 
 export interface AgentJobRequest {
     jobType: AgentJobType;
-    payload: DeployJobPayload | ReleaseSnapshotJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | ValidateComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | InspectContainersJobPayload | ContainerLogsJobPayload | RuntimeActionJobPayload | DeleteCheckoutJobPayload | InspectCheckoutBindMountsJobPayload | BrowsePathJobPayload | DetectTraefikJobPayload | TestRegistryJobPayload | ApplyTraefikDefaultsJobPayload | DiagnoseTraefikJobPayload;
+    payload: DeployJobPayload | ReleaseSnapshotJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | ValidateComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | InspectContainersJobPayload | ContainerLogsJobPayload | ContainerIdJobPayload | BrowseContainerFilesJobPayload | ContainerActionJobPayload | RuntimeActionJobPayload | DeleteCheckoutJobPayload | InspectCheckoutBindMountsJobPayload | BrowsePathJobPayload | DetectTraefikJobPayload | TestRegistryJobPayload | ApplyTraefikDefaultsJobPayload | DiagnoseTraefikJobPayload;
 }
 
 export interface AgentJobAccepted {
@@ -120,6 +132,10 @@ export interface AgentClient {
     followContainerStats(hooks?: RuntimeLogHooks): Promise<RuntimeLogStream>;
     containerLogs(containerId: string, tail: number): Promise<ContainerLogs>;
     followContainerLogs(containerId: string, tail: number, hooks?: RuntimeLogHooks): Promise<RuntimeLogStream>;
+    containerEnvironment(containerId: string): Promise<ContainerEnvironmentVariable[]>;
+    browseContainerFiles(containerId: string, path: string): Promise<ContainerFileListing>;
+    readContainerFile(containerId: string, path: string): Promise<ContainerFileContent>;
+    containerAction(containerId: string, action: ContainerAction): Promise<ContainerActionResult>;
     runtimeAction(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction): Promise<RuntimeActionResult>;
     followRuntimeAction(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, action: RuntimeServiceAction, hooks?: RuntimeLogHooks): Promise<RuntimeLogStream> | RuntimeLogStream;
 }

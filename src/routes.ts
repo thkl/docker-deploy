@@ -29,7 +29,7 @@ import { ServerStore } from "./serverStore.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { verifySignatureDetailed } from "./signature.js";
 import { collectSystemMetrics } from "./systemMetrics.js";
-import { ContainerLogs, DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectInfisicalSettings, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ScaleToZeroSettings, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
+import { ContainerAction, ContainerLogs, DeleteProjectPayload, GlobalSettings, GlobalSettingsPayload, ProjectEnvironmentSecret, ProjectInfisicalSettings, ProjectPayload, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, ScaleToZeroSettings, ServerPayload, TraefikAffectedProject, TraefikDefaultsPayload, VaultSecretPayload } from "./types.js";
 import { ScaleToZeroController } from "./scaleToZero.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
@@ -550,6 +550,73 @@ function registerContainerRoutes(app: Express, dependencies: Pick<RouteDependenc
             res.json(logs);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : "Could not read container logs." });
+        }
+    });
+
+    app.get("/api/containers/:serverId/:containerId/environment", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.serverId) ? req.params.serverId[0] : req.params.serverId;
+            const containerId = Array.isArray(req.params.containerId) ? req.params.containerId[0] : req.params.containerId;
+            if (!serverStore.get(serverId)) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+            res.json(await agentManager.getClient(serverId).containerEnvironment(containerId));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not read container environment." });
+        }
+    });
+
+    app.get("/api/containers/:serverId/:containerId/files", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.serverId) ? req.params.serverId[0] : req.params.serverId;
+            const containerId = Array.isArray(req.params.containerId) ? req.params.containerId[0] : req.params.containerId;
+            if (!serverStore.get(serverId)) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+            const path = typeof req.query.path === "string" ? req.query.path : "/";
+            res.json(await agentManager.getClient(serverId).browseContainerFiles(containerId, path));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not browse container files." });
+        }
+    });
+
+    app.get("/api/containers/:serverId/:containerId/files/content", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.serverId) ? req.params.serverId[0] : req.params.serverId;
+            const containerId = Array.isArray(req.params.containerId) ? req.params.containerId[0] : req.params.containerId;
+            if (!serverStore.get(serverId)) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+            const path = typeof req.query.path === "string" ? req.query.path : "";
+            if (!path) {
+                res.status(400).json({ error: "File path is required." });
+                return;
+            }
+            res.json(await agentManager.getClient(serverId).readContainerFile(containerId, path));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not read container file." });
+        }
+    });
+
+    app.post("/api/containers/:serverId/:containerId/actions", async (req: Request, res: Response) => {
+        try {
+            const serverId = Array.isArray(req.params.serverId) ? req.params.serverId[0] : req.params.serverId;
+            const containerId = Array.isArray(req.params.containerId) ? req.params.containerId[0] : req.params.containerId;
+            if (!serverStore.get(serverId)) {
+                res.status(404).json({ error: "Server does not exist." });
+                return;
+            }
+            const action = String(req.body?.action || "") as ContainerAction;
+            if (action !== "start" && action !== "restart" && action !== "remove") {
+                res.status(400).json({ error: "Unsupported container action." });
+                return;
+            }
+            res.json(await agentManager.getClient(serverId).containerAction(containerId, action));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not run container action." });
         }
     });
 }

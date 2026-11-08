@@ -1,9 +1,9 @@
 import { ChildProcess, exec, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { basename } from "node:path";
+import { basename, posix as posixPath } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
-import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ContainerInventory, ContainerLogs, ContainerRecord, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
+import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ContainerAction, ContainerActionResult, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileEntry, ContainerFileListing, ContainerInventory, ContainerLogs, ContainerRecord, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderEnvFileVolume, renderPersistedEnvFileRewriteScript, renderPersistedSecretFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
@@ -3398,6 +3398,123 @@ export async function followRuntimeLogs(repoName: string, appSettings: ProjectSe
     return wireRuntimeLogWorker(worker, hooks);
 }
 
+/** Reads environment variables from one selected container on this Docker host. */
+export async function readContainerEnvironment(containerId: string): Promise<ContainerEnvironmentVariable[]> {
+    const container = await inspectDockerContainer(containerId);
+    return (container.Config?.Env ?? []).map((entry) => {
+        const separator = entry.indexOf("=");
+        return separator < 0
+            ? { name: entry, value: "" }
+            : { name: entry.slice(0, separator), value: entry.slice(separator + 1) };
+    }).filter((entry) => entry.name).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/** Lists one directory inside a container using a shallow in-container read. */
+export async function browseContainerFiles(containerId: string, requestedPath: string): Promise<ContainerFileListing> {
+    const container = await inspectDockerContainer(containerId);
+    const path = normalizeContainerPath(requestedPath);
+    let entries: ContainerFileEntry[];
+    try {
+        const output = await runDockerBinary([
+            "exec", container.Id, "sh", "-c", containerDirectoryListScript, "container-files", path
+        ], 16 * 1024 * 1024);
+        entries = parseContainerDirectoryListing(output, path);
+    } catch {
+        // docker exec is unavailable for stopped or distroless containers. In that
+        // case use Docker's archive API, with a strict cap to avoid copying a large tree.
+        const archive = await runDockerBinary(["cp", `${container.Id}:${path}`, "-"], 16 * 1024 * 1024);
+        const archiveEntries = parseDockerCopyArchive(archive);
+        if (!archiveEntries.length) throw new Error("The selected path is empty or could not be listed.");
+        const rootName = posixPath.basename(path) === "/" ? "" : posixPath.basename(path);
+        const byName = new Map<string, ContainerFileEntry>();
+        let selectedPathIsFile = false;
+        for (const entry of archiveEntries) {
+            const relativePath = containerArchiveRelativePath(entry.path, rootName);
+            if (!relativePath) {
+                if (entry.type === "file") selectedPathIsFile = true;
+                continue;
+            }
+            const [name, ...rest] = relativePath.split("/").filter(Boolean);
+            if (!name) continue;
+            const isNested = rest.length > 0;
+            const type = isNested ? "directory" : entry.type;
+            const candidate: ContainerFileEntry = {
+                name,
+                path: posixPath.join(path, name),
+                type,
+                size: isNested ? 0 : entry.size,
+                ...(entry.modifiedAt ? { modifiedAt: entry.modifiedAt } : {})
+            };
+            const existing = byName.get(name);
+            if (!existing || existing.type === "directory" && type !== "directory") byName.set(name, candidate);
+        }
+        if (selectedPathIsFile && byName.size === 0) throw new Error("The selected path is a file. Select it to preview its contents.");
+        entries = [...byName.values()];
+    }
+
+    const parentPath = path === "/" ? undefined : posixPath.dirname(path);
+    return {
+        path,
+        ...(parentPath ? { parentPath } : {}),
+        entries: entries.sort((left, right) => {
+            if (left.type === "directory" && right.type !== "directory") return -1;
+            if (right.type === "directory" && left.type !== "directory") return 1;
+            return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" });
+        }),
+        checkedAt: new Date().toISOString()
+    };
+}
+
+/** Reads a bounded text preview for one regular file inside a container. */
+export async function readContainerFilePreview(containerId: string, requestedPath: string): Promise<ContainerFileContent> {
+    const container = await inspectDockerContainer(containerId);
+    const path = normalizeContainerPath(requestedPath);
+    const archive = await runDockerBinary(["cp", `${container.Id}:${path}`, "-"], 1_100_000);
+    const archiveEntries = parseDockerCopyArchive(archive);
+    const rootName = posixPath.basename(path) === "/" ? "" : posixPath.basename(path);
+    const file = archiveEntries.find((entry) => entry.type === "file" && containerArchiveRelativePath(entry.path, rootName) === "")
+        ?? archiveEntries.find((entry) => entry.type === "file");
+    if (!file) throw new Error("The selected path is not a regular file or could not be read.");
+    if (file.size > 1_048_576) throw new Error("File preview is limited to 1 MiB.");
+
+    const content = file.content;
+    const decoded = content.toString("utf8");
+    const binary = !Buffer.from(decoded, "utf8").equals(content) || content.includes(0);
+    return {
+        path,
+        size: file.size,
+        content: binary ? "" : decoded,
+        binary,
+        checkedAt: new Date().toISOString()
+    };
+}
+
+/** Starts, restarts, or removes a container, with removal restricted to stopped containers. */
+export async function runContainerAction(containerId: string, action: ContainerAction): Promise<ContainerActionResult> {
+    const container = await inspectDockerContainer(containerId);
+    const canonicalId = container.Id!;
+    const state = container.State?.Status ?? "unknown";
+    const stoppedStates = ["created", "exited", "dead"];
+    if (action === "remove" && !stoppedStates.includes(state)) {
+        throw new Error("Only stopped containers can be removed.");
+    }
+    if (action === "start" && !stoppedStates.includes(state)) {
+        throw new Error("Container is not in a startable stopped state.");
+    }
+    if (action === "restart" && ![...stoppedStates, "running", "paused"].includes(state)) {
+        throw new Error("Container is not in a restartable state.");
+    }
+
+    const command = action === "remove" ? "rm" : action;
+    const output = await runDockerBinary([command, canonicalId], 256 * 1024);
+    return {
+        containerId: canonicalId,
+        action,
+        checkedAt: new Date().toISOString(),
+        output: output.toString("utf8").trim() || `Container ${action} completed.`
+    };
+}
+
 /**
  * Runs one service-level Docker Compose action for an already deployed project.
  */
@@ -3676,6 +3793,7 @@ interface DockerInspectContainer {
     Args?: string[];
     Config?: {
         Image?: string;
+        Env?: string[];
         Cmd?: string[];
         Labels?: Record<string, string>;
         ExposedPorts?: Record<string, unknown>;
@@ -3695,6 +3813,154 @@ interface DockerInspectContainer {
         Ports?: DockerPortBindings;
         Networks?: Record<string, unknown>;
     };
+}
+
+interface DockerCopyArchiveEntry {
+    path: string;
+    type: ContainerFileEntry["type"];
+    size: number;
+    modifiedAt?: string;
+    content: Buffer;
+}
+
+const containerDirectoryListScript = `
+directory=$1
+if [ ! -d "$directory" ]; then
+  echo "Selected path is not a directory." >&2
+  exit 2
+fi
+for item in "$directory"/* "$directory"/.[!.]* "$directory"/..?*; do
+  [ -e "$item" ] || [ -L "$item" ] || continue
+  name=\${item##*/}
+  if [ -L "$item" ]; then kind=symlink
+  elif [ -d "$item" ]; then kind=directory
+  elif [ -f "$item" ]; then kind=file
+  else kind=other
+  fi
+  printf '%s\\0%s\\0' "$kind" "$name"
+done`;
+
+function parseContainerDirectoryListing(output: Buffer, directory: string): ContainerFileEntry[] {
+    const fields = output.toString("utf8").split("\0");
+    const entries: ContainerFileEntry[] = [];
+    for (let index = 0; index + 1 < fields.length; index += 2) {
+        const type = fields[index] as ContainerFileEntry["type"];
+        const name = fields[index + 1];
+        if (!name || !["file", "directory", "symlink", "other"].includes(type)) continue;
+        entries.push({ name, path: posixPath.join(directory, name), type, size: 0 });
+    }
+    return entries;
+}
+
+async function inspectDockerContainer(containerId: string): Promise<DockerInspectContainer & { Id: string }> {
+    const id = containerId.trim();
+    if (!/^[a-f\d]{12,64}$/i.test(id)) throw new Error("Invalid container ID.");
+    const output = await runDockerBinary(["inspect", id], 16 * 1024 * 1024);
+    const inspected = JSON.parse(output.toString("utf8")) as DockerInspectContainer[];
+    const container = inspected[0];
+    if (!container?.Id || !container.Id.toLowerCase().startsWith(id.toLowerCase())) throw new Error("Container was not found.");
+    return container as DockerInspectContainer & { Id: string };
+}
+
+function normalizeContainerPath(value: string) {
+    if (typeof value !== "string" || value.length > 4096 || value.includes("\0")) throw new Error("Invalid container path.");
+    const path = value.trim() || "/";
+    if (path.split("/").includes("..")) throw new Error("Parent path segments are not allowed.");
+    return posixPath.normalize(path.startsWith("/") ? path : `/${path}`);
+}
+
+function runDockerBinary(args: string[], maxOutputBytes: number): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+        const worker = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
+        const output: Buffer[] = [];
+        let outputBytes = 0;
+        let stderr = "";
+        let exceededLimit = false;
+        worker.stdout.on("data", (chunk: Buffer | string) => {
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            outputBytes += buffer.length;
+            if (outputBytes > maxOutputBytes) {
+                exceededLimit = true;
+                worker.kill("SIGTERM");
+                return;
+            }
+            output.push(buffer);
+        });
+        worker.stderr.on("data", (chunk: Buffer | string) => {
+            if (stderr.length < 16_000) stderr += String(chunk);
+        });
+        worker.once("error", reject);
+        worker.once("close", (code) => {
+            if (exceededLimit) {
+                reject(new Error("Docker returned too much data for this request."));
+            } else if (code !== 0) {
+                reject(new Error(stderr.trim() || "Docker command failed."));
+            } else {
+                resolve(Buffer.concat(output));
+            }
+        });
+    });
+}
+
+function parseDockerCopyArchive(archive: Buffer): DockerCopyArchiveEntry[] {
+    const entries: DockerCopyArchiveEntry[] = [];
+    let offset = 0;
+    let pendingPath = "";
+    let pendingPaxPath = "";
+    while (offset + 512 <= archive.length) {
+        const header = archive.subarray(offset, offset + 512);
+        if (header.every((byte) => byte === 0)) break;
+        const field = (start: number, length: number) => header.subarray(start, start + length).toString("utf8").replace(/\0.*$/s, "").trim();
+        const name = field(0, 100);
+        const prefix = field(345, 155);
+        const headerPath = pendingPaxPath || pendingPath || [prefix, name].filter(Boolean).join("/");
+        const rawSize = field(124, 12).replace(/[^0-7].*$/, "");
+        const size = rawSize ? Number.parseInt(rawSize, 8) || 0 : 0;
+        const mtime = Number.parseInt(field(136, 12).replace(/[^0-7].*$/, ""), 8) || 0;
+        const typeFlag = String.fromCharCode(header[156] || 48);
+        const dataStart = offset + 512;
+        const dataEnd = dataStart + size;
+        if (dataEnd > archive.length) throw new Error("Docker returned an incomplete file archive.");
+        const body = archive.subarray(dataStart, dataEnd);
+        pendingPath = "";
+        pendingPaxPath = "";
+        if (typeFlag === "L") {
+            pendingPath = body.toString("utf8").replace(/\0.*$/s, "");
+        } else if (typeFlag === "x" || typeFlag === "g") {
+            const pax = body.toString("utf8");
+            for (const record of pax.split("\n")) {
+                const pathMatch = record.match(/(?:^|\s)path=([^\n]*)/);
+                if (pathMatch) pendingPaxPath = pathMatch[1];
+            }
+        } else {
+            const canonicalPath = headerPath.replace(/^\.\//, "").replace(/^\/+/, "").replace(/\/+$/, "");
+            if (canonicalPath) {
+                const type: ContainerFileEntry["type"] = typeFlag === "5"
+                    ? "directory"
+                    : typeFlag === "2" || typeFlag === "1"
+                        ? "symlink"
+                        : typeFlag === "0" || typeFlag === "7" || typeFlag === "\0"
+                            ? "file"
+                            : "other";
+                entries.push({
+                    path: canonicalPath,
+                    type,
+                    size,
+                    ...(mtime > 0 ? { modifiedAt: new Date(mtime * 1000).toISOString() } : {}),
+                    content: type === "file" ? Buffer.from(body) : Buffer.alloc(0)
+                });
+            }
+        }
+        offset = dataStart + Math.ceil(size / 512) * 512;
+    }
+    return entries;
+}
+
+function containerArchiveRelativePath(entryPath: string, rootName: string) {
+    if (!entryPath || entryPath === ".") return "";
+    if (rootName && entryPath === rootName) return "";
+    if (rootName && entryPath.startsWith(`${rootName}/`)) return entryPath.slice(rootName.length + 1);
+    return entryPath;
 }
 
 interface DockerContainerStats {

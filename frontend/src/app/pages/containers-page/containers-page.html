@@ -75,7 +75,7 @@
     <section class="container-list" aria-label="Container inventory">
       <div class="list-heading">
         <strong>{{ visibleContainers().length }} containers</strong>
-        <span>Select a row to follow its logs</span>
+      <span>Select a row to inspect logs, environment, and files</span>
       </div>
 
       @if (loading()) {
@@ -87,7 +87,7 @@
               class="container-row"
               [class.selected]="selectedContainerKey() === keyFor(container)"
             >
-              <button type="button" class="container-main-select" [attr.aria-label]="'View logs for ' + container.name" (click)="openLogs(container)">
+              <button type="button" class="container-main-select" [attr.aria-label]="'Inspect ' + container.name" (click)="openLogs(container)">
               <span class="container-main">
                 <span class="container-name-line">
                   <strong>{{ container.name }}</strong>
@@ -144,7 +144,7 @@
       }
     </section>
 
-    <aside class="logs-panel" aria-label="Container logs">
+    <aside class="logs-panel" aria-label="Container inspector">
       @if (selectedContainer(); as container) {
         <header class="logs-header">
           <div class="logs-title">
@@ -152,7 +152,12 @@
               <span class="eyebrow">{{ container.serverName }} · {{ container.state }}</span>
               <h3>{{ container.name }}</h3>
             </div>
-            <span class="stream-pill" [class.live]="logState() === 'live'" [class.error]="logState() === 'error'">{{ logStateLabel() }}</span>
+            <div class="inspector-title-actions">
+              @if (inspectorTab() === 'logs') {
+                <span class="stream-pill" [class.live]="logState() === 'live'" [class.error]="logState() === 'error'">{{ logStateLabel() }}</span>
+              }
+              <button type="button" class="icon-button" (click)="closeLogs()" aria-label="Close container inspector">×</button>
+            </div>
           </div>
           <p>{{ container.image }}</p>
           @if (matchingProject(container); as project) {
@@ -175,6 +180,35 @@
             <span><small>Block I/O</small><strong>{{ container.blockIo || '—' }}</strong></span>
             <span><small>Processes</small><strong>{{ container.processCount ?? '—' }}</strong></span>
           </div>
+          <div class="container-actions">
+            @if (canRestartContainer(container)) {
+              <button type="button" class="secondary compact" (click)="performContainerAction('restart')" [disabled]="!!containerActionPending()">
+                {{ containerActionPending() === 'restart' ? 'Restarting…' : 'Restart' }}
+              </button>
+            } @else if (canStartContainer(container)) {
+              <button type="button" class="secondary compact" (click)="performContainerAction('start')" [disabled]="!!containerActionPending()">
+                {{ containerActionPending() === 'start' ? 'Starting…' : 'Start' }}
+              </button>
+            }
+            @if (canRemoveContainer(container)) {
+              <button type="button" class="danger-action compact" (click)="performContainerAction('remove')" [disabled]="!!containerActionPending()">
+                {{ containerActionPending() === 'remove' ? 'Removing…' : 'Remove stopped container' }}
+              </button>
+            }
+          </div>
+        </header>
+        <nav class="inspector-tabs" role="tablist" aria-label="Container details">
+          <button type="button" role="tab" [attr.aria-selected]="inspectorTab() === 'logs'" [class.active]="inspectorTab() === 'logs'" (click)="selectInspectorTab('logs')">Logs</button>
+          <button type="button" role="tab" [attr.aria-selected]="inspectorTab() === 'environment'" [class.active]="inspectorTab() === 'environment'" (click)="selectInspectorTab('environment')">Environment</button>
+          <button type="button" role="tab" [attr.aria-selected]="inspectorTab() === 'files'" [class.active]="inspectorTab() === 'files'" (click)="selectInspectorTab('files')">Files</button>
+        </nav>
+        @if (containerActionError()) {
+          <p class="inspector-notice error">{{ containerActionError() }}</p>
+        } @else if (containerActionMessage()) {
+          <p class="inspector-notice">{{ containerActionMessage() }}</p>
+        }
+
+        @if (inspectorTab() === 'logs') {
           <div class="log-tools">
             <label>
               <span>Initial lines</span>
@@ -189,18 +223,89 @@
               <span>Search logs</span>
               <input type="search" placeholder="Filter visible lines" [value]="logSearch()" (input)="updateLogSearch($event)" />
             </label>
-            <button type="button" class="icon-button" (click)="closeLogs()" aria-label="Close logs">×</button>
           </div>
-        </header>
-        @if (logError()) {
-          <p class="log-error">{{ logError() }}</p>
+          @if (logError()) {
+            <p class="log-error">{{ logError() }}</p>
+          }
+          <pre class="log-output" aria-live="polite">{{ filteredLogOutput() || (logState() === 'connecting' ? 'Connecting to container logs…' : 'No log output for this container.') }}</pre>
+        } @else if (inspectorTab() === 'environment') {
+          <section class="inspector-tab-content environment-content" aria-label="Container environment variables">
+            <div class="environment-toolbar">
+              <span>{{ environment().length }} variables · secret-like values are hidden by default</span>
+              <button type="button" class="secondary compact" (click)="toggleEnvironmentValues()">
+                {{ showEnvironmentValues() ? 'Hide values' : 'Show all values' }}
+              </button>
+            </div>
+            @if (environmentLoading()) {
+              <div class="inspector-empty">Loading environment variables…</div>
+            } @else if (environmentError()) {
+              <p class="inspector-error">{{ environmentError() }}</p>
+            } @else if (environment().length) {
+              <div class="environment-list">
+                @for (variable of environment(); track variable.name) {
+                  <div class="environment-row">
+                    <code>{{ variable.name }}</code>
+                    <pre>{{ showEnvironmentValues() || !isSecretEnvironmentName(variable.name) ? variable.value : '••••••••' }}</pre>
+                  </div>
+                }
+              </div>
+            } @else {
+              <div class="inspector-empty">This container has no environment variables.</div>
+            }
+          </section>
+        } @else {
+          <section class="inspector-tab-content file-browser-content" aria-label="Container filesystem browser">
+            <div class="file-browser-toolbar">
+              <code [title]="containerFilePath()">{{ containerFilePath() }}</code>
+              @if (containerFiles()?.parentPath; as parentPath) {
+                <button type="button" class="secondary compact" (click)="browseContainerPath(parentPath)">Up</button>
+              }
+              <button type="button" class="secondary compact" (click)="browseContainerPath(containerFilePath())" [disabled]="containerFilesLoading()">Refresh</button>
+            </div>
+            @if (containerFilesLoading()) {
+              <div class="inspector-empty">Reading container directory…</div>
+            } @else if (containerFilesError()) {
+              <p class="inspector-error">{{ containerFilesError() }}</p>
+            } @else if (containerFiles(); as listing) {
+              <div class="file-browser-columns">
+                <div class="file-list" aria-label="Directory entries">
+                  @for (entry of listing.entries; track entry.path) {
+                    <button type="button" class="file-entry" [class.selected]="selectedFile()?.path === entry.path" [class.disabled]="entry.type !== 'file' && entry.type !== 'directory'" (click)="selectContainerFile(entry)">
+                      <span class="file-entry-icon">{{ entry.type === 'directory' ? '▸' : entry.type === 'file' ? '·' : '↗' }}</span>
+                      <span class="file-entry-name">{{ entry.name }}</span>
+                      <small>{{ entry.type === 'directory' ? 'Folder' : entry.type === 'file' ? (entry.size ? fileSizeLabel(entry.size) : 'File') : entry.type }}</small>
+                    </button>
+                  } @empty {
+                    <div class="inspector-empty">This directory is empty.</div>
+                  }
+                </div>
+                <section class="file-preview" aria-label="File preview">
+                  @if (selectedFileLoading()) {
+                    <div class="inspector-empty">Reading file…</div>
+                  } @else if (selectedFileError()) {
+                    <p class="inspector-error">{{ selectedFileError() }}</p>
+                  } @else if (selectedFile(); as file) {
+                    <div class="file-preview-head"><code>{{ file.path }}</code><small>{{ fileSizeLabel(file.size) }}</small></div>
+                    @if (file.binary) {
+                      <div class="inspector-empty">Binary file preview is not available.</div>
+                    } @else {
+                      <pre class="file-preview-output">{{ file.content }}</pre>
+                    }
+                  } @else {
+                    <div class="inspector-empty">Select a file to preview it.</div>
+                  }
+                </section>
+              </div>
+            } @else {
+              <div class="inspector-empty">Open Files to browse the container filesystem.</div>
+            }
+          </section>
         }
-        <pre class="log-output" aria-live="polite">{{ filteredLogOutput() || (logState() === 'connecting' ? 'Connecting to container logs…' : 'No log output for this container.') }}</pre>
       } @else {
         <div class="logs-empty">
           <span class="logs-icon">›_</span>
-          <strong>Container logs</strong>
-          <p>Select any container to view its recent output and follow new log lines live.</p>
+          <strong>Container inspector</strong>
+          <p>Select any container to inspect its logs, environment variables, and filesystem.</p>
         </div>
       }
     </aside>

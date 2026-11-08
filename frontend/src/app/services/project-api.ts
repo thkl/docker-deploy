@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ComposeInspection, ComposeValidation, ContainerFleetInventory, ContainerLogs, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, NotificationDeliveryRecord, PathBrowseResult, ProjectInfisicalSettings, ProjectPayload, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, VaultSecret, VaultSecretPayload, WebhookEventRecord } from '../models/project';
+import { ComposeInspection, ComposeValidation, ContainerAction, ContainerActionResult, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileListing, ContainerFleetInventory, ContainerLogs, DeleteProjectPayload, DeleteProjectResult, DeploymentRecord, GlobalSettings, NotificationDeliveryRecord, PathBrowseResult, ProjectInfisicalSettings, ProjectPayload, ProjectPreflightResult, ProjectReleaseSnapshot, ProjectSummary, RuntimeActionResult, RuntimeLogs, RuntimeOperationRecord, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, ServerPayload, ServerRecord, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics, TraefikImpactPreview, VaultSecret, VaultSecretPayload, WebhookEventRecord } from '../models/project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectApi {
@@ -87,6 +87,24 @@ export class ProjectApi {
   getContainerLogs(serverId: string, containerId: string, tail: number): Observable<ContainerLogs> {
     const params = new URLSearchParams({ tail: String(tail) });
     return this.http.get<ContainerLogs>(`/api/containers/${encodeURIComponent(serverId)}/${encodeURIComponent(containerId)}/logs?${params.toString()}`);
+  }
+
+  getContainerEnvironment(serverId: string, containerId: string): Observable<ContainerEnvironmentVariable[]> {
+    return this.http.get<ContainerEnvironmentVariable[]>(`/api/containers/${encodeURIComponent(serverId)}/${encodeURIComponent(containerId)}/environment`);
+  }
+
+  browseContainerFiles(serverId: string, containerId: string, path: string): Observable<ContainerFileListing> {
+    const params = new URLSearchParams({ path });
+    return this.http.get<ContainerFileListing>(`/api/containers/${encodeURIComponent(serverId)}/${encodeURIComponent(containerId)}/files?${params.toString()}`);
+  }
+
+  readContainerFile(serverId: string, containerId: string, path: string): Observable<ContainerFileContent> {
+    const params = new URLSearchParams({ path });
+    return this.http.get<ContainerFileContent>(`/api/containers/${encodeURIComponent(serverId)}/${encodeURIComponent(containerId)}/files/content?${params.toString()}`);
+  }
+
+  runContainerAction(serverId: string, containerId: string, action: ContainerAction): Observable<ContainerActionResult> {
+    return this.http.post<ContainerActionResult>(`/api/containers/${encodeURIComponent(serverId)}/${encodeURIComponent(containerId)}/actions`, { action });
   }
 
   diagnoseTraefik(projectRef: string): Observable<TraefikDiagnostics> {

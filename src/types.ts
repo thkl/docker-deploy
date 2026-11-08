@@ -676,6 +676,43 @@ export interface ContainerLogs {
     output: string;
 }
 
+export interface ContainerEnvironmentVariable {
+    name: string;
+    value: string;
+}
+
+export interface ContainerFileEntry {
+    name: string;
+    path: string;
+    type: "file" | "directory" | "symlink" | "other";
+    size: number;
+    modifiedAt?: string;
+}
+
+export interface ContainerFileListing {
+    path: string;
+    parentPath?: string;
+    entries: ContainerFileEntry[];
+    checkedAt: string;
+}
+
+export interface ContainerFileContent {
+    path: string;
+    size: number;
+    content: string;
+    binary: boolean;
+    checkedAt: string;
+}
+
+export type ContainerAction = "start" | "restart" | "remove";
+
+export interface ContainerActionResult {
+    containerId: string;
+    action: ContainerAction;
+    checkedAt: string;
+    output: string;
+}
+
 export type RuntimeServiceAction = "restart" | "start" | "stop" | "pause" | "unpause" | "recreate" | "pull";
 
 export interface RuntimeActionResult {

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, StopJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowseContainerFilesJobPayload, ContainerActionJobPayload, ContainerIdJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, StopJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, resetAgentPairing, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
@@ -361,6 +361,26 @@ export class AgentRuntime {
         if (request.jobType === "containerLogs") {
             const payload = request.payload as ContainerLogsJobPayload;
             return { result: await this.localAgent.containerLogs(payload.containerId, payload.tail) };
+        }
+
+        if (request.jobType === "containerEnvironment") {
+            const payload = request.payload as ContainerIdJobPayload;
+            return { result: await this.localAgent.containerEnvironment(payload.containerId) };
+        }
+
+        if (request.jobType === "browseContainerFiles") {
+            const payload = request.payload as BrowseContainerFilesJobPayload;
+            return { result: await this.localAgent.browseContainerFiles(payload.containerId, payload.path) };
+        }
+
+        if (request.jobType === "readContainerFile") {
+            const payload = request.payload as BrowseContainerFilesJobPayload;
+            return { result: await this.localAgent.readContainerFile(payload.containerId, payload.path) };
+        }
+
+        if (request.jobType === "containerAction") {
+            const payload = request.payload as ContainerActionJobPayload;
+            return { result: await this.localAgent.containerAction(payload.containerId, payload.action) };
         }
 
         if (request.jobType === "containerLogsFollow") {

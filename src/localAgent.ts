@@ -2,9 +2,9 @@ import { CheckoutCleanupResult, removeCheckoutPath } from "./checkoutCleanup.js"
 import { inspectCompose } from "./composeInspection.js";
 import { validateCompose } from "./composeValidation.js";
 import { importProjectCompose, ImportedCompose } from "./composeImport.js";
-import { applyTraefikDefaults, backupTraefikConfig, captureProjectReleaseSnapshot, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, dispatchReleaseRollbackWorker, followContainerLogs, followContainerStats, followRuntimeLogs, inspectCheckoutBindMounts, inspectContainers, inspectDockerTopology, inspectProjectStatus, readContainerLogs, readRuntimeLogs, runRuntimeServiceAction, streamRuntimeServiceAction, testRegistryLogin, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
+import { applyTraefikDefaults, backupTraefikConfig, browseContainerFiles, captureProjectReleaseSnapshot, deleteCheckoutPath, detectTraefik, diagnoseProjectTraefik, dispatchBuildWorker, dispatchReleaseRollbackWorker, followContainerLogs, followContainerStats, followRuntimeLogs, inspectCheckoutBindMounts, inspectContainers, inspectDockerTopology, inspectProjectStatus, readContainerEnvironment, readContainerFilePreview, readContainerLogs, readRuntimeLogs, runContainerAction, runRuntimeServiceAction, streamRuntimeServiceAction, testRegistryLogin, validateTraefikConfig, DeploymentHooks, RuntimeLogHooks, stopProjectContainers } from "./deploy.js";
 import { browseDockerHostPath } from "./pathBrowser.js";
-import { GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, TraefikDefaultsPayload } from "./types.js";
+import { ContainerAction, GlobalSettings, ProjectReleaseSnapshot, ProjectSettings, RuntimeServiceAction, TraefikDefaultsPayload } from "./types.js";
 import { AgentClient } from "./agentTypes.js";
 
 /**
@@ -178,6 +178,22 @@ export class LocalAgent implements AgentClient {
     /** Follows a container log stream on this Docker host. */
     followContainerLogs(containerId: string, tail: number, hooks: RuntimeLogHooks = {}) {
         return followContainerLogs(containerId, tail, hooks);
+    }
+
+    containerEnvironment(containerId: string) {
+        return readContainerEnvironment(containerId);
+    }
+
+    browseContainerFiles(containerId: string, path: string) {
+        return browseContainerFiles(containerId, path);
+    }
+
+    readContainerFile(containerId: string, path: string) {
+        return readContainerFilePreview(containerId, path);
+    }
+
+    containerAction(containerId: string, action: ContainerAction) {
+        return runContainerAction(containerId, action);
     }
 
     /**
