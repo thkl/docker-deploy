@@ -843,6 +843,136 @@ p {
   width: 44px;
 }
 
+.container-remove-backdrop {
+  backdrop-filter: blur(3px);
+  background: color-mix(in srgb, #020617, transparent 38%);
+  padding: 1rem;
+}
+
+.container-remove-modal {
+  align-items: start;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--danger), transparent 93%), transparent 48%),
+    var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.3);
+  display: grid;
+  gap: 0.9rem 1rem;
+  grid-template-columns: 42px minmax(0, 1fr);
+  max-height: calc(100vh - 2rem);
+  max-width: 460px;
+  overflow: auto;
+  padding: 1.2rem;
+  width: min(100%, 460px);
+}
+
+.remove-dialog-icon {
+  align-items: center;
+  background: color-mix(in srgb, var(--danger), var(--panel) 91%);
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 76%);
+  border-radius: 12px;
+  color: var(--danger);
+  display: grid;
+  height: 42px;
+  justify-items: center;
+  width: 42px;
+}
+
+.remove-dialog-icon svg {
+  height: 23px;
+  width: 23px;
+}
+
+.remove-dialog-copy {
+  display: grid;
+  gap: 0.58rem;
+  min-width: 0;
+}
+
+.remove-dialog-copy .eyebrow {
+  color: var(--danger);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.remove-dialog-copy h3 {
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+
+.remove-dialog-copy p {
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.remove-dialog-copy p strong {
+  color: var(--ink);
+}
+
+.remove-dialog-details {
+  align-items: center;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 0.42rem 0.8rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 0.56rem 0.65rem;
+}
+
+.remove-dialog-details span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.remove-dialog-details strong {
+  font-size: 0.72rem;
+  font-weight: 590;
+  overflow-wrap: anywhere;
+}
+
+.remove-dialog-copy .remove-dialog-impact {
+  border-left: 2px solid color-mix(in srgb, var(--danger), transparent 38%);
+  color: var(--ink);
+  padding: 0.1rem 0 0.1rem 0.6rem;
+}
+
+.remove-dialog-actions {
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 0.55rem;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  margin: 0 -1.2rem -1.2rem;
+  padding: 0.8rem 1.2rem;
+}
+
+.remove-dialog-actions button {
+  min-height: 36px;
+}
+
+.remove-dialog-actions .secondary {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.remove-confirm-button {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: white;
+  font-weight: 580;
+}
+
+.remove-confirm-button:hover {
+  background: color-mix(in srgb, var(--danger), black 12%);
+  border-color: color-mix(in srgb, var(--danger), black 12%);
+  color: white;
+}
+
 @media (max-width: 1080px) {
   .container-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -896,5 +1026,32 @@ p {
   .list-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .container-remove-modal {
+    gap: 0.75rem;
+    grid-template-columns: 34px minmax(0, 1fr);
+    padding: 0.9rem;
+  }
+
+  .remove-dialog-icon {
+    border-radius: 10px;
+    height: 34px;
+    width: 34px;
+  }
+
+  .remove-dialog-icon svg {
+    height: 20px;
+    width: 20px;
+  }
+
+  .remove-dialog-actions {
+    flex-direction: column-reverse;
+    margin: 0 -0.9rem -0.9rem;
+    padding: 0.72rem 0.9rem;
+  }
+
+  .remove-dialog-actions button {
+    width: 100%;
   }
 }

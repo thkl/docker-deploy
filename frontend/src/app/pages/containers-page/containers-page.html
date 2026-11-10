@@ -11,6 +11,45 @@
   </div>
 </section>
 
+@if (removeConfirmationTarget(); as container) {
+  <div class="modal-backdrop container-remove-backdrop" (click)="cancelRemoveContainer()">
+    <section
+      class="container-remove-modal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="remove-container-title"
+      aria-describedby="remove-container-description remove-container-impact"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="remove-dialog-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 8v5m0 3h.01M10.3 3.9 2.7 17.1A2 2 0 0 0 4.4 20h15.2a2 2 0 0 0 1.7-2.9L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" />
+        </svg>
+      </div>
+      <div class="remove-dialog-copy">
+        <span class="eyebrow">Docker container</span>
+        <h3 id="remove-container-title">Remove stopped container?</h3>
+        <p id="remove-container-description">
+          The container <strong>{{ container.name }}</strong> will be removed from Docker.
+        </p>
+        <div class="remove-dialog-details">
+          <span>State</span>
+          <strong>{{ container.state }}</strong>
+          <span>Docker host</span>
+          <strong>{{ container.serverName }}</strong>
+        </div>
+        <p class="remove-dialog-impact" id="remove-container-impact">
+          Its writable container layer will be deleted. Docker volumes and their data will stay.
+        </p>
+      </div>
+      <footer class="remove-dialog-actions">
+        <button type="button" class="secondary" autofocus (click)="cancelRemoveContainer()">Keep container</button>
+        <button type="button" class="remove-confirm-button" (click)="confirmRemoveContainer()">Remove container</button>
+      </footer>
+    </section>
+  </div>
+}
+
 @if (error()) {
   <p class="notice error">{{ error() }}</p>
 }

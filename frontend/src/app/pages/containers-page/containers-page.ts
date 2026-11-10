@@ -1,4 +1,4 @@
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, HostListener, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ContainerAction, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileEntry, ContainerFileListing, ContainerFleetInventory, ContainerRecord, ContainerStatsSample, ProjectSummary } from '../../models/project';
@@ -77,6 +77,7 @@ export class ContainersPage implements OnInit, OnDestroy {
   protected readonly stateFilter = signal('all');
   protected readonly query = signal('');
   protected readonly selectedContainerKey = signal('');
+  protected readonly removeConfirmationTarget = signal<ContainerRow | null>(null);
   protected readonly logTail = signal(200);
   protected readonly logSearch = signal('');
   protected readonly logOutput = signal('');
@@ -218,6 +219,7 @@ export class ContainersPage implements OnInit, OnDestroy {
   protected closeLogs() {
     this.logSubscription?.unsubscribe();
     this.logSubscription = undefined;
+    this.removeConfirmationTarget.set(null);
     this.selectedContainerKey.set('');
     this.inspectorTab.set('logs');
     this.logOutput.set('');
@@ -296,7 +298,53 @@ export class ContainersPage implements OnInit, OnDestroy {
   protected performContainerAction(action: ContainerAction) {
     const container = this.selectedContainer();
     if (!container || this.containerActionPending()) return;
-    if (action === 'remove' && !window.confirm(`Remove stopped container “${container.name}”? Its writable container layer will be deleted.`)) return;
+    if (action === 'remove') {
+      this.removeConfirmationTarget.set(container);
+      return;
+    }
+    this.executeContainerAction(container, action);
+  }
+
+  protected cancelRemoveContainer() {
+    this.removeConfirmationTarget.set(null);
+  }
+
+  protected confirmRemoveContainer() {
+    const container = this.removeConfirmationTarget();
+    if (!container || this.containerActionPending()) return;
+    this.removeConfirmationTarget.set(null);
+    this.executeContainerAction(container, 'remove');
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  protected handleRemoveDialogKeydown(event: KeyboardEvent) {
+    if (!this.removeConfirmationTarget()) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.cancelRemoveContainer();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const dialog = document.querySelector<HTMLElement>('.container-remove-modal');
+    const focusable = dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if (!dialog || !focusable?.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const activeElement = document.activeElement;
+    if (event.shiftKey && (activeElement === first || !dialog.contains(activeElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (activeElement === last || !dialog.contains(activeElement))) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  private executeContainerAction(container: ContainerRow, action: ContainerAction) {
     const selectedKey = this.keyFor(container);
     this.containerActionPending.set(action);
     this.containerActionError.set('');
