@@ -19,6 +19,7 @@ export class DeploymentService {
     private readonly activeDeployments = new Map<string, RuntimeLogStream>();
     private readonly serverQueues = new Map<string, Promise<void>>();
     private readonly scheduledDeploymentTargets = new Set<string>();
+    private readonly deploymentReconciliations = new Map<string, Promise<void>>();
     private readonly startupConcurrentRuns = new Map<string, { projectName: string; runIds: string[]; targets: DeploymentRecord[] }>();
     private readonly resolvingStartupConcurrentProjects = new Set<string>();
     private readonly startupConcurrentFailureLogged = new Set<string>();
@@ -964,7 +965,7 @@ export class DeploymentService {
         };
     }
 
-    private async reconcileDeployment(
+    private reconcileDeployment(
         projectName: string,
         deploymentId: string,
         appSettings: ProjectSettings,
@@ -972,11 +973,44 @@ export class DeploymentService {
         reason = "Controller restarted before deployment completion was recorded",
         exitCode = "controller-restart"
     ) {
+        const inProgress = this.deploymentReconciliations.get(deploymentId);
+        if (inProgress) {
+            return inProgress;
+        }
+        if (this.deploymentStore.get(deploymentId)?.status !== "running") {
+            return Promise.resolve();
+        }
+
+        const reconciliation = this.runDeploymentReconciliation(projectName, deploymentId, appSettings, globalSettings, reason, exitCode);
+        this.deploymentReconciliations.set(deploymentId, reconciliation);
+        const clearReconciliation = () => {
+            if (this.deploymentReconciliations.get(deploymentId) === reconciliation) {
+                this.deploymentReconciliations.delete(deploymentId);
+            }
+        };
+        void reconciliation.then(clearReconciliation, clearReconciliation);
+        return reconciliation;
+    }
+
+    private async runDeploymentReconciliation(
+        projectName: string,
+        deploymentId: string,
+        appSettings: ProjectSettings,
+        globalSettings: GlobalSettings,
+        reason: string,
+        exitCode: number | string
+    ) {
         try {
             await delay(5000);
+            if (this.deploymentStore.get(deploymentId)?.status !== "running") {
+                return;
+            }
             this.deploymentStore.setPhase(projectName, deploymentId, "reconciling");
             this.broadcastDeployment(projectName);
             const status = await this.agentManager.getClient(appSettings.serverId ?? "local").inspectStatus(projectName, appSettings, globalSettings);
+            if (this.deploymentStore.get(deploymentId)?.status !== "running") {
+                return;
+            }
             if (status.status === "running" || status.status === "partial") {
                 this.deploymentStore.append(
                     projectName,
