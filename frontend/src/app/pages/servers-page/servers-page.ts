@@ -459,7 +459,7 @@ export class ServersPage implements OnInit, OnDestroy {
     if (event.type === 'server.health') {
       const activeJobs = event.server.activeJobs?.length ?? 0;
       return {
-        id: `server.health:${event.server.id}:${event.server.updatedAt}`,
+        id: `server.health:${event.server.id}`,
         serverId: event.server.id,
         title: `${event.server.name} ${event.server.status || 'unknown'}`,
         detail: [
