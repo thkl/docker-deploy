@@ -54,4 +54,9 @@ export class App implements OnInit {
   protected isContainersRoute() {
     return this.router.url.startsWith('/containers');
   }
+
+  protected isProjectSettingsRoute() {
+    const path = this.router.url.split(/[?#]/, 1)[0];
+    return path === '/projects/new/advanced' || /^\/projects\/[^/]+\/settings$/.test(path);
+  }
 }

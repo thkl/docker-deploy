@@ -20,12 +20,22 @@
 }
 
 <form [formGroup]="form" (ngSubmit)="save('save')" class="settings-form">
-  <nav class="settings-page-tabs" role="tablist" aria-label="Project configuration">
-    <button type="button" role="tab" [attr.aria-selected]="settingsPageTab() === 'project'"
-      [class.active]="settingsPageTab() === 'project'" (click)="setSettingsPageTab('project')">Project</button>
-    <button type="button" role="tab" [attr.aria-selected]="settingsPageTab() === 'compose'"
-      [class.active]="settingsPageTab() === 'compose'" (click)="setSettingsPageTab('compose')">Docker Compose</button>
-  </nav>
+  <div class="settings-page-toolbar">
+    <nav class="settings-page-tabs" role="tablist" aria-label="Project configuration">
+      <button type="button" role="tab" [attr.aria-selected]="settingsPageTab() === 'project'"
+        [class.active]="settingsPageTab() === 'project'" (click)="setSettingsPageTab('project')">Project</button>
+      <button type="button" role="tab" [attr.aria-selected]="settingsPageTab() === 'compose'"
+        [class.active]="settingsPageTab() === 'compose'" (click)="setSettingsPageTab('compose')">Docker Compose</button>
+    </nav>
+    <div class="settings-top-actions" role="group" aria-label="Project settings actions">
+      <button type="button" class="secondary" (click)="save('save')" [disabled]="saving() !== ''">
+        {{ saving() === 'save' ? 'Saving…' : submitLabel() }}
+      </button>
+      <button type="button" (click)="save('deploy')" [disabled]="saving() !== ''">
+        {{ saving() === 'deploy' ? 'Deploying…' : 'Save & deploy' }}
+      </button>
+    </div>
+  </div>
 
   <div class="settings-page-panels">
   <section class="form-panel settings-page-panel" [class.active]="settingsPageTab() === 'project'"

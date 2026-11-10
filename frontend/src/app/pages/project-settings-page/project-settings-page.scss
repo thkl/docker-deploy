@@ -1,3 +1,12 @@
+:host {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .page-head {
   margin-bottom: 0.72rem;
 }
@@ -28,8 +37,32 @@ p {
 }
 
 .settings-form {
-  display: grid;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   gap: 0.64rem;
+  min-height: 0;
+  min-width: 0;
+}
+
+.settings-page-toolbar {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 1rem;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.settings-top-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
+
+.settings-page-toolbar .settings-page-tabs {
+  margin-bottom: 0;
 }
 
 .form-panel {
@@ -80,8 +113,10 @@ p {
 }
 
 .settings-page-panels {
+  flex: 1 1 auto;
   grid-template-rows: minmax(0, 1fr);
-  height: calc(100vh - 17rem);
+  height: auto;
+  min-height: 0;
 }
 
 .settings-page-panel,
@@ -96,7 +131,9 @@ p {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
+  touch-action: pan-y;
 }
 
 .settings-page-panel.active,
@@ -1077,13 +1114,14 @@ button.compact {
 
 .form-actions {
   align-items: center;
-  background: var(--bg);
-  bottom: 0;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border-top: 1px solid var(--line);
   display: flex;
+  flex: 0 0 auto;
   gap: 0.75rem;
   justify-content: flex-end;
-  padding: 0.55rem 0 0;
-  position: sticky;
+  margin: 0;
+  padding: 0.7rem 0 0;
 }
 
 button.secondary {
@@ -1164,6 +1202,16 @@ button.secondary:hover {
   .resource-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .settings-page-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .settings-top-actions {
+    justify-content: flex-end;
   }
 
   .path-browser-backdrop {
