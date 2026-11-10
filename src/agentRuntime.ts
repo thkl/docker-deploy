@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowseContainerFilesJobPayload, ContainerActionJobPayload, ContainerIdJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, StopJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowseContainerFilesJobPayload, ContainerActionJobPayload, ContainerIdJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, FindDeploymentJobPayload, InspectComposeJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, StopJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { rememberNonce, ensureAgentState, removeAgentPairingFile, resetAgentPairing, writeAgentPairingFile, writeAgentState, AgentState } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
@@ -264,6 +264,26 @@ export class AgentRuntime {
                 job.cancel = () => stream.stop();
             }
             return {};
+        }
+
+        if (request.jobType === "findDeploymentJob") {
+            const payload = request.payload as FindDeploymentJobPayload;
+            const matchingJobs = [...this.jobs.values()]
+                .filter((job) => {
+                    if (job.type !== "deploy" || job.request?.jobType !== "deploy") return false;
+                    const deployment = job.request.payload as DeployJobPayload;
+                    return deployment.projectName === payload.projectName
+                        && (deployment.appSettings.id ?? deployment.projectName) === payload.projectId;
+                })
+                .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+            const activeJob = matchingJobs.filter((job) => job.active).at(-1);
+            const requestedAt = Date.parse(payload.startedAt);
+            const recentJob = matchingJobs.filter((job) =>
+                Number.isFinite(requestedAt)
+                && Math.abs(Date.parse(job.startedAt) - requestedAt) <= 15 * 60 * 1000
+            ).at(-1);
+            const job = activeJob ?? recentJob;
+            return { result: job ? { jobId: job.id, streamToken: job.streamToken } : null };
         }
 
         if (request.jobType === "cancelProjectDeploymentWorkers") {

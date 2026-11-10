@@ -519,6 +519,24 @@ textarea:focus {
   margin: 0;
 }
 
+.mark-deployed-copy {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.mark-deployed-copy p {
+  margin: 0;
+}
+
+.mark-deployed-copy .mark-deployed-note {
+  background: color-mix(in srgb, var(--panel-soft), var(--accent) 4%);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  padding: 0.7rem 0.8rem;
+}
+
 .modal-actions {
   align-items: center;
   border-top: 1px solid var(--line);

@@ -51,6 +51,10 @@ export class ProjectApi {
     return this.http.post<DeploymentRecord | null>(`/api/projects/${encodeURIComponent(projectRef)}/deployments/cancel`, {});
   }
 
+  markProjectDeployed(projectRef: string): Observable<{ deployment: DeploymentRecord | null; clearedRuns: number }> {
+    return this.http.post<{ deployment: DeploymentRecord | null; clearedRuns: number }>(`/api/projects/${encodeURIComponent(projectRef)}/deployments/mark-deployed`, {});
+  }
+
   listReleases(projectRef: string): Observable<ProjectReleaseSnapshot[]> {
     return this.http.get<ProjectReleaseSnapshot[]>(`/api/projects/${encodeURIComponent(projectRef)}/releases`);
   }

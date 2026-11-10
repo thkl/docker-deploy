@@ -20,8 +20,9 @@ export class DeploymentService {
     private readonly serverQueues = new Map<string, Promise<void>>();
     private readonly scheduledDeploymentTargets = new Set<string>();
     private readonly deploymentReconciliations = new Map<string, Promise<void>>();
+    private readonly remoteDeploymentRecoveries = new Map<string, Promise<void>>();
     private readonly startupConcurrentRuns = new Map<string, { projectName: string; runIds: string[]; targets: DeploymentRecord[] }>();
-    private readonly resolvingStartupConcurrentProjects = new Set<string>();
+    private readonly resolvingConcurrentProjects = new Set<string>();
     private readonly startupConcurrentFailureLogged = new Set<string>();
 
     constructor(
@@ -684,6 +685,97 @@ export class DeploymentService {
         return this.deploymentStore.latest(appSettings.id ?? projectName);
     }
 
+    async markProjectDeployed(projectName: string, appSettings: ProjectSettings) {
+        const projectId = appSettings.id ?? projectName;
+        if (this.resolvingConcurrentProjects.has(projectId)) {
+            throw new Error("Deployment recovery is still running for this project. Try again shortly.");
+        }
+
+        this.resolvingConcurrentProjects.add(projectId);
+        try {
+            return await this.resolveProjectDeploymentState(projectName, appSettings, projectId);
+        } finally {
+            this.resolvingConcurrentProjects.delete(projectId);
+        }
+    }
+
+    private async resolveProjectDeploymentState(projectName: string, appSettings: ProjectSettings, projectId: string) {
+        const projectTargets = (targets: DeploymentRecord[]) => targets.filter((target) =>
+            target.projectId === projectId || target.projectName === projectName
+        );
+        let pendingTargets = projectTargets(this.deploymentStore.listRunning());
+        if (!pendingTargets.length) {
+            this.startupConcurrentRuns.delete(projectId);
+            this.startupConcurrentFailureLogged.delete(projectId);
+            return { deployment: this.deploymentStore.latest(projectId), clearedRuns: 0 };
+        }
+
+        await Promise.all(pendingTargets
+            .map((target) => this.deploymentReconciliations.get(target.id))
+            .filter((reconciliation): reconciliation is Promise<void> => Boolean(reconciliation)));
+        pendingTargets = projectTargets(this.deploymentStore.listRunning());
+        if (!pendingTargets.length) {
+            this.startupConcurrentRuns.delete(projectId);
+            this.startupConcurrentFailureLogged.delete(projectId);
+            return { deployment: this.deploymentStore.latest(projectId), clearedRuns: 0 };
+        }
+
+        const runIds = [...new Set(pendingTargets.map((target) => target.runId ?? target.id))];
+        const targetsToComplete = new Map<string, DeploymentRecord>();
+        for (const target of pendingTargets) {
+            const run = target.runId ? this.deploymentStore.getRun(target.runId) : null;
+            for (const runTarget of run?.targets ?? [target]) {
+                targetsToComplete.set(runTarget.id, runTarget);
+            }
+        }
+
+        const globalSettings = this.globalSettingsStore.readSettings();
+        const serverIds = [...new Set(pendingTargets.map((target) => target.serverId || "local"))];
+        const results = await Promise.allSettled(serverIds.map(async (serverId) => {
+            const agent = this.agentManager.getClient(serverId);
+            if (!agent.cancelProjectDeploymentWorkers) {
+                throw new Error(`Server ${serverId} does not support deployment worker cancellation.`);
+            }
+            return agent.cancelProjectDeploymentWorkers(projectName, { ...appSettings, serverId }, globalSettings);
+        }));
+        const failedCancellationIndex = results.findIndex((result) => result.status === "rejected");
+        if (failedCancellationIndex >= 0) {
+            const result = results[failedCancellationIndex];
+            const reason = result.status === "rejected" ? readErrorMessage(result.reason) : "Worker cancellation failed.";
+            throw new Error(`Could not clear pending deployments because workers on ${serverIds[failedCancellationIndex]} could not be stopped: ${reason}`);
+        }
+
+        const stoppedWorkers = results.reduce((total, result) => total + (result.status === "fulfilled" ? result.value : 0), 0);
+        for (const target of targetsToComplete.values()) {
+            const current = this.deploymentStore.get(target.id);
+            if (!current || current.status === "succeeded") continue;
+
+            this.scheduledDeploymentTargets.delete(target.id);
+            const stream = this.activeDeployments.get(target.id);
+            this.activeDeployments.delete(target.id);
+            this.deploymentStore.append(
+                projectName,
+                target.id,
+                "stdout",
+                `--> Marked as deployed by user. Cleared pending work and stopped ${stoppedWorkers} deployment worker(s).\n`
+            );
+            this.deploymentStore.finish(projectName, target.id, "succeeded", {
+                exitCode: "manual-resolution",
+                phase: "succeeded"
+            });
+            stream?.stop();
+        }
+
+        this.startupConcurrentRuns.delete(projectId);
+        this.startupConcurrentFailureLogged.delete(projectId);
+        this.broadcastDeploymentUpdate(projectName);
+        for (const serverId of serverIds) {
+            void this.refreshServerHealth(serverId);
+        }
+        void this.refreshRuntimeStatus(projectName);
+        return { deployment: this.deploymentStore.latest(projectId), clearedRuns: runIds.length };
+    }
+
     /**
      * Closes deployments that were left running by a controller restart.
      *
@@ -721,6 +813,10 @@ export class DeploymentService {
 
             const serverId = deployment.serverId || appSettings.serverId || "local";
             const targetSettings = { ...appSettings, serverId };
+            if (serverId !== "local" && !deployment.agentJobId) {
+                this.scheduleRemoteDeploymentRecovery(deployment.projectName, deployment, targetSettings, globalSettings);
+                continue;
+            }
             if (this.reconnectDeploymentTarget(deployment.projectName, deployment, targetSettings, globalSettings)) {
                 continue;
             }
@@ -738,13 +834,7 @@ export class DeploymentService {
             }
 
             this.deploymentStore.setPhase(deployment.projectName, deployment.id, "reconnecting");
-            this.deploymentStore.append(
-                deployment.projectName,
-                deployment.id,
-                "stdout",
-                "--> Controller restarted while deployment was running. Waiting for remote job recovery before reconciliation.\n"
-            );
-            this.broadcastDeploymentUpdate(deployment.projectName);
+            this.scheduleRemoteDeploymentRecovery(deployment.projectName, deployment, targetSettings, globalSettings);
         }
     }
 
@@ -797,6 +887,10 @@ export class DeploymentService {
             }
             const serverId = target.serverId || appSettings.serverId || "local";
             const targetSettings = { ...appSettings, serverId };
+            if (serverId !== "local" && !target.agentJobId) {
+                this.scheduleRemoteDeploymentRecovery(projectName, target, targetSettings, globalSettings);
+                continue;
+            }
             if (this.reconnectDeploymentTarget(projectName, target, targetSettings, globalSettings)) {
                 continue;
             }
@@ -811,7 +905,7 @@ export class DeploymentService {
                 );
                 continue;
             }
-            this.deploymentStore.setPhase(projectName, target.id, "reconnecting");
+            this.scheduleRemoteDeploymentRecovery(projectName, target, targetSettings, globalSettings);
         }
         return this.deploymentStore.latest(appSettings.id ?? projectName);
     }
@@ -842,8 +936,8 @@ export class DeploymentService {
             .filter(([projectKey]) => !onlyProjectKey || projectKey === onlyProjectKey);
 
         await Promise.all(pendingCancellations.map(async ([projectKey, conflict]) => {
-            if (this.resolvingStartupConcurrentProjects.has(projectKey)) return;
-            this.resolvingStartupConcurrentProjects.add(projectKey);
+            if (this.resolvingConcurrentProjects.has(projectKey)) return;
+            this.resolvingConcurrentProjects.add(projectKey);
             try {
                 const projectSettings = projects[conflict.projectName] ?? {
                     id: projectKey,
@@ -899,7 +993,7 @@ export class DeploymentService {
                     this.broadcastDeploymentUpdate(conflict.projectName);
                 }
             } finally {
-                this.resolvingStartupConcurrentProjects.delete(projectKey);
+                this.resolvingConcurrentProjects.delete(projectKey);
             }
         }));
     }
@@ -912,7 +1006,7 @@ export class DeploymentService {
     }
 
     private reconnectDeploymentTarget(projectName: string, deployment: DeploymentRecord, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
-        if (!deployment.agentJobId || !deployment.agentStreamToken) {
+        if (this.deploymentStore.get(deployment.id)?.status !== "running" || !deployment.agentJobId || !deployment.agentStreamToken) {
             return false;
         }
 
@@ -929,9 +1023,70 @@ export class DeploymentService {
         return true;
     }
 
+    private scheduleRemoteDeploymentRecovery(projectName: string, deployment: DeploymentRecord, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        const inProgress = this.remoteDeploymentRecoveries.get(deployment.id);
+        if (inProgress) return inProgress;
+
+        const agent = this.agentManager.getClient(appSettings.serverId ?? deployment.serverId);
+        const recovery = (async () => {
+            this.deploymentStore.setPhase(projectName, deployment.id, "reconnecting");
+            this.deploymentStore.append(projectName, deployment.id, "stdout", "--> Controller restarted without a stored remote job reference. Searching the agent for the deployment job.\n");
+            this.broadcastDeploymentUpdate(projectName);
+
+            let lastError: unknown;
+            for (let attempt = 0; attempt < 6; attempt += 1) {
+                if (this.deploymentStore.get(deployment.id)?.status !== "running") return;
+                if (agent.findDeploymentJob) {
+                    try {
+                        const recoveredJob = await agent.findDeploymentJob(
+                            projectName,
+                            deployment.projectId ?? projectName,
+                            deployment.startedAt
+                        );
+                        if (this.deploymentStore.get(deployment.id)?.status !== "running") return;
+                        if (recoveredJob) {
+                            this.deploymentStore.setAgentJob(projectName, deployment.id, recoveredJob);
+                            this.deploymentStore.append(projectName, deployment.id, "stdout", "--> Recovered the remote deployment job reference. Reconnecting to its log stream.\n");
+                            this.broadcastDeploymentUpdate(projectName);
+                            const current = this.deploymentStore.get(deployment.id) ?? deployment;
+                            if (this.reconnectDeploymentTarget(projectName, current, appSettings, globalSettings)) return;
+                        }
+                    } catch (error) {
+                        lastError = error;
+                    }
+                }
+                if (attempt < 5) await delay(3_000);
+            }
+
+            if (this.deploymentStore.get(deployment.id)?.status !== "running") return;
+            const reason = lastError
+                ? `The remote job could not be recovered (${readErrorMessage(lastError)}). Reconciling runtime status instead.`
+                : "No recoverable remote job was found. Reconciling runtime status instead.";
+            this.deploymentStore.append(projectName, deployment.id, lastError ? "stderr" : "stdout", `--> ${reason}\n`);
+            this.broadcastDeploymentUpdate(projectName);
+            await this.reconcileDeployment(
+                projectName,
+                deployment.id,
+                appSettings,
+                globalSettings,
+                "Controller restarted before remote deployment completion was recorded",
+                "remote-agent-job-missing"
+            );
+        })();
+        this.remoteDeploymentRecoveries.set(deployment.id, recovery);
+        const clearRecovery = () => {
+            if (this.remoteDeploymentRecoveries.get(deployment.id) === recovery) {
+                this.remoteDeploymentRecoveries.delete(deployment.id);
+            }
+        };
+        void recovery.then(clearRecovery, clearRecovery);
+        return recovery;
+    }
+
     private deploymentHooks(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
         return {
             onOutput: (stream: "stdout" | "stderr", chunk: string) => {
+                if (this.deploymentStore.get(deploymentId)?.status !== "running") return;
                 this.deploymentStore.setPhase(projectName, deploymentId, "running");
                 this.deploymentStore.append(projectName, deploymentId, stream, chunk);
                 this.broadcastDeployment(projectName);
@@ -949,8 +1104,16 @@ export class DeploymentService {
                 this.activeDeployments.delete(deploymentId);
                 if (error.code === "remote-agent-job-lost") {
                     this.deploymentStore.setPhase(projectName, deploymentId, "reconnecting");
-                    this.deploymentStore.append(projectName, deploymentId, "stdout", "--> Remote job stream is unavailable. Keeping target in reconnecting state.\n");
+                    this.deploymentStore.append(projectName, deploymentId, "stdout", "--> Remote job stream is unavailable. Reconciling runtime status before finalizing.\n");
                     this.broadcastDeploymentUpdate(projectName);
+                    void this.reconcileDeployment(
+                        projectName,
+                        deploymentId,
+                        appSettings,
+                        globalSettings,
+                        "Remote agent restarted before deployment completion was recorded",
+                        "remote-agent-job-lost"
+                    );
                     return;
                 }
                 this.deploymentStore.finish(projectName, deploymentId, "failed", {

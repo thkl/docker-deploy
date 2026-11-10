@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowseContainerFilesJobPayload, BrowsePathJobPayload, ContainerActionJobPayload, ContainerIdJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectContainersJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, TestRegistryJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
+import { AgentClient, AgentJobAccepted, AgentJobRequest, AgentLogFrame, ApplyTraefikDefaultsJobPayload, BrowseContainerFilesJobPayload, BrowsePathJobPayload, ContainerActionJobPayload, ContainerIdJobPayload, ContainerLogsJobPayload, DeleteCheckoutJobPayload, DeployJobPayload, DetectTraefikJobPayload, DiagnoseTraefikJobPayload, FindDeploymentJobPayload, InspectCheckoutBindMountsJobPayload, InspectComposeJobPayload, InspectContainersJobPayload, InspectStatusJobPayload, ReleaseSnapshotJobPayload, RuntimeActionJobPayload, RuntimeLogsJobPayload, TestRegistryJobPayload, ValidateComposeJobPayload } from "./agentTypes.js";
 import { openEnvelope, sealEnvelope, SecureEnvelope } from "./agentCrypto.js";
 import { CheckoutCleanupResult } from "./checkoutCleanup.js";
 import { ImportedCompose } from "./composeImport.js";
@@ -71,6 +71,14 @@ export class HttpAgentClient implements AgentClient {
             jobType: "cancelProjectDeploymentWorkers",
             payload: { projectName, appSettings, globalSettings }
         }, 10_000);
+        return accepted.result;
+    }
+
+    async findDeploymentJob(projectName: string, projectId: string, startedAt: string) {
+        const accepted = await this.postJob<{ result: { jobId: string; streamToken: string } | null }>({
+            jobType: "findDeploymentJob",
+            payload: { projectName, projectId, startedAt } satisfies FindDeploymentJobPayload
+        }, 5_000);
         return accepted.result;
     }
 

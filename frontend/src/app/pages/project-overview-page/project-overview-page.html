@@ -61,8 +61,11 @@
           </button>
         }
         @if (latestDeployment()?.status === 'running') {
-          <button type="button" class="danger-action" (click)="cancelDeployment(project.id)" [disabled]="cancelingDeployment()">
+          <button type="button" class="danger-action" (click)="cancelDeployment(project.id)" [disabled]="cancelingDeployment() || markingDeployed()">
             {{ cancelingDeployment() ? 'Canceling...' : 'Cancel deploy' }}
+          </button>
+          <button type="button" class="secondary" (click)="openMarkDeployed(project.id)" [disabled]="markingDeployed() || cancelingDeployment()">
+            Mark deployed
           </button>
         }
         <button type="button" class="secondary" (click)="refresh(project.id)" [disabled]="loadingDeployment() || loadingRuntimeStatus()">
@@ -724,6 +727,45 @@
         <button type="button" class="secondary" (click)="closeDelete()" [disabled]="deleting()">Cancel</button>
         <button type="button" class="danger-action" (click)="deleteProject()" [disabled]="!canDelete()">
           {{ deleting() ? 'Deleting...' : 'Delete project' }}
+        </button>
+      </footer>
+    </section>
+  </div>
+}
+
+@if (markDeployedTarget(); as project) {
+  <div class="modal-backdrop" (click)="closeMarkDeployed()">
+    <section
+      class="delete-modal mark-deployed-modal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="mark-deployed-title"
+      aria-describedby="mark-deployed-description mark-deployed-note"
+      (click)="$event.stopPropagation()"
+    >
+      <header class="modal-head">
+        <div>
+          <h3 id="mark-deployed-title">Mark {{ project.name }} as deployed?</h3>
+          <p>This clears the pending deployment actions for this project.</p>
+        </div>
+        <button type="button" class="secondary" (click)="closeMarkDeployed()" [disabled]="markingDeployed()">Cancel</button>
+      </header>
+
+      <div class="mark-deployed-copy">
+        <p id="mark-deployed-description">
+          All active deployment runs will be marked as succeeded. Any remaining updater workers will be stopped.
+        </p>
+        <p class="mark-deployed-note" id="mark-deployed-note">The project’s running containers will stay as they are.</p>
+      </div>
+
+      @if (markDeployedError()) {
+        <p class="delete-error">{{ markDeployedError() }}</p>
+      }
+
+      <footer class="modal-actions">
+        <button type="button" class="secondary" (click)="closeMarkDeployed()" [disabled]="markingDeployed()">Cancel</button>
+        <button type="button" (click)="markProjectDeployed()" [disabled]="markingDeployed()">
+          {{ markingDeployed() ? 'Stopping workers…' : 'Mark as deployed' }}
         </button>
       </footer>
     </section>

@@ -37,6 +37,9 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   protected readonly runningPreflight = signal(false);
   protected readonly deploying = signal(false);
   protected readonly cancelingDeployment = signal(false);
+  protected readonly markingDeployed = signal(false);
+  protected readonly markDeployedTarget = signal<ProjectSummary | null>(null);
+  protected readonly markDeployedError = signal('');
   protected readonly rollingBackReleaseId = signal('');
   protected readonly deployMessage = signal('');
   protected readonly deployError = signal('');
@@ -346,6 +349,8 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
   }
 
   protected cancelDeployment(projectRef: string) {
+    if (this.markingDeployed()) return;
+
     this.cancelingDeployment.set(true);
     this.deployMessage.set('Canceling deployment...');
     this.deployError.set('');
@@ -370,6 +375,46 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.cancelingDeployment.set(false);
         this.deployMessage.set('');
         this.deployError.set(error?.error?.error || 'Could not cancel deployment.');
+      },
+    });
+  }
+
+  protected openMarkDeployed(projectRef: string) {
+    const project = this.projectByRef(projectRef);
+    if (!project) return;
+
+    this.markDeployedTarget.set(project);
+    this.markDeployedError.set('');
+  }
+
+  protected closeMarkDeployed() {
+    if (this.markingDeployed()) return;
+    this.markDeployedTarget.set(null);
+    this.markDeployedError.set('');
+  }
+
+  protected markProjectDeployed() {
+    const project = this.markDeployedTarget();
+    if (!project || this.markingDeployed()) return;
+
+    this.markingDeployed.set(true);
+    this.markDeployedError.set('');
+    this.api.markProjectDeployed(project.id).subscribe({
+      next: (result) => {
+        this.markingDeployed.set(false);
+        this.markDeployedTarget.set(null);
+        if (this.activeProjectRef !== project.id && this.activeProjectRef !== project.name) return;
+
+        this.setLatestDeployment(result.deployment);
+        this.deployMessage.set(result.clearedRuns
+          ? `Marked ${project.name} as deployed and cleared ${result.clearedRuns} pending run${result.clearedRuns === 1 ? '' : 's'}.`
+          : `No pending deployment runs remained for ${project.name}.`);
+        this.store.loadProjects();
+        this.loadRuntimeStatus(project.id);
+      },
+      error: (error) => {
+        this.markingDeployed.set(false);
+        this.markDeployedError.set(error?.error?.error || `Could not clear pending deployments for ${project.name}.`);
       },
     });
   }
@@ -1197,6 +1242,8 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
     this.selectedLogView.set('runtime');
     this.deployError.set('');
     this.deployMessage.set('');
+    this.markDeployedTarget.set(null);
+    this.markDeployedError.set('');
     this.selectedRuntimeService.set('');
     this.runtimeLogTail.set(200);
     this.deploymentLogExpanded.set(false);

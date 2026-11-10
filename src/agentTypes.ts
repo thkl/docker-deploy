@@ -3,12 +3,18 @@ import { ImportedCompose } from "./composeImport.js";
 import { DeploymentHooks, RuntimeLogHooks, RuntimeLogStream } from "./deploy.js";
 import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ComposeInspection, ComposeValidation, ContainerAction, ContainerActionResult, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileListing, ContainerInventory, ContainerLogs, DockerTopology, GlobalSettings, PathBrowseResult, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigValidation, TraefikDefaultsPayload, TraefikDiagnostics } from "./types.js";
 
-export type AgentJobType = "deploy" | "deployReleaseSnapshot" | "cancelProjectDeploymentWorkers" | "captureReleaseSnapshot" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "inspectCheckoutBindMounts" | "inspectDocker" | "testRegistry" | "browsePath" | "detectTraefik" | "backupTraefik" | "validateTraefik" | "applyTraefikDefaults" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow" | "inspectContainers" | "containerLogs" | "containerLogsFollow" | "containerStatsFollow" | "containerEnvironment" | "browseContainerFiles" | "readContainerFile" | "containerAction" | "runtimeAction" | "runtimeActionFollow";
+export type AgentJobType = "deploy" | "findDeploymentJob" | "deployReleaseSnapshot" | "cancelProjectDeploymentWorkers" | "captureReleaseSnapshot" | "importCompose" | "inspectCompose" | "validateCompose" | "stop" | "deleteCheckout" | "inspectCheckoutBindMounts" | "inspectDocker" | "testRegistry" | "browsePath" | "detectTraefik" | "backupTraefik" | "validateTraefik" | "applyTraefikDefaults" | "diagnoseTraefik" | "inspectStatus" | "runtimeLogs" | "runtimeLogsFollow" | "inspectContainers" | "containerLogs" | "containerLogsFollow" | "containerStatsFollow" | "containerEnvironment" | "browseContainerFiles" | "readContainerFile" | "containerAction" | "runtimeAction" | "runtimeActionFollow";
 
 export interface DeployJobPayload {
     projectName: string;
     appSettings: ProjectSettings;
     globalSettings: GlobalSettings;
+}
+
+export interface FindDeploymentJobPayload {
+    projectName: string;
+    projectId: string;
+    startedAt: string;
 }
 
 export interface ImportComposeJobPayload extends DeployJobPayload {}
@@ -89,7 +95,7 @@ export interface DiagnoseTraefikJobPayload extends DeployJobPayload {}
 
 export interface AgentJobRequest {
     jobType: AgentJobType;
-    payload: DeployJobPayload | ReleaseSnapshotJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | ValidateComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | InspectContainersJobPayload | ContainerLogsJobPayload | ContainerIdJobPayload | BrowseContainerFilesJobPayload | ContainerActionJobPayload | RuntimeActionJobPayload | DeleteCheckoutJobPayload | InspectCheckoutBindMountsJobPayload | BrowsePathJobPayload | DetectTraefikJobPayload | TestRegistryJobPayload | ApplyTraefikDefaultsJobPayload | DiagnoseTraefikJobPayload;
+    payload: DeployJobPayload | FindDeploymentJobPayload | ReleaseSnapshotJobPayload | ImportComposeJobPayload | InspectComposeJobPayload | ValidateComposeJobPayload | StopJobPayload | InspectStatusJobPayload | RuntimeLogsJobPayload | InspectContainersJobPayload | ContainerLogsJobPayload | ContainerIdJobPayload | BrowseContainerFilesJobPayload | ContainerActionJobPayload | RuntimeActionJobPayload | DeleteCheckoutJobPayload | InspectCheckoutBindMountsJobPayload | BrowsePathJobPayload | DetectTraefikJobPayload | TestRegistryJobPayload | ApplyTraefikDefaultsJobPayload | DiagnoseTraefikJobPayload;
 }
 
 export interface AgentJobAccepted {
@@ -110,6 +116,7 @@ export interface AgentClient {
     deployProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks?: DeploymentHooks): RuntimeLogStream | Promise<RuntimeLogStream | void> | void;
     deployReleaseSnapshot(release: ProjectReleaseSnapshot, globalSettings: GlobalSettings, hooks?: DeploymentHooks, options?: { appSettings?: ProjectSettings; requireRegistryPull?: boolean }): RuntimeLogStream | Promise<RuntimeLogStream | void> | void;
     cancelProjectDeploymentWorkers?(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<number>;
+    findDeploymentJob?(projectName: string, projectId: string, startedAt: string): Promise<{ jobId: string; streamToken: string } | null>;
     captureReleaseSnapshot(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<CapturedReleaseSnapshot>;
     reconnectDeploymentLog?(jobId: string, streamToken: string, hooks?: DeploymentHooks): RuntimeLogStream;
     stopProject(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, options?: { deleteVolumes?: boolean; removeStack?: boolean }): Promise<string>;

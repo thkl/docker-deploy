@@ -1363,6 +1363,22 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
         }
     });
 
+    app.post("/api/projects/:name/deployments/mark-deployed", async (req: Request, res: Response) => {
+        try {
+            const rawProjectName = req.params.name;
+            const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+            const project = configStore.resolveProject(projectRef);
+            if (!project) {
+                res.status(404).json({ error: "Project does not exist." });
+                return;
+            }
+
+            res.json(await deploymentService.markProjectDeployed(project.name, project.settings));
+        } catch (error) {
+            res.status(409).json({ error: error instanceof Error ? error.message : "Could not clear pending deployments." });
+        }
+    });
+
     app.get("/api/projects/:name/releases", (req: Request, res: Response) => {
         try {
             const rawProjectName = req.params.name;
