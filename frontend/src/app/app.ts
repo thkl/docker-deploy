@@ -1,6 +1,7 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from './services/auth';
+import { AppearanceService } from './services/appearance';
 import { ProjectStore } from './state/project-store';
 
 @Component({
@@ -13,6 +14,10 @@ export class App implements OnInit {
   protected readonly store = inject(ProjectStore);
   protected readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+
+  constructor() {
+    inject(AppearanceService);
+  }
 
   ngOnInit() {
     this.auth.loadStatus().subscribe({

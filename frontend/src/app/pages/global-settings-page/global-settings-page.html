@@ -13,6 +13,38 @@
   <p class="notice">{{ message() }}</p>
 }
 
+<section class="settings-panel appearance-panel" aria-labelledby="appearance-title">
+  <div class="panel-head">
+    <h3 id="appearance-title">Appearance</h3>
+    <span>Choose a color palette for this browser</span>
+  </div>
+
+  <div class="palette-choices" role="group" aria-label="Color palette">
+    @for (palette of appearance.palettes; track palette.id) {
+      <button
+        type="button"
+        class="palette-choice"
+        [class.selected]="appearance.palette() === palette.id"
+        [attr.aria-pressed]="appearance.palette() === palette.id"
+        (click)="appearance.setPalette(palette.id)"
+      >
+        <span class="palette-swatches" aria-hidden="true">
+          @for (swatch of palette.swatches; track $index) {
+            <span class="palette-swatch" [style.background-color]="swatch"></span>
+          }
+        </span>
+        <span class="palette-copy">
+          <strong>{{ palette.name }}</strong>
+          <small>{{ palette.description }}</small>
+        </span>
+        <span class="palette-check" aria-hidden="true">✓</span>
+      </button>
+    }
+  </div>
+
+  <p class="appearance-note">Your choice is saved in this browser and applies across the interface.</p>
+</section>
+
 @if (loading()) {
   <section class="settings-panel">
     <p>Loading settings...</p>

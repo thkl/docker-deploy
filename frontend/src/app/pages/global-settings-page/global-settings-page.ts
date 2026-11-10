@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { GlobalSettings, NotificationChannelSettings, NotificationChannelType, PathBrowseResult } from '../../models/project';
+import { AppearanceService } from '../../services/appearance';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
@@ -14,6 +15,7 @@ export class GlobalSettingsPage implements OnInit {
   private readonly api = inject(ProjectApi);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly store = inject(ProjectStore);
+  protected readonly appearance = inject(AppearanceService);
 
   protected readonly loading = signal(false);
   protected readonly saving = signal(false);
