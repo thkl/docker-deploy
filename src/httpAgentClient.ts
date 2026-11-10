@@ -66,6 +66,14 @@ export class HttpAgentClient implements AgentClient {
         return this.connectLogStream({ jobId, streamToken, status: "accepted" }, hooks);
     }
 
+    async cancelProjectDeploymentWorkers(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+        const accepted = await this.postJob<{ result: number }>({
+            jobType: "cancelProjectDeploymentWorkers",
+            payload: { projectName, appSettings, globalSettings }
+        }, 10_000);
+        return accepted.result;
+    }
+
     /**
      * Stops a remote project.
      */
@@ -343,10 +351,11 @@ export class HttpAgentClient implements AgentClient {
     /**
      * Sends one encrypted job command to the agent.
      */
-    private async postJob<T extends object = object>(request: AgentJobRequest) {
+    private async postJob<T extends object = object>(request: AgentJobRequest, timeoutMs?: number) {
         const response = await fetch(`${this.requireBaseUrl()}/agent/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
+            ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
             body: JSON.stringify({
                 envelope: this.sealAgentEnvelope(request, "job.request")
             })

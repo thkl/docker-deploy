@@ -266,6 +266,13 @@ export class AgentRuntime {
             return {};
         }
 
+        if (request.jobType === "cancelProjectDeploymentWorkers") {
+            const payload = request.payload as DeployJobPayload;
+            return {
+                result: await this.localAgent.cancelProjectDeploymentWorkers(payload.projectName, payload.appSettings, payload.globalSettings)
+            };
+        }
+
         if (request.jobType === "importCompose") {
             const payload = request.payload as DeployJobPayload;
             return { result: await this.localAgent.importCompose(payload.projectName, payload.appSettings, payload.globalSettings) };

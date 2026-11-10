@@ -1,4 +1,4 @@
-import { DeploymentRecord, DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
+import { DeploymentAlreadyRunningError, DeploymentRecord, DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { AgentManager } from "./agentManager.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
@@ -19,6 +19,9 @@ export class DeploymentService {
     private readonly activeDeployments = new Map<string, RuntimeLogStream>();
     private readonly serverQueues = new Map<string, Promise<void>>();
     private readonly scheduledDeploymentTargets = new Set<string>();
+    private readonly startupConcurrentRuns = new Map<string, { projectName: string; runIds: string[]; targets: DeploymentRecord[] }>();
+    private readonly resolvingStartupConcurrentProjects = new Set<string>();
+    private readonly startupConcurrentFailureLogged = new Set<string>();
 
     constructor(
         private readonly deploymentStore: DeploymentStore,
@@ -37,6 +40,7 @@ export class DeploymentService {
      * into persisted deployment history plus WebSocket broadcasts.
      */
     startDeployment(projectName: string, appSettings: ProjectSettings, trigger: DeploymentTrigger) {
+        this.throwIfStartupCancellationPending(projectName, appSettings);
         const configuredServerIds = this.targetDeploymentServerIds(appSettings);
         const masterServerId = this.registryFanoutMasterServerId(appSettings, configuredServerIds);
         const serverIds = masterServerId
@@ -60,6 +64,7 @@ export class DeploymentService {
      * Starts a rollback deployment from a captured release snapshot.
      */
     rollbackRelease(projectName: string, appSettings: ProjectSettings, releaseId: string) {
+        this.throwIfStartupCancellationPending(projectName, appSettings);
         const release = this.releaseStore.get(appSettings.id ?? projectName, releaseId);
         if (!release) {
             throw new Error("Release snapshot does not exist.");
@@ -686,9 +691,13 @@ export class DeploymentService {
      * controller before the worker callback can mark the deployment complete.
      */
     async reconcileRunningDeployments(projects: Record<string, ProjectSettings>) {
+        await this.cancelConcurrentDeploymentRuns(projects);
         const runningDeployments = this.deploymentStore.listRunning();
         const globalSettings = this.globalSettingsStore.readSettings();
         for (const deployment of runningDeployments) {
+            if (this.startupConcurrentRuns.has(deployment.projectId ?? deployment.projectName)) {
+                continue;
+            }
             if (this.activeDeployments.has(deployment.id)) {
                 continue;
             }
@@ -765,6 +774,12 @@ export class DeploymentService {
      * running but this controller no longer has its original worker callbacks.
      */
     async reconcileLatestDeployment(projectName: string, appSettings: ProjectSettings) {
+        const projectKey = appSettings.id ?? projectName;
+        await this.cancelConcurrentDeploymentRuns({ [projectName]: appSettings }, projectKey);
+        if (this.startupConcurrentRuns.has(projectKey)) {
+            return this.deploymentStore.latest(projectKey);
+        }
+
         const latest = this.deploymentStore.latest(appSettings.id ?? projectName);
         if (latest?.status !== "running") {
             return latest;
@@ -798,6 +813,101 @@ export class DeploymentService {
             this.deploymentStore.setPhase(projectName, target.id, "reconnecting");
         }
         return this.deploymentStore.latest(appSettings.id ?? projectName);
+    }
+
+    private async cancelConcurrentDeploymentRuns(projects: Record<string, ProjectSettings>, onlyProjectKey?: string) {
+        const targetsByProject = new Map<string, DeploymentRecord[]>();
+        for (const target of this.deploymentStore.listRunning()) {
+            const projectKey = target.projectId ?? target.projectName;
+            if (onlyProjectKey && projectKey !== onlyProjectKey) continue;
+            const targets = targetsByProject.get(projectKey) ?? [];
+            targets.push(target);
+            targetsByProject.set(projectKey, targets);
+        }
+
+        for (const [projectKey, targets] of targetsByProject) {
+            const runIds = [...new Set(targets.map((target) => target.runId ?? target.id))];
+            if (runIds.length > 1 && !this.startupConcurrentRuns.has(projectKey)) {
+                this.startupConcurrentRuns.set(projectKey, {
+                    projectName: targets[0].projectName,
+                    runIds,
+                    targets
+                });
+            }
+        }
+
+        const globalSettings = this.globalSettingsStore.readSettings();
+        const pendingCancellations = [...this.startupConcurrentRuns.entries()]
+            .filter(([projectKey]) => !onlyProjectKey || projectKey === onlyProjectKey);
+
+        await Promise.all(pendingCancellations.map(async ([projectKey, conflict]) => {
+            if (this.resolvingStartupConcurrentProjects.has(projectKey)) return;
+            this.resolvingStartupConcurrentProjects.add(projectKey);
+            try {
+                const projectSettings = projects[conflict.projectName] ?? {
+                    id: projectKey,
+                    path: defaultProjectPath(globalSettings, conflict.projectName)
+                };
+                const serverIds = [...new Set(conflict.targets.map((target) => target.serverId || "local"))];
+                const results = await Promise.allSettled(serverIds.map(async (serverId) => {
+                    const agent = this.agentManager.getClient(serverId);
+                    if (!agent.cancelProjectDeploymentWorkers) {
+                        throw new Error(`Server ${serverId} does not support deployment worker cancellation.`);
+                    }
+                    return agent.cancelProjectDeploymentWorkers(conflict.projectName, { ...projectSettings, serverId }, globalSettings);
+                }));
+                const failedCancellation = results.find((result) => result.status === "rejected");
+                if (failedCancellation?.status === "rejected") {
+                    throw failedCancellation.reason;
+                }
+
+                const stoppedWorkers = results.reduce((total, result) => total + (result.status === "fulfilled" ? result.value : 0), 0);
+                for (const target of conflict.targets) {
+                    const current = this.deploymentStore.get(target.id);
+                    if (current?.status !== "running") continue;
+
+                    this.scheduledDeploymentTargets.delete(target.id);
+                    const stream = this.activeDeployments.get(target.id);
+                    this.activeDeployments.delete(target.id);
+                    stream?.stop();
+                    this.deploymentStore.append(
+                        conflict.projectName,
+                        target.id,
+                        "stdout",
+                        `--> Canceled at startup because ${conflict.runIds.length} concurrent deployment runs were active for this project. Stopped ${stoppedWorkers} worker container(s).\n`
+                    );
+                    this.deploymentStore.finish(conflict.projectName, target.id, "failed", {
+                        error: "Canceled at startup because multiple deployments were active for this project.",
+                        exitCode: "concurrent-deployment",
+                        phase: "canceled"
+                    });
+                }
+
+                this.startupConcurrentRuns.delete(projectKey);
+                this.startupConcurrentFailureLogged.delete(projectKey);
+                this.broadcastDeploymentUpdate(conflict.projectName);
+            } catch (error) {
+                const message = `Startup found concurrent deployments but could not cancel every worker. Keeping this project locked: ${readErrorMessage(error)}`;
+                if (!this.startupConcurrentFailureLogged.has(projectKey)) {
+                    console.error(`[deployment-recovery] ${conflict.projectName}: ${message}`);
+                    for (const target of conflict.targets) {
+                        if (this.deploymentStore.get(target.id)?.status !== "running") continue;
+                        this.deploymentStore.append(conflict.projectName, target.id, "stderr", `--> ${message}\n`);
+                    }
+                    this.startupConcurrentFailureLogged.add(projectKey);
+                    this.broadcastDeploymentUpdate(conflict.projectName);
+                }
+            } finally {
+                this.resolvingStartupConcurrentProjects.delete(projectKey);
+            }
+        }));
+    }
+
+    private throwIfStartupCancellationPending(projectName: string, appSettings: ProjectSettings) {
+        const pending = this.startupConcurrentRuns.get(appSettings.id ?? projectName);
+        if (pending) {
+            throw new DeploymentAlreadyRunningError(pending.runIds[0]);
+        }
     }
 
     private reconnectDeploymentTarget(projectName: string, deployment: DeploymentRecord, appSettings: ProjectSettings, globalSettings: GlobalSettings) {

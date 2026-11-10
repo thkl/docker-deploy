@@ -1,6 +1,6 @@
 import { ChildProcess, exec, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { basename, posix as posixPath } from "node:path";
+import { basename, posix as posixPath, resolve } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ContainerAction, ContainerActionResult, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileEntry, ContainerFileListing, ContainerInventory, ContainerLogs, ContainerRecord, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
@@ -8,6 +8,8 @@ import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderEnvFileVolume, renderPersistedEnvFileRewriteScript, renderPersistedSecretFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 
 const execAsync = promisify(exec);
+const deploymentWorkerRoleLabel = "com.binder.updater.role";
+const deploymentWorkerProjectLabel = "com.binder.updater.project-id";
 
 /**
  * Optional lifecycle callbacks for a deployment worker process.
@@ -115,6 +117,7 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     const buildDecisionScript = renderBuildDecisionScript();
     const saveBuildStateScript = renderSaveBuildStateScript();
     const quotedHostAppsPath = shellQuote(hostAppsPath);
+    const projectId = appSettings.id ?? repoName;
     const envFileVolume = renderEnvFileVolume(appSettings.envFilePath, hostAppsPath);
     const quotedRepositoryUrl = appSettings.repositoryUrl ? shellQuote(appSettings.repositoryUrl) : "";
     const registryAddress = globalSettings.registryAddress.trim();
@@ -478,6 +481,10 @@ ${saveBuildStateScript}
         ...(envFileVolume ? ["-v", envFileVolume] : []),
         "-v",
         `${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`,
+        "--label",
+        `${deploymentWorkerRoleLabel}=deployment-worker`,
+        "--label",
+        `${deploymentWorkerProjectLabel}=${projectId}`,
         "node:24.16.0-alpine",
         "sh"
     ], { stdio: ["pipe", "pipe", "pipe"] });
@@ -522,6 +529,70 @@ ${saveBuildStateScript}
             }
         }
     };
+}
+
+/**
+ * Stops deployment worker containers that belong to one project on this host.
+ * The mount check also recognizes workers started before containers received
+ * explicit updater labels.
+ */
+export async function cancelProjectDeploymentWorkers(projectName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
+    const projectId = appSettings.id ?? projectName;
+    const projectPath = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
+    const expectedProjectPath = resolve(projectPath);
+    const [labelledCandidates, legacyCandidates] = await Promise.all([
+        execAsync(
+            `docker ps -q --filter ${shellQuote(`label=${deploymentWorkerRoleLabel}=deployment-worker`)} --filter ${shellQuote(`label=${deploymentWorkerProjectLabel}=${projectId}`)}`,
+            { maxBuffer: 256 * 1024 }
+        ),
+        execAsync(
+            `docker ps -q --filter ${shellQuote("ancestor=node:24.16.0-alpine")}`,
+            { maxBuffer: 256 * 1024 }
+        )
+    ]);
+    const candidateIds = [...new Set(`${labelledCandidates.stdout}\n${legacyCandidates.stdout}`
+        .trim()
+        .split(/\s+/)
+        .filter((id) => /^[a-f0-9]{12,64}$/i.test(id)))];
+    if (!candidateIds.length) {
+        return 0;
+    }
+
+    const inspected = await execAsync(`docker inspect ${candidateIds.map(shellQuote).join(" ")}`, { maxBuffer: 4 * 1024 * 1024 });
+    const containers = JSON.parse(inspected.stdout) as DockerWorkerContainer[];
+    const workers = containers.filter((container) => {
+        const labels = container.Config?.Labels ?? {};
+        if (labels[deploymentWorkerRoleLabel] === "deployment-worker") {
+            return labels[deploymentWorkerProjectLabel] === projectId;
+        }
+
+        return container.Config?.Image === "node:24.16.0-alpine"
+            && container.Config.Cmd?.[0] === "sh"
+            && container.Mounts?.some((mount) => resolve(mount.Source) === expectedProjectPath && resolve(mount.Destination) === expectedProjectPath)
+            && container.Mounts?.some((mount) => mount.Source === "/var/run/docker.sock" && mount.Destination === "/var/run/docker.sock");
+    });
+
+    await Promise.all(workers.map(async (worker) => {
+        if (!/^[a-f0-9]{12,64}$/i.test(worker.Id)) {
+            return;
+        }
+        await execAsync(`docker stop --time 5 ${shellQuote(worker.Id)}`, { maxBuffer: 256 * 1024 });
+    }));
+
+    return workers.length;
+}
+
+interface DockerWorkerContainer {
+    Id: string;
+    Config?: {
+        Image?: string;
+        Cmd?: string[];
+        Labels?: Record<string, string>;
+    };
+    Mounts?: Array<{
+        Source: string;
+        Destination: string;
+    }>;
 }
 
 /**
@@ -747,6 +818,10 @@ ${renderExternalNetworkEnsureScript()}
         "run",
         "-i",
         "--rm",
+        "--label",
+        `${deploymentWorkerRoleLabel}=deployment-worker`,
+        "--label",
+        `${deploymentWorkerProjectLabel}=${options.appSettings?.id ?? release.projectId ?? release.projectName}`,
         "-v",
         "/var/run/docker.sock:/var/run/docker.sock",
         "-v",
