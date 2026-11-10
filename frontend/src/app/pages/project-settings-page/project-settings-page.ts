@@ -765,6 +765,36 @@ export class ProjectSettingsPage implements OnInit {
     this.settingsPageTab.set(tab);
   }
 
+  protected scrollSettingsPanelWithWheel(event: WheelEvent) {
+    if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+
+    const panel = event.currentTarget as HTMLElement;
+    const target = event.target as Element | null;
+    if (target?.closest('.path-browser-backdrop')) return;
+
+    const nestedScroller = target?.closest<HTMLElement>(
+      '.builder-service-tab-content, .path-tree, .infisical-import-list, .compose-validation pre, textarea:not(.compose_input)',
+    );
+    const multiplier = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? panel.clientHeight : 1;
+    const delta = event.deltaY * multiplier;
+    if (!delta) return;
+
+    if (nestedScroller) {
+      const nestedMaxScroll = nestedScroller.scrollHeight - nestedScroller.clientHeight;
+      const nestedCanScroll = delta < 0
+        ? nestedScroller.scrollTop > 0
+        : nestedScroller.scrollTop < nestedMaxScroll - 1;
+      if (nestedCanScroll) return;
+    }
+
+    const maxScroll = panel.scrollHeight - panel.clientHeight;
+    const nextScrollTop = Math.max(0, Math.min(maxScroll, panel.scrollTop + delta));
+    if (nextScrollTop === panel.scrollTop) return;
+
+    event.preventDefault();
+    panel.scrollTop = nextScrollTop;
+  }
+
   protected setProjectSettingsTab(tab: ProjectSettingsProjectTab) {
     this.projectSettingsTab.set(tab);
   }

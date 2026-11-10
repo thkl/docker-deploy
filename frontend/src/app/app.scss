@@ -69,9 +69,12 @@
 }
 
 .sidebar .nav-section:first-of-type {
-  flex: 1;
-  grid-template-rows: auto minmax(0, 1fr);
+  flex: 0 1 auto;
   min-height: 0;
+}
+
+.sidebar .nav-section:nth-of-type(2) {
+  margin-top: auto;
 }
 
 .nav-heading {
@@ -105,9 +108,23 @@
 }
 
 .project-list {
-  flex: 1;
+  align-content: start;
+  flex: 0 1 auto;
+  max-height: max(0px, calc(100dvh - 21.5rem));
   min-height: 0;
   overflow-y: auto;
+}
+
+.project-list a {
+  height: 54px;
+  max-height: 54px;
+  min-height: 54px;
+}
+
+.project-list a > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-list a,

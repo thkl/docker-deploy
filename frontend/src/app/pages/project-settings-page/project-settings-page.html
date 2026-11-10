@@ -40,7 +40,8 @@
   <div class="settings-page-panels">
   <section class="form-panel settings-page-panel" [class.active]="settingsPageTab() === 'project'"
     [attr.aria-hidden]="settingsPageTab() === 'project' ? null : 'true'"
-    [attr.inert]="settingsPageTab() === 'project' ? null : ''">
+    [attr.inert]="settingsPageTab() === 'project' ? null : ''"
+    (wheel)="scrollSettingsPanelWithWheel($event)">
     <div class="panel-head">
       <h3>Project</h3>
       <span>Repository, deployment, and notifications</span>
@@ -269,7 +270,8 @@
 
   <section class="form-panel settings-page-panel" [class.active]="settingsPageTab() === 'compose'"
     [attr.aria-hidden]="settingsPageTab() === 'compose' ? null : 'true'"
-    [attr.inert]="settingsPageTab() === 'compose' ? null : ''">
+    [attr.inert]="settingsPageTab() === 'compose' ? null : ''"
+    (wheel)="scrollSettingsPanelWithWheel($event)">
     <div class="panel-head split">
       <div>
         <h3>Docker Compose</h3>

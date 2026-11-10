@@ -134,6 +134,7 @@ p {
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
   touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 .settings-page-panel.active,
@@ -1114,14 +1115,16 @@ button.compact {
 
 .form-actions {
   align-items: center;
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
-  border-top: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex: 0 0 auto;
   gap: 0.75rem;
   justify-content: flex-end;
   margin: 0;
-  padding: 0.7rem 0 0;
+  padding: 0.7rem;
 }
 
 button.secondary {
