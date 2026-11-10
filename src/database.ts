@@ -874,8 +874,8 @@ function toSqlValue(value: unknown) {
 /**
  * Executes a synchronous SQLite transaction with rollback on failure.
  */
-export function runDatabaseTransaction(database: DatabaseSync, work: () => void) {
-    database.exec("BEGIN");
+export function runDatabaseTransaction(database: DatabaseSync, work: () => void, mode: "DEFERRED" | "IMMEDIATE" | "EXCLUSIVE" = "DEFERRED") {
+    database.exec(`BEGIN ${mode}`);
     try {
         work();
         database.exec("COMMIT");

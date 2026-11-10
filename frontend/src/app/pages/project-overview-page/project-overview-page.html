@@ -49,8 +49,8 @@
         }
       </div>
       <div class="command-group primary-actions">
-        <button type="button" (click)="deploy(project.id)" [disabled]="deploying() || rollingBackReleaseId() !== ''">
-          {{ deploying() ? 'Starting...' : 'Deploy now' }}
+        <button type="button" (click)="deploy(project.id)" [disabled]="deploying() || rollingBackReleaseId() !== '' || latestDeployment()?.status === 'running'">
+          {{ deploying() ? 'Starting...' : latestDeployment()?.status === 'running' ? 'Deployment running' : 'Deploy now' }}
         </button>
         <button type="button" class="secondary" (click)="runPreflight(project.id)" [disabled]="runningPreflight() || deploying() || rollingBackReleaseId() !== ''">
           {{ runningPreflight() ? 'Checking...' : 'Preflight' }}

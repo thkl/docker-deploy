@@ -10,7 +10,7 @@ import { assertSafeDeletePath } from "./checkoutCleanup.js";
 import { countBindMountsInsidePath, hasUnsafeRelativeBindMounts } from "./composeInspection.js";
 import { writeControllerBackup } from "./configAutoBackup.js";
 import { ConfigStore, maskSecretValue, maskToken } from "./configStore.js";
-import { DeploymentStore } from "./deploymentStore.js";
+import { DeploymentAlreadyRunningError, DeploymentRecord, DeploymentStore } from "./deploymentStore.js";
 import { DeploymentService } from "./deploymentService.js";
 import { EventBus } from "./eventBus.js";
 import { defaultProjectPath, GlobalSettingsStore, normalizeGlobalSettings } from "./globalSettingsStore.js";
@@ -1254,8 +1254,16 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             return;
         }
 
-        const deployment = deploymentService.startDeployment(projectName, appSettings, "manual");
-        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
+        try {
+            const deployment = deploymentService.startDeployment(projectName, appSettings, "manual");
+            res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
+        } catch (error) {
+            if (error instanceof DeploymentAlreadyRunningError) {
+                res.status(409).json({ error: error.message, deploymentId: error.deploymentId });
+                return;
+            }
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not start deployment." });
+        }
     });
 
     app.post("/api/projects/:name/preflight", async (req: Request, res: Response) => {
@@ -1413,7 +1421,10 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
             const deployment = deploymentService.rollbackRelease(projectName, appSettings, releaseId);
             res.status(200).json({ status: "Rollback worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
         } catch (error) {
-            res.status(400).json({ error: error instanceof Error ? error.message : "Could not start rollback." });
+            res.status(error instanceof DeploymentAlreadyRunningError ? 409 : 400).json({
+                error: error instanceof Error ? error.message : "Could not start rollback.",
+                ...(error instanceof DeploymentAlreadyRunningError ? { deploymentId: error.deploymentId } : {})
+            });
         }
     });
 
@@ -1923,7 +1934,9 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
                 status: "error",
                 reason: error instanceof Error ? error.message : "Could not dispatch deployment."
             });
-            res.status(500).send("Could not dispatch deployment.");
+            res.status(error instanceof DeploymentAlreadyRunningError ? 409 : 500).send(
+                error instanceof Error ? error.message : "Could not dispatch deployment."
+            );
         }
     });
 
@@ -2029,7 +2042,25 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             return;
         }
 
-        const deployment = deploymentService.startDeployment(projectName, appSettings, "webhook");
+        let deployment: DeploymentRecord;
+        try {
+            deployment = deploymentService.startDeployment(projectName, appSettings, "webhook");
+        } catch (error) {
+            webhookStore.record({
+                projectId: appSettings.id,
+                projectName,
+                source,
+                eventType: event,
+                status: "error",
+                reason: error instanceof Error ? error.message : "Could not dispatch deployment.",
+                candidates,
+                ...(error instanceof DeploymentAlreadyRunningError ? { deploymentId: error.deploymentId } : {})
+            });
+            res.status(error instanceof DeploymentAlreadyRunningError ? 409 : 500).send(
+                error instanceof Error ? error.message : "Could not dispatch deployment."
+            );
+            return;
+        }
         webhookStore.record({
             projectId: appSettings.id,
             projectName,
@@ -2075,8 +2106,16 @@ function registerCiDeployRoute(app: Express, dependencies: Pick<RouteDependencie
             return;
         }
 
-        const deployment = deploymentService.startDeployment(projectName, appSettings, "ci");
-        res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
+        try {
+            const deployment = deploymentService.startDeployment(projectName, appSettings, "ci");
+            res.status(200).json({ status: "Build worker dispatched", deploymentId: deployment.id, deploymentIds: deployment.targets?.map((target) => target.id) ?? [deployment.id] });
+        } catch (error) {
+            if (error instanceof DeploymentAlreadyRunningError) {
+                res.status(409).json({ error: error.message, deploymentId: error.deploymentId });
+                return;
+            }
+            res.status(500).json({ error: error instanceof Error ? error.message : "Could not start deployment." });
+        }
     });
 }
 

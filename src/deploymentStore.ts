@@ -29,6 +29,13 @@ export interface DeploymentRecord {
 const maxHistoryPerProject = 10;
 const maxLogLength = 120_000;
 
+export class DeploymentAlreadyRunningError extends Error {
+    constructor(readonly deploymentId: string) {
+        super("A deployment for this project is already running.");
+        this.name = "DeploymentAlreadyRunningError";
+    }
+}
+
 /**
  * SQLite-backed deployment history store.
  *
@@ -126,6 +133,13 @@ export class DeploymentStore {
         };
 
         runDatabaseTransaction(this.database, () => {
+            const activeRun = this.database
+                .prepare("SELECT id FROM deployment_runs WHERE project_id = ? AND status = 'running' LIMIT 1")
+                .get(projectId) as { id: string } | undefined;
+            if (activeRun) {
+                throw new DeploymentAlreadyRunningError(activeRun.id);
+            }
+
             this.database
                 .prepare(
                     `INSERT INTO deployment_runs
@@ -148,7 +162,7 @@ export class DeploymentStore {
             }
 
             this.trimHistory(projectName);
-        });
+        }, "IMMEDIATE");
 
         return run;
     }

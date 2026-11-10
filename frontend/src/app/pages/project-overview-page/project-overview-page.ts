@@ -259,9 +259,9 @@ export class ProjectOverviewPage implements OnInit, OnDestroy {
         this.store.loadProjects();
         this.loadLatestDeployment(project?.id ?? projectRef, projectName);
       },
-      error: () => {
+      error: (error) => {
         this.deploying.set(false);
-        this.deployError.set(`Could not start deployment for ${projectName}.`);
+        this.deployError.set(error?.error?.error || `Could not start deployment for ${projectName}.`);
       },
     });
   }
