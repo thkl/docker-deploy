@@ -6,7 +6,7 @@ RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git opens
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml* tsconfig.json ./
-RUN npm install
+RUN pnpm install --frozen-lockfile
 
 COPY src ./src
 RUN npm run build
@@ -14,7 +14,7 @@ RUN npm run build
 FROM base AS frontend-build
 
 COPY frontend/package.json frontend/pnpm-lock.yaml* frontend/angular.json frontend/tsconfig*.json ./frontend/
-RUN cd frontend && npm install
+RUN cd frontend && pnpm install --frozen-lockfile
 
 COPY frontend/src ./frontend/src
 COPY frontend/public ./frontend/public
