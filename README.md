@@ -27,6 +27,10 @@ docker compose up -d
 ```
 
 The controller listens on `PORT`, defaulting to `3999`.
+Deployment workers have a five-minute startup limit, configurable with
+`DEPLOY_WORKER_STARTUP_TIMEOUT_MS` (milliseconds). Docker-hosted controllers reuse
+their own image for workers, so they do not need to install deployment tools at
+startup; standalone workers cap the Alpine package install at three minutes.
 
 For a project using SPIFFE/SPIRE X.509 certificate authentication, mount the
 controller host's SPIRE agent Workload API socket into the controller container:

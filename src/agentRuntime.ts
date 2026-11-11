@@ -254,7 +254,7 @@ export class AgentRuntime {
     private async startJob(request: AgentJobRequest, accepted: AgentJobAccepted): Promise<{ result?: unknown }> {
         if (request.jobType === "deploy") {
             const payload = request.payload as DeployJobPayload;
-            const stream = this.localAgent.deployProject(payload.projectName, payload.appSettings, payload.globalSettings, {
+            const stream = await this.localAgent.deployProject(payload.projectName, payload.appSettings, payload.globalSettings, {
                 onOutput: (stream, chunk) => this.emitFrame(accepted.jobId, { stream, chunk }),
                 onSuccess: () => this.emitFrame(accepted.jobId, { stream: "status", chunk: "Deployment successful.", done: true, success: true }),
                 onFailure: (error) => this.emitFrame(accepted.jobId, { stream: "status", chunk: error.message, done: true, success: false, error: error.message })

@@ -1,5 +1,5 @@
 import { ChildProcess, exec, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, posix as posixPath, resolve } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
@@ -10,6 +10,7 @@ import { renderEnvFileVolume, renderPersistedEnvFileRewriteScript, renderPersist
 const execAsync = promisify(exec);
 const deploymentWorkerRoleLabel = "com.binder.updater.role";
 const deploymentWorkerProjectLabel = "com.binder.updater.project-id";
+const deploymentWorkerStartupReadyMessage = "--> Deployment worker tools are ready.";
 
 /**
  * Optional lifecycle callbacks for a deployment worker process.
@@ -82,6 +83,33 @@ function shellQuote(value: string | number | boolean) {
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
+async function resolveDeploymentWorkerImage() {
+    const hostname = process.env.HOSTNAME?.trim() ?? "";
+    if (/^[a-f0-9]{12,64}$/i.test(hostname)) {
+        try {
+            const { stdout } = await execAsync(
+                `docker inspect --format '{{.Id}} {{.Config.Image}}' ${shellQuote(hostname)}`,
+                { timeout: 5_000, maxBuffer: 128 * 1024 }
+            );
+            const [containerId, image] = stdout.trim().split(/\s+/, 2);
+            if (containerId?.toLowerCase().startsWith(hostname.toLowerCase()) && image) {
+                return { image, preinstalledTools: true };
+            }
+        } catch {
+            // Outside Docker, or when the current container cannot be inspected, use the standalone worker image.
+        }
+    }
+
+    return { image: "node:24.16.0-alpine", preinstalledTools: false };
+}
+
+function getDeploymentWorkerStartupTimeoutMs() {
+    const configuredTimeout = Number(process.env.DEPLOY_WORKER_STARTUP_TIMEOUT_MS);
+    return Number.isFinite(configuredTimeout) && configuredTimeout > 0
+        ? Math.min(configuredTimeout, 24 * 60 * 60 * 1000)
+        : 5 * 60 * 1000;
+}
+
 /**
  * Starts the ephemeral Docker-based deployment worker for a project.
  *
@@ -90,7 +118,13 @@ function shellQuote(value: string | number | boolean) {
  * applies generated Traefik compose labels, builds, replaces containers, and
  * streams process output through the supplied hooks.
  */
-export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}): RuntimeLogStream {
+export async function dispatchBuildWorker(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, hooks: DeploymentHooks = {}): Promise<RuntimeLogStream> {
+    hooks.onOutput?.("stdout", "--> Preparing deployment worker image.\n");
+    const workerImage = await resolveDeploymentWorkerImage();
+    hooks.onOutput?.("stdout", workerImage.preinstalledTools
+        ? "--> Reusing the updater image; Docker, Compose, Git, and SSH tools are already installed.\n"
+        : "--> Using the Alpine worker image; installing Docker, Compose, Git, and SSH tools.\n");
+
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
     const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
     const deploymentStrategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
@@ -129,7 +163,18 @@ export function dispatchBuildWorker(repoName: string, appSettings: ProjectSettin
     console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
 
     const workerScript = `
-                apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client > /dev/null 2>&1
+${workerImage.preinstalledTools ? "" : `                echo \"--> Installing deployment worker tools from Alpine package repositories...\"
+                timeout 180 apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx git openssh-client
+                install_status=$?
+                if [ "$install_status" -ne 0 ]; then
+                    if [ "$install_status" -eq 124 ]; then
+                        echo \"--> CRITICAL: Installing deployment worker tools timed out after 3 minutes. Check DNS and access to the Alpine package repositories.\" >&2
+                    else
+                        echo \"--> CRITICAL: Could not install deployment worker tools (exit code $install_status). Check DNS and access to the Alpine package repositories.\" >&2
+                    fi
+                    exit "$install_status"
+                fi`}
+                echo "${deploymentWorkerStartupReadyMessage}"
 
                 PROJECT_ROOT=${quotedHostAppsPath}
                 PROJECT_ROOT="\${PROJECT_ROOT%/}"
@@ -470,10 +515,13 @@ ${saveBuildStateScript}
                     fi
                 fi`;
     
+    const workerContainerName = `binder-deployment-worker-${randomUUID()}`;
     const worker = spawn("docker", [
         "run",
         "-i",
         "--rm",
+        "--name",
+        workerContainerName,
         "-v",
         "/var/run/docker.sock:/var/run/docker.sock",
         "-v",
@@ -485,12 +533,36 @@ ${saveBuildStateScript}
         `${deploymentWorkerRoleLabel}=deployment-worker`,
         "--label",
         `${deploymentWorkerProjectLabel}=${projectId}`,
-        "node:24.16.0-alpine",
-        "sh"
+        "--entrypoint",
+        "sh",
+        workerImage.image,
+        "-s"
     ], { stdio: ["pipe", "pipe", "pipe"] });
     let failed = false;
+    let workerReady = false;
+    let startupOutputProbe = "";
+    const startupTimeoutMs = getDeploymentWorkerStartupTimeoutMs();
+    const startupTimer = setTimeout(() => {
+        if (workerReady || failed || worker.exitCode !== null || worker.signalCode !== null) {
+            return;
+        }
+
+        failed = true;
+        const timeoutMinutes = Math.max(1, Math.ceil(startupTimeoutMs / 60_000));
+        const timeoutMessage = `Deployment worker did not finish startup within ${timeoutMinutes} minute(s). Check worker startup, DNS, and Alpine package repository access.`;
+        const error = new Error(timeoutMessage) as Error & { code?: number | string };
+        error.code = "worker-startup-timeout";
+        console.error(`Deployment Aborted: ${timeoutMessage}`);
+        hooks.onOutput?.("stderr", `--> CRITICAL: ${timeoutMessage}\n`);
+        hooks.onFailure?.(redactProjectSecrets(error, appSettings.envSecrets, globalSettings));
+        worker.kill("SIGTERM");
+        windowedKill(worker);
+        void execAsync(`docker rm -f ${shellQuote(workerContainerName)}`, { timeout: 15_000, maxBuffer: 128 * 1024 }).catch(() => undefined);
+    }, startupTimeoutMs);
+    startupTimer.unref();
 
     worker.on("error", (error) => {
+        clearTimeout(startupTimer);
         failed = true;
         const safeError = redactProjectSecrets(error, appSettings.envSecrets, globalSettings);
         console.error(`Deployment Aborted: ${safeError.message}`);
@@ -498,6 +570,7 @@ ${saveBuildStateScript}
     });
 
     worker.on("close", (code, signal) => {
+        clearTimeout(startupTimer);
         if (failed) {
             return;
         }
@@ -512,7 +585,14 @@ ${saveBuildStateScript}
     });
 
     worker.stdout?.on("data", (chunk: Buffer | string) => {
-        hooks.onOutput?.("stdout", redactDeploymentOutput(String(chunk), appSettings.envSecrets, globalSettings));
+        const output = String(chunk);
+        const startupOutput = `${startupOutputProbe}${output}`;
+        if (!workerReady && startupOutput.includes(deploymentWorkerStartupReadyMessage)) {
+            workerReady = true;
+            clearTimeout(startupTimer);
+        }
+        startupOutputProbe = startupOutput.slice(-deploymentWorkerStartupReadyMessage.length);
+        hooks.onOutput?.("stdout", redactDeploymentOutput(output, appSettings.envSecrets, globalSettings));
     });
 
     worker.stderr?.on("data", (chunk: Buffer | string) => {
@@ -523,6 +603,7 @@ ${saveBuildStateScript}
 
     return {
         stop() {
+            clearTimeout(startupTimer);
             if (!worker.killed) {
                 worker.kill("SIGTERM");
                 windowedKill(worker);
