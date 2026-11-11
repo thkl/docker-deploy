@@ -1,7 +1,7 @@
 <section class="page-head">
   <div>
     <h2>Global settings</h2>
-    <p>Defaults used when a project does not override deployment paths or Traefik routing values.</p>
+    <p>Set controller-wide defaults and integrations.</p>
   </div>
 </section>
 
@@ -13,44 +13,80 @@
   <p class="notice">{{ message() }}</p>
 }
 
-<section class="settings-panel appearance-panel" aria-labelledby="appearance-title">
-  <div class="panel-head">
-    <h3 id="appearance-title">Appearance</h3>
-    <span>Choose a color palette for this browser</span>
-  </div>
-
-  <div class="palette-choices" role="group" aria-label="Color palette">
-    @for (palette of appearance.palettes; track palette.id) {
+<div class="global-settings-layout">
+  <nav class="settings-sidebar" aria-label="Global settings categories">
+    <span class="settings-sidebar-heading">Categories</span>
+    @for (category of settingsCategories; track category.id) {
       <button
         type="button"
-        class="palette-choice"
-        [class.selected]="appearance.palette() === palette.id"
-        [attr.aria-pressed]="appearance.palette() === palette.id"
-        (click)="appearance.setPalette(palette.id)"
+        [class.active]="activeCategory() === category.id"
+        [attr.aria-current]="activeCategory() === category.id ? 'page' : null"
+        aria-controls="global-settings-content"
+        (click)="selectCategory(category.id)"
       >
-        <span class="palette-swatches" aria-hidden="true">
-          @for (swatch of palette.swatches; track $index) {
-            <span class="palette-swatch" [style.background-color]="swatch"></span>
-          }
-        </span>
-        <span class="palette-copy">
-          <strong>{{ palette.name }}</strong>
-          <small>{{ palette.description }}</small>
-        </span>
-        <span class="palette-check" aria-hidden="true">✓</span>
+        <strong>{{ category.title }}</strong>
+        <small>{{ category.description }}</small>
       </button>
     }
-  </div>
+  </nav>
 
-  <p class="appearance-note">Your choice is saved in this browser and applies across the interface.</p>
-</section>
+  <section id="global-settings-content" class="global-settings-content" aria-label="Selected global settings category">
+    @if (loading()) {
+      <section class="settings-panel settings-loading">
+        <p>Loading settings...</p>
+      </section>
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="save()" class="settings-form">
+        <header class="settings-category-header">
+          <div>
+            <span>Global settings</span>
+            <h3>{{ activeCategoryDetails().title }}</h3>
+            <p>{{ activeCategoryDetails().description }}</p>
+          </div>
+          @if (activeCategory() === 'appearance') {
+            <span class="category-save-note">Saved in this browser</span>
+          } @else if (activeCategory() !== 'access') {
+            <button type="submit" [disabled]="saving()">
+              {{ saving() ? 'Saving...' : 'Save settings' }}
+            </button>
+          }
+        </header>
 
-@if (loading()) {
-  <section class="settings-panel">
-    <p>Loading settings...</p>
-  </section>
-} @else {
-  <form [formGroup]="form" (ngSubmit)="save()" class="settings-form">
+        @if (activeCategory() === 'appearance') {
+          <section class="settings-panel appearance-panel" aria-labelledby="appearance-title">
+            <div class="panel-head">
+              <h3 id="appearance-title">Color palette</h3>
+              <span>Choose the colors used across this browser</span>
+            </div>
+
+            <div class="palette-choices" role="group" aria-label="Color palette">
+              @for (palette of appearance.palettes; track palette.id) {
+                <button
+                  type="button"
+                  class="palette-choice"
+                  [class.selected]="appearance.palette() === palette.id"
+                  [attr.aria-pressed]="appearance.palette() === palette.id"
+                  (click)="appearance.setPalette(palette.id)"
+                >
+                  <span class="palette-swatches" aria-hidden="true">
+                    @for (swatch of palette.swatches; track $index) {
+                      <span class="palette-swatch" [style.background-color]="swatch"></span>
+                    }
+                  </span>
+                  <span class="palette-copy">
+                    <strong>{{ palette.name }}</strong>
+                    <small>{{ palette.description }}</small>
+                  </span>
+                  <span class="palette-check" aria-hidden="true">✓</span>
+                </button>
+              }
+            </div>
+
+            <p class="appearance-note">Your choice is saved in this browser and applies across the interface.</p>
+          </section>
+        }
+
+        @if (activeCategory() === 'deployments') {
     <section class="settings-panel">
       <div class="panel-head">
         <h3>Deployment defaults</h3>
@@ -72,12 +108,6 @@
           <span>Release snapshots per project</span>
           <input type="number" formControlName="releaseSnapshotLimit" min="1" max="200" />
         </label>
-
-        <label>
-          <span>Updater internal access URL</span>
-          <input formControlName="updaterInternalUrl" placeholder="http://192.168.1.20:3999" />
-          <small>Reachable by Traefik. Used to generate scale-to-zero wake URLs.</small>
-        </label>
       </div>
 
       <label class="check-row">
@@ -85,7 +115,9 @@
         <span>Clean up checkout after deploy when data paths are externalized</span>
       </label>
     </section>
+    }
 
+    @if (activeCategory() === 'traefik') {
     <section class="settings-panel">
       <div class="panel-head">
         <h3>Traefik defaults</h3>
@@ -113,9 +145,17 @@
           <textarea formControlName="traefikDomains" rows="3" placeholder="lab.network&#10;lab.de"></textarea>
           <small>One domain per line or comma separated. The project wizard suggests https://project-name.domain.</small>
         </label>
+
+        <label>
+          <span>Updater internal access URL</span>
+          <input formControlName="updaterInternalUrl" placeholder="http://192.168.1.20:3999" />
+          <small>Reachable by Traefik. Used to generate scale-to-zero wake URLs.</small>
+        </label>
       </div>
     </section>
+    }
 
+    @if (activeCategory() === 'registry') {
     <section class="settings-panel">
       <div class="panel-head">
         <h3>Docker registry</h3>
@@ -139,7 +179,9 @@
         </label>
       </div>
     </section>
+    }
 
+    @if (activeCategory() === 'access') {
     <section class="settings-panel">
       <div class="panel-head">
         <h3>Admin access</h3>
@@ -150,7 +192,9 @@
         The admin token is intentionally configured through the process environment, not stored in the web UI.
       </p>
     </section>
+    }
 
+    @if (activeCategory() === 'notifications') {
     <section class="settings-panel">
       <div class="panel-head">
         <h3>Notifications</h3>
@@ -284,7 +328,9 @@
         }
       </div>
     </section>
+    }
 
+    @if (activeCategory() === 'backups') {
     <section class="settings-panel">
       <div class="panel-head">
         <h3>Backup and recovery</h3>
@@ -376,11 +422,9 @@
         </label>
       </div>
     </section>
+    }
 
-    <footer class="form-actions">
-      <button type="submit" [disabled]="saving()">
-        {{ saving() ? 'Saving...' : 'Save settings' }}
-      </button>
-    </footer>
-  </form>
-}
+      </form>
+    }
+  </section>
+</div>

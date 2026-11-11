@@ -5,6 +5,18 @@ import { AppearanceService } from '../../services/appearance';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 
+const globalSettingsCategories = [
+  { id: 'appearance', title: 'Appearance', description: 'Theme and interface colors' },
+  { id: 'deployments', title: 'Deployments', description: 'Paths, cleanup, and release snapshots' },
+  { id: 'traefik', title: 'Traefik', description: 'Routing defaults and internal access' },
+  { id: 'registry', title: 'Registry', description: 'Image registry credentials' },
+  { id: 'notifications', title: 'Notifications', description: 'Events and delivery channels' },
+  { id: 'backups', title: 'Backups', description: 'Scheduled and manual recovery' },
+  { id: 'access', title: 'Access', description: 'Admin token configuration' },
+] as const;
+
+type GlobalSettingsCategory = (typeof globalSettingsCategories)[number]['id'];
+
 @Component({
   selector: 'app-global-settings-page',
   imports: [ReactiveFormsModule],
@@ -28,6 +40,8 @@ export class GlobalSettingsPage implements OnInit {
   protected readonly backupPathBrowserError = signal('');
   protected readonly message = signal('');
   protected readonly error = signal('');
+  protected readonly settingsCategories = globalSettingsCategories;
+  protected readonly activeCategory = signal<GlobalSettingsCategory>('appearance');
   protected readonly form = this.fb.group({
     dataRoot: ['/root/docker-apps', [Validators.required]],
     updaterInternalUrl: [''],
@@ -81,6 +95,14 @@ export class GlobalSettingsPage implements OnInit {
         this.saving.set(false);
       },
     });
+  }
+
+  protected selectCategory(category: GlobalSettingsCategory) {
+    this.activeCategory.set(category);
+  }
+
+  protected activeCategoryDetails() {
+    return globalSettingsCategories.find((category) => category.id === this.activeCategory())!;
   }
 
   protected exportBackup() {
