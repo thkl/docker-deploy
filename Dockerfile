@@ -13,7 +13,7 @@ RUN npm run build
 
 FROM base AS frontend-build
 
-COPY frontend/package.json frontend/pnpm-lock.yaml* frontend/angular.json frontend/tsconfig*.json ./frontend/
+COPY frontend/package.json frontend/pnpm-lock.yaml* frontend/pnpm-workspace.yaml frontend/angular.json frontend/tsconfig*.json ./frontend/
 RUN cd frontend && pnpm install --frozen-lockfile
 
 COPY frontend/src ./frontend/src
