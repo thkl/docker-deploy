@@ -61,8 +61,78 @@ p {
   gap: 0.5rem;
 }
 
-.settings-page-toolbar .settings-page-tabs {
-  margin-bottom: 0;
+.settings-layout {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 0.8rem;
+  grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+.settings-sidebar {
+  align-content: start;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.4rem;
+}
+
+.settings-sidebar-heading {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.045em;
+  padding: 0.32rem 0.55rem 0.18rem;
+  text-transform: uppercase;
+}
+
+.settings-sidebar button {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  gap: 0.12rem;
+  min-height: 48px;
+  padding: 0.48rem 0.58rem;
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  width: 100%;
+}
+
+.settings-sidebar button strong {
+  color: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.settings-sidebar button small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.settings-sidebar button:hover {
+  background: color-mix(in srgb, var(--panel), transparent 30%);
+  color: var(--ink);
+}
+
+.settings-sidebar button.active {
+  background: var(--panel);
+  border-color: var(--line);
+  box-shadow: var(--shadow-soft);
+  color: var(--accent-strong);
+}
+
+.settings-sidebar button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .form-panel {
@@ -71,39 +141,6 @@ p {
   border-radius: var(--radius);
   box-shadow: var(--shadow-soft);
   padding: 0.64rem;
-}
-
-.settings-page-tabs,
-.project-settings-tabs {
-  background: var(--panel-soft);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  display: flex;
-  gap: 0.25rem;
-  margin-bottom: 0.64rem;
-  max-width: 100%;
-  overflow-x: auto;
-  padding: 0.25rem;
-  width: fit-content;
-}
-
-.settings-page-tabs button,
-.project-settings-tabs button {
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  flex: 0 0 auto;
-  font-weight: 520;
-  min-height: 30px;
-  padding: 0 0.68rem;
-  white-space: nowrap;
-}
-
-.settings-page-tabs button.active,
-.project-settings-tabs button.active {
-  background: var(--panel);
-  color: var(--ink);
 }
 
 .settings-page-panels,
@@ -1214,6 +1251,32 @@ button.secondary:hover {
 
   .settings-top-actions {
     justify-content: flex-end;
+  }
+
+  .settings-layout {
+    gap: 0.55rem;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .settings-sidebar {
+    display: flex;
+    gap: 0.22rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding: 0.28rem;
+  }
+
+  .settings-sidebar-heading,
+  .settings-sidebar button small {
+    display: none;
+  }
+
+  .settings-sidebar button {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 0 0.68rem;
+    width: auto;
   }
 
   .path-browser-backdrop {

@@ -52,8 +52,7 @@ interface ComposeBuilderService {
 
 type ComposeHealthcheckMode = '' | 'http' | 'command' | 'disabled';
 type ComposeBuilderServiceTab = 'general' | 'network' | 'environment' | 'volumes' | 'advanced';
-type ProjectSettingsPageTab = 'project' | 'compose';
-type ProjectSettingsProjectTab = 'details' | 'deployment' | 'notifications';
+type ProjectSettingsPageTab = 'details' | 'deployment' | 'notifications' | 'compose';
 
 interface ComposeBuilderNetwork {
   id: number;
@@ -141,8 +140,7 @@ export class ProjectSettingsPage implements OnInit {
   private readonly settingsState = inject(ProjectSettingsPageStore);
 
   protected readonly isNew = signal(true);
-  protected readonly settingsPageTab = signal<ProjectSettingsPageTab>('project');
-  protected readonly projectSettingsTab = signal<ProjectSettingsProjectTab>('details');
+  protected readonly settingsPageTab = signal<ProjectSettingsPageTab>('details');
   protected readonly currentName = signal('');
   protected readonly saving = signal<'save' | 'deploy' | ''>('');
   protected readonly importingCompose = signal(false);
@@ -793,10 +791,6 @@ export class ProjectSettingsPage implements OnInit {
 
     event.preventDefault();
     panel.scrollTop = nextScrollTop;
-  }
-
-  protected setProjectSettingsTab(tab: ProjectSettingsProjectTab) {
-    this.projectSettingsTab.set(tab);
   }
 
   protected builderServiceTab(serviceId: number): ComposeBuilderServiceTab {

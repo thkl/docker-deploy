@@ -21,12 +21,6 @@
 
 <form [formGroup]="form" (ngSubmit)="save('save')" class="settings-form">
   <div class="settings-page-toolbar">
-    <nav class="settings-page-tabs" role="tablist" aria-label="Project configuration">
-      <button type="button" role="tab" [attr.aria-selected]="settingsPageTab() === 'project'"
-        [class.active]="settingsPageTab() === 'project'" (click)="setSettingsPageTab('project')">Project</button>
-      <button type="button" role="tab" [attr.aria-selected]="settingsPageTab() === 'compose'"
-        [class.active]="settingsPageTab() === 'compose'" (click)="setSettingsPageTab('compose')">Docker Compose</button>
-    </nav>
     <div class="settings-top-actions" role="group" aria-label="Project settings actions">
       <button type="button" class="secondary" (click)="save('save')" [disabled]="saving() !== ''">
         {{ saving() === 'save' ? 'Saving…' : submitLabel() }}
@@ -37,29 +31,47 @@
     </div>
   </div>
 
-  <div class="settings-page-panels">
-  <section class="form-panel settings-page-panel" [class.active]="settingsPageTab() === 'project'"
-    [attr.aria-hidden]="settingsPageTab() === 'project' ? null : 'true'"
-    [attr.inert]="settingsPageTab() === 'project' ? null : ''"
-    (wheel)="scrollSettingsPanelWithWheel($event)">
-    <div class="panel-head">
-      <h3>Project</h3>
-      <span>Repository, deployment, and notifications</span>
-    </div>
-
-    <nav class="project-settings-tabs" role="tablist" aria-label="Project settings">
-      <button type="button" role="tab" [attr.aria-selected]="projectSettingsTab() === 'details'"
-        [class.active]="projectSettingsTab() === 'details'" (click)="setProjectSettingsTab('details')">Details</button>
-      <button type="button" role="tab" [attr.aria-selected]="projectSettingsTab() === 'deployment'"
-        [class.active]="projectSettingsTab() === 'deployment'" (click)="setProjectSettingsTab('deployment')">Deployment</button>
-      <button type="button" role="tab" [attr.aria-selected]="projectSettingsTab() === 'notifications'"
-        [class.active]="projectSettingsTab() === 'notifications'" (click)="setProjectSettingsTab('notifications')">Notifications</button>
+  <div class="settings-layout">
+    <nav class="settings-sidebar" aria-label="Project setting categories">
+      <span class="settings-sidebar-heading">Categories</span>
+      <button type="button" [class.active]="settingsPageTab() === 'details'"
+        [attr.aria-current]="settingsPageTab() === 'details' ? 'page' : null" aria-controls="project-settings-details" (click)="setSettingsPageTab('details')">
+        <strong>Project</strong>
+        <small>Name, repository, and target servers</small>
+      </button>
+      <button type="button" [class.active]="settingsPageTab() === 'deployment'"
+        [attr.aria-current]="settingsPageTab() === 'deployment' ? 'page' : null" aria-controls="project-settings-deployment" (click)="setSettingsPageTab('deployment')">
+        <strong>Deployment</strong>
+        <small>Strategy, scaling, and registry</small>
+      </button>
+      <button type="button" [class.active]="settingsPageTab() === 'notifications'"
+        [attr.aria-current]="settingsPageTab() === 'notifications' ? 'page' : null" aria-controls="project-settings-notifications" (click)="setSettingsPageTab('notifications')">
+        <strong>Notifications</strong>
+        <small>Events and delivery channels</small>
+      </button>
+      <button type="button" [class.active]="settingsPageTab() === 'compose'"
+        [attr.aria-current]="settingsPageTab() === 'compose' ? 'page' : null" aria-controls="project-settings-compose" (click)="setSettingsPageTab('compose')">
+        <strong>Docker Compose</strong>
+        <small>Services, networks, and YAML</small>
+      </button>
     </nav>
 
+    <div class="settings-page-panels">
+  <section class="form-panel settings-page-panel" [class.active]="settingsPageTab() !== 'compose'"
+    [attr.aria-hidden]="settingsPageTab() === 'compose' ? 'true' : null"
+    [attr.inert]="settingsPageTab() === 'compose' ? '' : null"
+    (wheel)="scrollSettingsPanelWithWheel($event)">
+    <div class="panel-head">
+      <div>
+        <h3>{{ settingsPageTab() === 'deployment' ? 'Deployment' : settingsPageTab() === 'notifications' ? 'Notifications' : 'Project' }}</h3>
+        <span>{{ settingsPageTab() === 'deployment' ? 'Choose how this project is deployed and scaled.' : settingsPageTab() === 'notifications' ? 'Choose which project events are sent to your notification channels.' : 'Project identity, repository access, and target servers.' }}</span>
+      </div>
+    </div>
+
     <div class="project-settings-panels">
-      <section class="project-settings-panel" [class.active]="projectSettingsTab() === 'details'"
-        [attr.aria-hidden]="projectSettingsTab() === 'details' ? null : 'true'"
-        [attr.inert]="projectSettingsTab() === 'details' ? null : ''">
+      <section id="project-settings-details" class="project-settings-panel" [class.active]="settingsPageTab() === 'details'"
+        [attr.aria-hidden]="settingsPageTab() === 'details' ? null : 'true'"
+        [attr.inert]="settingsPageTab() === 'details' ? null : ''">
       <div class="field-grid">
       <label>
         <span>Repository name</span>
@@ -118,9 +130,9 @@
       </div>
       </section>
 
-      <section class="project-settings-panel" [class.active]="projectSettingsTab() === 'deployment'"
-        [attr.aria-hidden]="projectSettingsTab() === 'deployment' ? null : 'true'"
-        [attr.inert]="projectSettingsTab() === 'deployment' ? null : ''">
+      <section id="project-settings-deployment" class="project-settings-panel" [class.active]="settingsPageTab() === 'deployment'"
+        [attr.aria-hidden]="settingsPageTab() === 'deployment' ? null : 'true'"
+        [attr.inert]="settingsPageTab() === 'deployment' ? null : ''">
       <div class="field-grid">
       <label>
         <span>Deployment mode</span>
@@ -212,9 +224,9 @@
       }
       </section>
 
-      <section class="project-settings-panel" [class.active]="projectSettingsTab() === 'notifications'"
-        [attr.aria-hidden]="projectSettingsTab() === 'notifications' ? null : 'true'"
-        [attr.inert]="projectSettingsTab() === 'notifications' ? null : ''">
+      <section id="project-settings-notifications" class="project-settings-panel" [class.active]="settingsPageTab() === 'notifications'"
+        [attr.aria-hidden]="settingsPageTab() === 'notifications' ? null : 'true'"
+        [attr.inert]="settingsPageTab() === 'notifications' ? null : ''">
     <section class="strategy-summary notification-summary">
       <div>
         <small>Notifications</small>
@@ -268,7 +280,7 @@
     </div>
   </section>
 
-  <section class="form-panel settings-page-panel" [class.active]="settingsPageTab() === 'compose'"
+  <section id="project-settings-compose" class="form-panel settings-page-panel" [class.active]="settingsPageTab() === 'compose'"
     [attr.aria-hidden]="settingsPageTab() === 'compose' ? null : 'true'"
     [attr.inert]="settingsPageTab() === 'compose' ? null : ''"
     (wheel)="scrollSettingsPanelWithWheel($event)">
@@ -1013,6 +1025,7 @@
     </div>
     }
   </section>
+  </div>
   </div>
 
   @if (hostPathBrowser(); as browserState) {
