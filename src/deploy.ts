@@ -195,6 +195,7 @@ ${workerImage.preinstalledTools ? "" : `                echo \"--> Installing de
                 TMP_DEPLOY="$PROJECT_ROOT/.updater/tmpdeploy"
                 RELEASE_DEPLOY="$PROJECT_ROOT/.updater/release"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
+                export COMPOSE_WORKSPACE
                 mkdir -p "$COMPOSE_WORKSPACE"
                 DEPLOY_ACTIVE_MARKER="$PROJECT_ROOT/.updater/deploy.active"
                 date +%s > "$DEPLOY_ACTIVE_MARKER"
@@ -820,8 +821,9 @@ export function dispatchReleaseRollbackWorker(
     const registryUsername = globalSettings.registryUsername.trim();
     const registryPassword = globalSettings.registryPassword?.trim() ?? "";
     const requireRegistryPull = Boolean(options.requireRegistryPull);
+    const rollbackComposeYaml = rewriteReleaseComposeSecretAliases(release.composeYaml, options.appSettings?.envSecrets, composeProjectName);
     const secretMaterializationScript = renderReleaseSnapshotSecretMaterializationScript(options.appSettings, deploymentStrategy, composeProjectName);
-    const composeDelimiter = uniqueHereDocDelimiter("DEPLOY_ROLLBACK_COMPOSE_EOF", release.composeYaml);
+    const composeDelimiter = uniqueHereDocDelimiter("DEPLOY_ROLLBACK_COMPOSE_EOF", rollbackComposeYaml);
 
     const workerScript = `
                 apk add --no-cache docker-cli docker-cli-compose > /dev/null 2>&1
@@ -836,13 +838,14 @@ export function dispatchReleaseRollbackWorker(
                 REQUIRE_REGISTRY_PULL=${shellQuote(requireRegistryPull ? "true" : "false")}
                 ROLLBACK_WORKSPACE="$PROJECT_ROOT/.updater/rollback"
                 COMPOSE_WORKSPACE="$PROJECT_ROOT/.updater/compose"
+                export COMPOSE_WORKSPACE
                 ROLLBACK_FILE="$ROLLBACK_WORKSPACE/${release.id}.yml"
                 PERSISTED_FILE="$COMPOSE_WORKSPACE/docker-compose.deploy.yml"
                 mkdir -p "$ROLLBACK_WORKSPACE" "$COMPOSE_WORKSPACE"
 ${secretMaterializationScript}
 
                 cat > "$ROLLBACK_FILE" << '${composeDelimiter}'
-${release.composeYaml}
+${rollbackComposeYaml}
 ${composeDelimiter}
 
                 if [ -n "$REGISTRY_USERNAME" ]; then
@@ -958,18 +961,43 @@ function renderReleaseSnapshotSecretMaterializationScript(appSettings: ProjectSe
         "                mkdir -p \"$COMPOSE_WORKSPACE/secrets\"",
         "                chmod 700 \"$COMPOSE_WORKSPACE/secrets\""
     ];
+    const canonicalNames = new Set(secrets.map((secret) => composeSecretMountTarget(secret.service, secret.key)));
     for (const secret of secrets) {
         const secretName = composeSecretMountTarget(secret.service, secret.key);
         const projectSecretName = dockerSecretBaseName(projectName, secret);
         const encodedValue = Buffer.from(secret.value ?? "", "utf8").toString("base64");
-        for (const name of new Set([secretName, projectSecretName])) {
-            lines.push(
-                `                printf '%s' ${shellQuote(encodedValue)} | base64 -d > \"$COMPOSE_WORKSPACE/secrets/${name}\"`,
-                `                chmod 600 \"$COMPOSE_WORKSPACE/secrets/${name}\"`
-            );
+        lines.push(
+            `                printf '%s' ${shellQuote(encodedValue)} | base64 -d > \"$COMPOSE_WORKSPACE/secrets/${secretName}\"`,
+            `                chmod 600 \"$COMPOSE_WORKSPACE/secrets/${secretName}\"`
+        );
+        const legacyAliasCleanup = renderLegacyProjectSecretAliasCleanup(projectSecretName, secretName, canonicalNames);
+        if (legacyAliasCleanup) {
+            lines.push(legacyAliasCleanup);
         }
     }
     return lines.join("\n");
+}
+
+function rewriteReleaseComposeSecretAliases(composeYaml: string, secrets: ProjectEnvironmentSecret[] | undefined, projectName: string) {
+    return (secrets ?? []).reduce((yaml, secret) => {
+        if (secret.mode !== "docker_secret") {
+            return yaml;
+        }
+
+        const canonicalName = composeSecretMountTarget(secret.service, secret.key);
+        const projectNameAlias = dockerSecretBaseName(projectName, secret);
+        return projectNameAlias === canonicalName
+            ? yaml
+            : yaml.split(`/.updater/compose/secrets/${projectNameAlias}`).join(`/.updater/compose/secrets/${canonicalName}`);
+    }, composeYaml);
+}
+
+function renderLegacyProjectSecretAliasCleanup(projectSecretName: string, secretName: string, canonicalNames: Set<string>) {
+    if (projectSecretName === secretName || canonicalNames.has(projectSecretName)) {
+        return "";
+    }
+
+    return `                rm -f \"$COMPOSE_WORKSPACE/secrets/${projectSecretName}\"`;
 }
 
 /**
@@ -1072,6 +1100,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
     const secretDir = "$COMPOSE_WORKSPACE/secrets";
     const dockerSecrets = validSecrets.filter((secret) => secret.mode === "docker_secret");
     const fileBackedDockerSecrets = useSwarmSecrets ? [] : dockerSecrets;
+    const canonicalSecretNames = new Set(dockerSecrets.map((secret) => composeSecretMountTarget(secret.service, secret.key)));
     const autoHelperCommands = [...new Set(validSecrets
         .filter((secret) => secret.mode === "docker_secret" && secret.exposure === "env" && !secret.helperCommand)
         .map((secret) => secret.service))]
@@ -1185,7 +1214,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
                 const projectSecretName = dockerSecretBaseName(projectName, secret);
                 if (projectSecretName !== secretName) {
                     lines.push(`  ${yamlKey(projectSecretName)}:`);
-                    lines.push(`    file: ${yamlScalar(`${secretDir}/${projectSecretName}`)}`);
+                    lines.push(`    file: ${yamlScalar(`${secretDir}/${secretName}`)}`);
                 }
             }
         }
@@ -1207,9 +1236,9 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
         lines.push(`                chmod 600 "$COMPOSE_WORKSPACE/secrets/${secretName}"`);
 
         const projectSecretName = dockerSecretBaseName(projectName, secret);
-        if (projectSecretName !== secretName) {
-            lines.push("                printf '%s' " + shellQuote(encodedValue) + " | base64 -d > \"$COMPOSE_WORKSPACE/secrets/" + projectSecretName + "\"");
-            lines.push(`                chmod 600 "$COMPOSE_WORKSPACE/secrets/${projectSecretName}"`);
+        const legacyAliasCleanup = renderLegacyProjectSecretAliasCleanup(projectSecretName, secretName, canonicalSecretNames);
+        if (legacyAliasCleanup) {
+            lines.push(legacyAliasCleanup);
         }
     }
 
