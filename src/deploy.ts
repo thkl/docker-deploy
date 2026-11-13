@@ -136,7 +136,7 @@ export async function dispatchBuildWorker(repoName: string, appSettings: Project
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);
     const composeSelectionScript = renderComposeSelectionScript(composeOverride);
-    const secretOverlayScript = renderSecretComposeOverlayScript(appSettings.envSecrets, deploymentStrategy, composeProjectName);
+    const secretOverlayScript = renderSecretComposeOverlayScript(appSettings.envSecrets, deploymentStrategy, composeProjectName, hostAppsPath);
     const secretConsumerRecreateScript = renderSecretConsumerRecreateScript(appSettings.forceRecreateSecretServices, deploymentStrategy, composeProjectName);
     const secretRefreshOnlyScript = renderSecretRefreshOnlyScript(secretOverlayScript, secretConsumerRecreateScript, deploymentStrategy, composeProjectName);
     const projectRootEnvFileScript = renderProjectRootEnvFileScript(appSettings.envFilePath);
@@ -1070,7 +1070,7 @@ EOF`;
     }
 }
 
-function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | undefined, deploymentStrategy: DeploymentStrategy, projectName: string) {
+function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | undefined, deploymentStrategy: DeploymentStrategy, projectName: string, projectPath: string) {
     const validSecrets = (secrets ?? [])
         .map((secret) => ({
             service: secret.service.trim(),
@@ -1098,6 +1098,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
 
     const useSwarmSecrets = deploymentStrategy === "swarm";
     const secretDir = "$COMPOSE_WORKSPACE/secrets";
+    const composeSecretDirectory = posixPath.join(projectPath, ".updater", "compose", "secrets").replace(/\$/g, "$$$$");
     const dockerSecrets = validSecrets.filter((secret) => secret.mode === "docker_secret");
     const fileBackedDockerSecrets = useSwarmSecrets ? [] : dockerSecrets;
     const canonicalSecretNames = new Set(dockerSecrets.map((secret) => composeSecretMountTarget(secret.service, secret.key)));
@@ -1204,7 +1205,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
             if (useSwarmSecrets) {
                 lines.push("    external: true");
             } else {
-                lines.push(`    file: ${yamlScalar(`${secretDir}/${secretName}`)}`);
+                lines.push(`    file: ${yamlScalar(posixPath.join(composeSecretDirectory, secretName))}`);
             }
 
             // Compose files sometimes refer to the same resource using the
@@ -1214,7 +1215,7 @@ function renderSecretComposeOverlayScript(secrets: ProjectEnvironmentSecret[] | 
                 const projectSecretName = dockerSecretBaseName(projectName, secret);
                 if (projectSecretName !== secretName) {
                     lines.push(`  ${yamlKey(projectSecretName)}:`);
-                    lines.push(`    file: ${yamlScalar(`${secretDir}/${secretName}`)}`);
+                    lines.push(`    file: ${yamlScalar(posixPath.join(composeSecretDirectory, secretName))}`);
                 }
             }
         }
