@@ -35,6 +35,7 @@ import { VaultSecretStore } from "./vaultSecretStore.js";
 import { normalizeProjectName, normalizeRepositoryUrl, normalizeTraefikSettings } from "./validation.js";
 import { resolveWebhookProject, webhookProjectCandidates, webhookRequestsSkipDeploy } from "./webhookResolver.js";
 import { WebhookStore } from "./webhookStore.js";
+import { ProjectMcpTokenStore } from "./projectMcpTokenStore.js";
 
 /**
  * Dependencies required by the HTTP route layer.
@@ -45,6 +46,7 @@ export interface RouteDependencies {
     configStore: ConfigStore;
     deploymentService: DeploymentService;
     deploymentStore: DeploymentStore;
+    projectMcpTokenStore: ProjectMcpTokenStore;
     releaseStore: ReleaseStore;
     webhookStore: WebhookStore;
     notificationStore: NotificationStore;
@@ -65,7 +67,7 @@ export interface RouteDependencies {
  * Registers all HTTP routes for the controller API and Angular frontend.
  */
 export function registerRoutes(app: Express, dependencies: RouteDependencies) {
-    const { adminAuth, database, configStore, deploymentService, deploymentStore, releaseStore, webhookStore, notificationStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, vaultSecretStore, runtimeStatusStreams, agentHealth, eventBus, notificationService } = dependencies;
+    const { adminAuth, database, configStore, deploymentService, deploymentStore, projectMcpTokenStore, releaseStore, webhookStore, notificationStore, runtimeOperationStore, globalSettingsStore, agentManager, controllerKeys, serverStore, vaultSecretStore, runtimeStatusStreams, agentHealth, eventBus, notificationService } = dependencies;
 
     registerScaleToZeroWakeRoute(app, { configStore, globalSettingsStore, scaleToZeroController: dependencies.scaleToZeroController });
 
@@ -98,7 +100,7 @@ export function registerRoutes(app: Express, dependencies: RouteDependencies) {
     registerSecretRoutes(app, { vaultSecretStore });
     registerServerRoutes(app, { serverStore, configStore, controllerKeys, agentManager, globalSettingsStore, agentHealth, eventBus });
     registerContainerRoutes(app, { serverStore, agentManager });
-    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, scaleToZeroController: dependencies.scaleToZeroController, eventBus });
+    registerProjectRoutes(app, { configStore, deploymentService, deploymentStore, projectMcpTokenStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, scaleToZeroController: dependencies.scaleToZeroController, eventBus });
     registerInfisicalRoutes(app, { configStore });
     registerWebhookRoute(app, { configStore, deploymentService, webhookStore });
     registerCiDeployRoute(app, { configStore, deploymentService });
@@ -690,6 +692,16 @@ function payloadProjectName(payload: ProjectPayload) {
     return payload.project?.name?.trim() || payload.name?.trim();
 }
 
+function resolveProjectRouteParam(req: Request, configStore: ConfigStore) {
+    try {
+        const rawProjectName = req.params.name;
+        const projectRef = normalizeProjectName(Array.isArray(rawProjectName) ? rawProjectName[0] : rawProjectName);
+        return configStore.resolveProject(projectRef);
+    } catch {
+        return undefined;
+    }
+}
+
 function payloadServerId(payload: ProjectPayload, fallback = "local") {
     return payloadServerIds(payload, [fallback])[0] || fallback;
 }
@@ -977,8 +989,8 @@ function registerInfisicalRoutes(app: Express, dependencies: Pick<RouteDependenc
     });
 }
 
-function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "releaseStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "vaultSecretStore" | "runtimeStatusStreams" | "scaleToZeroController" | "eventBus">) {
-    const { configStore, deploymentService, deploymentStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, scaleToZeroController, eventBus } = dependencies;
+function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencies, "configStore" | "deploymentService" | "deploymentStore" | "projectMcpTokenStore" | "releaseStore" | "webhookStore" | "runtimeOperationStore" | "globalSettingsStore" | "agentManager" | "vaultSecretStore" | "runtimeStatusStreams" | "scaleToZeroController" | "eventBus">) {
+    const { configStore, deploymentService, deploymentStore, projectMcpTokenStore, releaseStore, webhookStore, runtimeOperationStore, globalSettingsStore, agentManager, vaultSecretStore, runtimeStatusStreams, scaleToZeroController, eventBus } = dependencies;
 
     app.get("/api/projects", async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -993,6 +1005,37 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
         } catch (error) {
             next(error);
         }
+    });
+
+    app.get("/api/projects/:name/mcp-token", (req: Request, res: Response) => {
+        const project = resolveProjectRouteParam(req, configStore);
+        if (!project) {
+            res.status(404).json({ error: "Project does not exist." });
+            return;
+        }
+        res.json(projectMcpTokenStore.status(project.settings.id ?? project.name));
+    });
+
+    app.post("/api/projects/:name/mcp-token", (req: Request, res: Response) => {
+        const project = resolveProjectRouteParam(req, configStore);
+        if (!project) {
+            res.status(404).json({ error: "Project does not exist." });
+            return;
+        }
+        try {
+            res.status(201).json(projectMcpTokenStore.create(project.settings.id ?? project.name));
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : "Could not create project MCP token." });
+        }
+    });
+
+    app.delete("/api/projects/:name/mcp-token", (req: Request, res: Response) => {
+        const project = resolveProjectRouteParam(req, configStore);
+        if (!project) {
+            res.status(404).json({ error: "Project does not exist." });
+            return;
+        }
+        res.json({ revoked: projectMcpTokenStore.revoke(project.settings.id ?? project.name) });
     });
 
     app.get("/api/projects/:name", async (req: Request, res: Response) => {

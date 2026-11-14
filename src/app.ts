@@ -13,6 +13,8 @@ import { ContainerStatsStreamHub } from "./containerStatsStreams.js";
 import { DeploymentService } from "./deploymentService.js";
 import { DeploymentStreamHub } from "./deploymentStreams.js";
 import { DeploymentRecord, DeploymentStore } from "./deploymentStore.js";
+import { registerDeploymentMcpRoute } from "./deploymentMcp.js";
+import { ProjectMcpTokenStore } from "./projectMcpTokenStore.js";
 import { EventBus } from "./eventBus.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { ensureControllerKeys } from "./keyStore.js";
@@ -46,6 +48,7 @@ class App {
     private readonly adminAuth = new AdminAuth();
     private readonly configStore = new ConfigStore(this.database.connection);
     private readonly deploymentStore = new DeploymentStore(this.database.connection);
+    private readonly projectMcpTokenStore = new ProjectMcpTokenStore(this.database.connection);
     private readonly releaseStore = new ReleaseStore(this.database.connection);
     private readonly webhookStore = new WebhookStore(this.database.connection);
     private readonly notificationStore = new NotificationStore(this.database.connection);
@@ -149,12 +152,21 @@ class App {
         await this.deploymentService.reconcileRunningDeployments(config);
         this.configureBodyParsing();
         this.app.use(apiEnvelopeMiddleware);
+        registerDeploymentMcpRoute(this.app, {
+            adminAuth: this.adminAuth,
+            configStore: this.configStore,
+            deploymentStore: this.deploymentStore,
+            globalSettingsStore: this.globalSettingsStore,
+            agentManager: this.agentManager,
+            projectMcpTokenStore: this.projectMcpTokenStore
+        });
         registerRoutes(this.app, {
             adminAuth: this.adminAuth,
             database: this.database,
             configStore: this.configStore,
             deploymentService: this.deploymentService,
             deploymentStore: this.deploymentStore,
+            projectMcpTokenStore: this.projectMcpTokenStore,
             releaseStore: this.releaseStore,
             webhookStore: this.webhookStore,
             notificationStore: this.notificationStore,

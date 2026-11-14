@@ -54,6 +54,13 @@
         <strong>Docker Compose</strong>
         <small>Services, networks, and YAML</small>
       </button>
+      @if (!isNew()) {
+      <button type="button" [class.active]="settingsPageTab() === 'mcp'"
+        [attr.aria-current]="settingsPageTab() === 'mcp' ? 'page' : null" aria-controls="project-settings-mcp" (click)="setSettingsPageTab('mcp')">
+        <strong>MCP access</strong>
+        <small>Read-only AI access for this project</small>
+      </button>
+      }
     </nav>
 
     <div class="settings-page-panels">
@@ -63,8 +70,8 @@
     (wheel)="scrollSettingsPanelWithWheel($event)">
     <div class="panel-head">
       <div>
-        <h3>{{ settingsPageTab() === 'deployment' ? 'Deployment' : settingsPageTab() === 'notifications' ? 'Notifications' : 'Project' }}</h3>
-        <span>{{ settingsPageTab() === 'deployment' ? 'Choose how this project is deployed and scaled.' : settingsPageTab() === 'notifications' ? 'Choose which project events are sent to your notification channels.' : 'Project identity, repository access, and target servers.' }}</span>
+        <h3>{{ settingsPageTab() === 'deployment' ? 'Deployment' : settingsPageTab() === 'notifications' ? 'Notifications' : settingsPageTab() === 'mcp' ? 'MCP access' : 'Project' }}</h3>
+        <span>{{ settingsPageTab() === 'deployment' ? 'Choose how this project is deployed and scaled.' : settingsPageTab() === 'notifications' ? 'Choose which project events are sent to your notification channels.' : settingsPageTab() === 'mcp' ? 'Create a read-only credential for an AI agent to inspect this project.' : 'Project identity, repository access, and target servers.' }}</span>
       </div>
     </div>
 
@@ -276,6 +283,81 @@
         </fieldset>
       }
     </section>
+      </section>
+      <section id="project-settings-mcp" class="project-settings-panel mcp-access-panel" [class.active]="settingsPageTab() === 'mcp'"
+        [attr.aria-hidden]="settingsPageTab() === 'mcp' ? null : 'true'"
+        [attr.inert]="settingsPageTab() === 'mcp' ? null : ''">
+        <div class="mcp-access-intro">
+          <h4>Project-scoped MCP token</h4>
+          <p>This token lets an AI agent read runtime status, container logs, and deployment logs for <strong>{{ currentName() }}</strong> only. It cannot inspect other projects or change deployments.</p>
+          <p class="muted-copy">The token is shown only when created or rotated. Docker Deploy stores its hash, so it cannot be retrieved later.</p>
+        </div>
+
+        <div class="mcp-endpoint-card">
+          <div>
+            <strong>MCP endpoint</strong>
+            <code>{{ mcpEndpoint() }}</code>
+          </div>
+          <button type="button" class="secondary" (click)="copyMcpEndpoint()">Copy endpoint</button>
+        </div>
+
+        @if (mcpTokenLoading()) {
+        <p class="muted-copy" role="status">Checking token status…</p>
+        } @else if (mcpTokenStatus(); as tokenStatus) {
+        <div class="mcp-token-status" [class.enabled]="tokenStatus.enabled">
+          <span class="mcp-status-indicator" aria-hidden="true"></span>
+          <div>
+            <strong>{{ tokenStatus.enabled ? 'Token active' : 'No token created' }}</strong>
+            @if (tokenStatus.createdAt) {
+            <small>Created {{ tokenStatus.createdAt }}</small>
+            }
+          </div>
+        </div>
+
+        @if (mcpTokenValue()) {
+        <label class="mcp-token-field">
+          <span>New project token — copy it now</span>
+          <div class="path-field">
+            <input type="text" readonly [value]="mcpTokenValue()" autocomplete="off" spellcheck="false" />
+            <button type="button" class="secondary" (click)="copyMcpToken()">Copy token</button>
+          </div>
+          <small>Use it as <code>Authorization: Bearer &lt;token&gt;</code>. It will disappear when you leave this page.</small>
+        </label>
+        }
+
+        @if (mcpTokenActionConfirmation()) {
+        <div class="mcp-token-confirm" role="alert">
+          <div>
+            <strong>{{ mcpTokenActionConfirmation() === 'rotate' ? 'Rotate this token?' : 'Revoke this token?' }}</strong>
+            <span>{{ mcpTokenActionConfirmation() === 'rotate' ? 'The current token will stop working as soon as the new one is created.' : 'Any AI agent using this token will lose access immediately.' }}</span>
+          </div>
+          <button type="button" class="secondary" (click)="cancelMcpTokenAction()" [disabled]="mcpTokenBusy()">Cancel</button>
+          <button type="button" class="danger" (click)="confirmMcpTokenAction()" [disabled]="mcpTokenBusy()">
+            {{ mcpTokenBusy() ? 'Working…' : mcpTokenActionConfirmation() === 'rotate' ? 'Rotate token' : 'Revoke token' }}
+          </button>
+        </div>
+        } @else {
+        <div class="mcp-token-actions">
+          @if (tokenStatus.enabled) {
+          <button type="button" class="secondary" (click)="startMcpTokenAction('rotate')" [disabled]="mcpTokenBusy()">
+            {{ mcpTokenBusy() ? 'Working…' : 'Rotate token' }}
+          </button>
+          <button type="button" class="danger" (click)="startMcpTokenAction('revoke')" [disabled]="mcpTokenBusy()">Revoke token</button>
+          } @else {
+          <button type="button" (click)="startMcpTokenAction('rotate')" [disabled]="mcpTokenBusy()">
+            {{ mcpTokenBusy() ? 'Creating…' : 'Create project token' }}
+          </button>
+          }
+        </div>
+        }
+        }
+
+        @if (mcpTokenMessage()) {
+        <p class="mcp-inline-message" role="status">{{ mcpTokenMessage() }}</p>
+        }
+        @if (mcpTokenError()) {
+        <p class="notice error" role="alert">{{ mcpTokenError() }}</p>
+        }
       </section>
     </div>
   </section>

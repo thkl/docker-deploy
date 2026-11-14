@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, PathBrowseResult, ProjectEnvironmentSecret, ProjectEnvironmentSecretExposure, ProjectEnvironmentSecretMode, ProjectEnvironmentSecretSource, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics } from '../../models/project';
+import { ComposeInspection, ComposeServiceInspection, ComposeValidation, DeploymentStrategy, GlobalSettings, PathBrowseResult, ProjectEnvironmentSecret, ProjectEnvironmentSecretExposure, ProjectEnvironmentSecretMode, ProjectEnvironmentSecretSource, ProjectMcpTokenStatus, ProjectPayload, ProjectSummary, ServerRecord, TraefikDiagnostics } from '../../models/project';
 import { ProjectApi } from '../../services/project-api';
 import { ProjectStore } from '../../state/project-store';
 import { ProjectSettingsPageStore } from './project-settings-page.store';
@@ -52,7 +52,8 @@ interface ComposeBuilderService {
 
 type ComposeHealthcheckMode = '' | 'http' | 'command' | 'disabled';
 type ComposeBuilderServiceTab = 'general' | 'network' | 'environment' | 'volumes' | 'advanced';
-type ProjectSettingsPageTab = 'details' | 'deployment' | 'notifications' | 'compose';
+type ProjectSettingsPageTab = 'details' | 'deployment' | 'notifications' | 'compose' | 'mcp';
+type ProjectMcpTokenAction = 'rotate' | 'revoke' | '';
 
 interface ComposeBuilderNetwork {
   id: number;
@@ -145,6 +146,13 @@ export class ProjectSettingsPage implements OnInit {
   protected readonly saving = signal<'save' | 'deploy' | ''>('');
   protected readonly importingCompose = signal(false);
   protected readonly exportingProject = signal(false);
+  protected readonly mcpTokenStatus = signal<ProjectMcpTokenStatus | null>(null);
+  protected readonly mcpTokenLoading = signal(false);
+  protected readonly mcpTokenValue = signal('');
+  protected readonly mcpTokenBusy = signal(false);
+  protected readonly mcpTokenActionConfirmation = signal<ProjectMcpTokenAction>('');
+  protected readonly mcpTokenMessage = signal('');
+  protected readonly mcpTokenError = signal('');
   protected readonly importingProject = signal(false);
   protected readonly inspectingCompose = signal(false);
   protected readonly validatingCompose = signal(false);
@@ -448,6 +456,13 @@ export class ProjectSettingsPage implements OnInit {
       this.composeInspection.set(null);
       this.composeValidation.set(null);
       this.traefikDiagnostics.set(null);
+      this.mcpTokenStatus.set(null);
+      this.mcpTokenLoading.set(false);
+      this.mcpTokenValue.set('');
+      this.mcpTokenActionConfirmation.set('');
+      this.mcpTokenMessage.set('');
+      this.mcpTokenError.set('');
+      this.settingsPageTab.set('details');
 
       if (!projectRef) {
         this.isNew.set(true);
@@ -466,6 +481,7 @@ export class ProjectSettingsPage implements OnInit {
       this.patchedProjectName = '';
       this.selectedServerId.set(this.currentProject()?.serverId ?? this.form.controls.serverId.value ?? 'local');
       this.loadVaultSecrets();
+      this.loadMcpTokenStatus();
     });
   }
 
@@ -760,7 +776,125 @@ export class ProjectSettingsPage implements OnInit {
   }
 
   protected setSettingsPageTab(tab: ProjectSettingsPageTab) {
+    if (tab === 'mcp' && this.isNew()) return;
     this.settingsPageTab.set(tab);
+  }
+
+  protected mcpEndpoint() {
+    return `${window.location.origin}/mcp`;
+  }
+
+  protected startMcpTokenAction(action: ProjectMcpTokenAction) {
+    this.mcpTokenError.set('');
+    this.mcpTokenMessage.set('');
+    if (action === 'rotate' && this.mcpTokenStatus()?.enabled) {
+      this.mcpTokenActionConfirmation.set('rotate');
+      return;
+    }
+    if (action === 'revoke' && this.mcpTokenStatus()?.enabled) {
+      this.mcpTokenActionConfirmation.set('revoke');
+      return;
+    }
+    if (action === 'rotate') this.createMcpToken();
+  }
+
+  protected cancelMcpTokenAction() {
+    this.mcpTokenActionConfirmation.set('');
+  }
+
+  protected confirmMcpTokenAction() {
+    const action = this.mcpTokenActionConfirmation();
+    this.mcpTokenActionConfirmation.set('');
+    if (action === 'rotate') {
+      this.createMcpToken();
+    } else if (action === 'revoke') {
+      this.revokeMcpToken();
+    }
+  }
+
+  protected async copyMcpToken() {
+    const token = this.mcpTokenValue();
+    if (!token) return;
+    await this.copyMcpText(token, 'Token copied.');
+  }
+
+  protected async copyMcpEndpoint() {
+    await this.copyMcpText(this.mcpEndpoint(), 'Endpoint copied.');
+  }
+
+  private loadMcpTokenStatus() {
+    const projectRef = this.currentProjectRef;
+    if (!projectRef) return;
+    this.mcpTokenLoading.set(true);
+    this.mcpTokenError.set('');
+    this.api.getProjectMcpToken(projectRef).subscribe({
+      next: (status) => {
+        if (this.currentProjectRef === projectRef) {
+          this.mcpTokenStatus.set(status);
+          this.mcpTokenLoading.set(false);
+        }
+      },
+      error: (error) => {
+        if (this.currentProjectRef === projectRef) {
+          this.mcpTokenError.set(this.readApiError(error));
+          this.mcpTokenLoading.set(false);
+        }
+      },
+    });
+  }
+
+  private createMcpToken() {
+    if (!this.currentProjectRef || this.mcpTokenBusy()) return;
+    const projectRef = this.currentProjectRef;
+    this.mcpTokenBusy.set(true);
+    this.mcpTokenError.set('');
+    this.mcpTokenMessage.set('');
+    this.api.createProjectMcpToken(projectRef).subscribe({
+      next: (result) => {
+        if (this.currentProjectRef === projectRef) {
+          this.mcpTokenStatus.set({ enabled: true, createdAt: result.createdAt });
+          this.mcpTokenValue.set(result.token);
+          this.mcpTokenMessage.set('Token created. Copy it now; it cannot be shown again after you leave this page.');
+        }
+        this.mcpTokenBusy.set(false);
+      },
+      error: (error) => {
+        this.mcpTokenError.set(this.readApiError(error));
+        this.mcpTokenBusy.set(false);
+      },
+    });
+  }
+
+  private revokeMcpToken() {
+    if (!this.currentProjectRef || this.mcpTokenBusy()) return;
+    const projectRef = this.currentProjectRef;
+    this.mcpTokenBusy.set(true);
+    this.mcpTokenError.set('');
+    this.mcpTokenMessage.set('');
+    this.api.revokeProjectMcpToken(projectRef).subscribe({
+      next: () => {
+        if (this.currentProjectRef === projectRef) {
+          this.mcpTokenStatus.set({ enabled: false });
+          this.mcpTokenValue.set('');
+          this.mcpTokenMessage.set('Project MCP token revoked.');
+        }
+        this.mcpTokenBusy.set(false);
+      },
+      error: (error) => {
+        this.mcpTokenError.set(this.readApiError(error));
+        this.mcpTokenBusy.set(false);
+      },
+    });
+  }
+
+  private async copyMcpText(value: string, successMessage: string) {
+    this.mcpTokenError.set('');
+    try {
+      await navigator.clipboard.writeText(value);
+      this.mcpTokenMessage.set(successMessage);
+    } catch {
+      this.mcpTokenError.set('Clipboard access was unavailable. Select the value and copy it manually.');
+    }
   }
 
   protected scrollSettingsPanelWithWheel(event: WheelEvent) {

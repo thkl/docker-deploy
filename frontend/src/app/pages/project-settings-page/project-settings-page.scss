@@ -191,6 +191,120 @@ p {
   gap: 0.75rem;
 }
 
+.mcp-access-panel {
+  align-content: start;
+  gap: 0.85rem;
+}
+
+.mcp-access-intro h4 {
+  font-size: 0.86rem;
+  margin: 0 0 0.3rem;
+}
+
+.mcp-access-intro p {
+  line-height: 1.5;
+  margin: 0.25rem 0;
+  max-width: 62rem;
+}
+
+.mcp-endpoint-card,
+.mcp-token-status,
+.mcp-token-confirm {
+  align-items: center;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: 0.7rem;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.7rem;
+}
+
+.mcp-endpoint-card > div,
+.mcp-token-status > div,
+.mcp-token-confirm > div {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.mcp-endpoint-card code,
+.mcp-token-field input {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.mcp-token-status {
+  justify-content: flex-start;
+}
+
+.mcp-token-status small,
+.mcp-token-field small,
+.mcp-token-confirm span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.mcp-status-indicator {
+  background: var(--muted);
+  border-radius: 50%;
+  flex: 0 0 0.55rem;
+  height: 0.55rem;
+}
+
+.mcp-token-status.enabled .mcp-status-indicator {
+  background: var(--success, #2c9b68);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success, #2c9b68), transparent 86%);
+}
+
+.mcp-token-field {
+  max-width: 58rem;
+}
+
+.mcp-token-field .path-field {
+  align-items: stretch;
+}
+
+.mcp-token-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mcp-token-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mcp-token-confirm {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.mcp-token-confirm > div {
+  flex: 1 1 18rem;
+}
+
+.mcp-token-confirm .danger,
+.mcp-token-actions .danger {
+  background: color-mix(in srgb, var(--danger), transparent 88%);
+  border-color: color-mix(in srgb, var(--danger), transparent 68%);
+  color: var(--danger);
+}
+
+.mcp-token-confirm .danger:hover,
+.mcp-token-actions .danger:hover {
+  background: color-mix(in srgb, var(--danger), transparent 80%);
+}
+
+.mcp-inline-message {
+  color: var(--accent-strong);
+  font-size: 0.74rem;
+}
+
 .panel-head {
   border-bottom: 1px solid var(--line);
   display: flex;

@@ -6,7 +6,7 @@ import { GlobalSettings, GlobalSettingsPayload, NotificationSettings, ProjectCon
 import type { DeploymentRecord } from "./deploymentStore.js";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secretStore.js";
 
-const schemaVersion = 9;
+const schemaVersion = 10;
 const legacyDefaultGlobalSettings: GlobalSettings = {
     dataRoot: "/root/docker-apps",
     updaterInternalUrl: "",
@@ -38,7 +38,7 @@ const legacyDefaultGlobalSettings: GlobalSettings = {
 };
 
 const backupVersion = 1;
-const backupTables = ["settings", "servers", "agents", "projects", "project_traefik_settings", "vault_secrets"] as const;
+const backupTables = ["settings", "servers", "agents", "projects", "project_mcp_tokens", "project_traefik_settings", "vault_secrets"] as const;
 
 export interface ControllerStateBackup {
     version: 1;
@@ -146,6 +146,12 @@ export class AppDatabase {
                 notification_settings_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS project_mcp_tokens (
+                project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS vault_secrets (
@@ -654,7 +660,7 @@ export class AppDatabase {
         return {
             version: backupVersion,
             createdAt: new Date().toISOString(),
-            warning: "This backup contains controller key material and encrypted secrets. Store it like a password.",
+            warning: "This backup contains controller key material, encrypted secrets, and hashed project MCP tokens. Store it like a password.",
             databasePath: this.databasePath,
             keys: this.readBackupKeys(),
             tables: Object.fromEntries(
@@ -683,6 +689,7 @@ export class AppDatabase {
             this.insertRows("servers", backup.tables.servers ?? []);
             this.insertRows("agents", backup.tables.agents ?? []);
             this.insertRows("projects", backup.tables.projects ?? []);
+            this.insertRows("project_mcp_tokens", backup.tables.project_mcp_tokens ?? []);
             this.insertRows("project_traefik_settings", backup.tables.project_traefik_settings ?? []);
             this.insertRows("vault_secrets", backup.tables.vault_secrets ?? []);
         });

@@ -140,6 +140,17 @@ export interface ProjectSummary {
   };
 }
 
+export interface ProjectMcpTokenStatus {
+  enabled: boolean;
+  createdAt?: string;
+}
+
+export interface CreatedProjectMcpToken extends ProjectMcpTokenStatus {
+  enabled: true;
+  token: string;
+  createdAt: string;
+}
+
 export type ProjectEnvironmentSecretMode = 'docker_secret' | 'env';
 export type ProjectEnvironmentSecretSource = 'inline' | 'vault' | 'infisical';
 export type ProjectEnvironmentSecretExposure = 'file' | 'env';

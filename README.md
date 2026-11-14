@@ -59,6 +59,31 @@ DEPLOY_ADMIN_TOKEN=change-me
 
 When set, browser API requests must authenticate with that token.
 
+## Deployment MCP Server
+
+The controller exposes a read-only MCP endpoint at `/mcp` using Streamable
+HTTP. MCP clients should connect to `https://<controller-host>/mcp` and send a
+bearer token. In a project's settings, open **MCP access** to create a token
+that can access only that project. The token is shown once; Docker Deploy
+stores only its hash. You can rotate or revoke it from the same page.
+
+When `DEPLOY_ADMIN_TOKEN` is configured, it remains an all-project MCP
+credential. Give AI agents the project token when they should be limited to one
+project.
+
+The available tools are:
+
+- `list_projects` — project names, IDs, deployment targets, and strategy.
+- `get_project_containers` — runtime state and containers for a project, with
+  an optional target server ID.
+- `get_project_container_logs` — recent logs for a project service or one of
+  its containers. Log reads are scoped to the project's configured targets.
+- `get_last_deployment_log` — the latest deployment summary and the end of its
+  log.
+
+All tools are read-only. Container logs are capped at 100,000 characters and
+deployment logs are limited to the requested tail (500 lines by default).
+
 ## API Shape
 
 Controller `/api/*` JSON responses use a stable envelope:
