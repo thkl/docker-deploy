@@ -46,4 +46,13 @@ export class AgentManager {
 
         return managers.find((server) => preferred.has(server.id))?.id ?? managers[0]?.id;
     }
+
+    /** Returns configured, healthy Docker Swarm node agents for cluster-wide inspection. */
+    listOnlineSwarmServerIds() {
+        return this.serverStore
+            .list()
+            .filter((server) => server.status === "online"
+                && ["swarm-manager", "swarm-worker"].includes(server.capabilities?.docker.mode ?? ""))
+            .map((server) => server.id);
+    }
 }

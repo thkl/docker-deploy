@@ -3229,6 +3229,8 @@ export async function inspectContainers(): Promise<ContainerInventory> {
             ...(formatPublishedPorts(container.NetworkSettings?.Ports) ? { ports: formatPublishedPorts(container.NetworkSettings?.Ports) } : {}),
             ...(composeProject ? { composeProject } : {}),
             ...(composeService ? { composeService } : {}),
+            ...(labels["com.docker.swarm.service.id"] ? { swarmServiceId: labels["com.docker.swarm.service.id"] } : {}),
+            ...(labels["com.docker.swarm.task.id"] ? { swarmTaskId: labels["com.docker.swarm.task.id"] } : {}),
             ...(cpuPercent !== undefined ? { cpuPercent } : {}),
             ...(stat?.MemUsage ? { memoryUsage: stat.MemUsage } : {}),
             ...(memoryPercent !== undefined ? { memoryPercent } : {}),

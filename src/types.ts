@@ -644,6 +644,8 @@ export interface ContainerRecord {
     ports?: string;
     composeProject?: string;
     composeService?: string;
+    swarmServiceId?: string;
+    swarmTaskId?: string;
     cpuPercent?: number;
     memoryUsage?: string;
     memoryPercent?: number;
