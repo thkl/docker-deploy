@@ -1105,6 +1105,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
+            scaleToZeroController.syncProjectSettings(repoName, config[repoName], globalSettings);
             eventBus.publish({ type: "projects.updated", changedAt: new Date().toISOString() });
 
             const created = configStore.resolveProject(repoName);
@@ -1179,6 +1180,10 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
                 ...(traefik ? { traefik } : {})
             };
             configStore.writeConfig(config);
+            if (nextName !== currentName) {
+                scaleToZeroController.removeProject(currentName);
+            }
+            scaleToZeroController.syncProjectSettings(nextName, config[nextName], globalSettings);
             eventBus.publish({ type: "projects.updated", changedAt: new Date().toISOString() });
 
             res.json({ id: existing.id, name: nextName });
@@ -1276,6 +1281,7 @@ function registerProjectRoutes(app: Express, dependencies: Pick<RouteDependencie
 
             delete config[projectName];
             configStore.writeConfig(config);
+            scaleToZeroController.removeProject(projectName);
             actions.push("project config deleted");
             eventBus.publish({ type: "projects.updated", changedAt: new Date().toISOString() });
 
