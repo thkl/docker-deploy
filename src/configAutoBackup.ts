@@ -2,6 +2,7 @@ import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { AppDatabase, ControllerStateBackup } from "./database.js";
 import type { GlobalSettingsStore } from "./globalSettingsStore.js";
+import { logger } from "./logger.js";
 
 const minuteMs = 60_000;
 
@@ -37,7 +38,7 @@ export class ConfigAutoBackupService {
         try {
             settings = this.globalSettingsStore.readSettings();
         } catch (error) {
-            console.error(`Auto config backup skipped: ${error instanceof Error ? error.message : "could not read settings"}`);
+            logger.error(`Auto config backup skipped: ${error instanceof Error ? error.message : "could not read settings"}`);
             return;
         }
 
@@ -54,9 +55,9 @@ export class ConfigAutoBackupService {
         this.lastRunKey = runKey;
         try {
             const result = writeControllerBackup(this.database.exportBackup(), settings.autoBackupPath);
-            console.log(`Auto config backup written to ${result.path}`);
+            logger.info("Auto config backup written.", { path: result.path });
         } catch (error) {
-            console.error(`Auto config backup failed: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`Auto config backup failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 }

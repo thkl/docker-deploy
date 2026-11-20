@@ -1,5 +1,6 @@
 import { AgentManager } from "./agentManager.js";
 import { GlobalSettings, ProjectSettings, RuntimeStatus, ScaleToZeroRuntimeStatus } from "./types.js";
+import { logger } from "./logger.js";
 
 /**
  * Coordinates request-triggered starts and idle shutdowns. The controller is
@@ -239,7 +240,7 @@ export class ScaleToZeroController {
                         if (!this.removedProjects.has(projectName)) {
                             const resumeAction = settings.deploymentStrategy === "swarm" ? "start" : "unpause";
                             await client.runtimeAction(projectName, settings, globalSettings, service, resumeAction).catch((error) => {
-                                console.warn(`[scale-to-zero] Could not resume ${projectName}.${service} after its settings changed:`, error);
+                                logger.warn(`[scale-to-zero] Could not resume ${projectName}.${service} after its settings changed: ${error instanceof Error ? error.message : String(error)}`);
                             });
                         }
                         return;
@@ -256,7 +257,7 @@ export class ScaleToZeroController {
         try {
             await operation;
         } catch (error) {
-            console.error(`[scale-to-zero] Could not stop ${projectName}:`, error);
+            logger.error(`[scale-to-zero] Could not stop ${projectName}: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
             if (this.locks.get(projectName) === tracked) {
                 this.locks.delete(projectName);

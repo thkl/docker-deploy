@@ -5,6 +5,7 @@ import { DeploymentRecord } from "./deploymentStore.js";
 import { NotificationDeliveryRecord } from "./types.js";
 import { RuntimeOperationRecord } from "./runtimeOperationStore.js";
 import { RuntimeStatus, ServerRecord } from "./types.js";
+import { logger } from "./logger.js";
 
 export type ControllerEvent =
     | { type: "connected"; connectedAt: string }
@@ -58,7 +59,7 @@ export class EventBus {
         }
         for (const subscriber of this.subscribers) {
             Promise.resolve(subscriber(event)).catch((error) => {
-                console.warn(`[event-bus] subscriber failed: ${error instanceof Error ? error.message : String(error)}`);
+                logger.warn(`[event-bus] subscriber failed: ${error instanceof Error ? error.message : String(error)}`);
             });
         }
     }

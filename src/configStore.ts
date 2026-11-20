@@ -1,6 +1,7 @@
 import { AppDatabase, parseScaleToZeroJson, runDatabaseTransaction, upsertProject } from "./database.js";
 import { decryptSecret } from "./secretStore.js";
 import { ProjectConfig, ProjectSettings } from "./types.js";
+import { logger } from "./logger.js";
 
 /**
  * SQLite-backed project configuration store.
@@ -90,7 +91,7 @@ export class ConfigStore {
         try {
             return this.resolveProject(repoName)?.settings;
         } catch (error) {
-            console.log("Error reading config");
+            logger.error("Could not read project configuration.", { error: error instanceof Error ? error.message : String(error) });
             return undefined;
         }
     }

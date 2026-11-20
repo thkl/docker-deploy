@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { GlobalSettings, GlobalSettingsPayload, NotificationSettings, ProjectConfig, ProjectSettings, ServerActiveJob, ServerRecord } from "./types.js";
 import type { DeploymentRecord } from "./deploymentStore.js";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secretStore.js";
+import { logger } from "./logger.js";
 
 const schemaVersion = 10;
 const legacyDefaultGlobalSettings: GlobalSettings = {
@@ -65,7 +66,7 @@ export class AppDatabase {
 
     constructor(private readonly databasePath = process.env.DEPLOY_DATABASE_PATH || process.env.UPDATER_DATABASE_PATH || join("./data", "updater.sqlite")) {
         mkdirSync(dirname(this.databasePath), { recursive: true });
-        console.log(`Using Deploy database at ${this.databasePath}`);
+        logger.info("Using Deploy database.", { databasePath: this.databasePath });
         this.connection = new DatabaseSync(this.databasePath);
         this.connection.exec("PRAGMA foreign_keys = ON;");
         this.connection.exec("PRAGMA journal_mode = WAL;");

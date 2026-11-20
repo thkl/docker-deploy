@@ -15,6 +15,7 @@ import { DeploymentService } from "./deploymentService.js";
 import { EventBus } from "./eventBus.js";
 import { defaultProjectPath, GlobalSettingsStore, normalizeGlobalSettings } from "./globalSettingsStore.js";
 import { ControllerKeyState } from "./keyStore.js";
+import { logger } from "./logger.js";
 import { AppDatabase, ControllerStateBackup } from "./database.js";
 import { browseContainerPath } from "./pathBrowser.js";
 import { runProjectPreflight } from "./projectPreflight.js";
@@ -1809,7 +1810,11 @@ function registerScaleToZeroWakeRoute(app: Express, dependencies: Pick<RouteDepe
             const forwardedHost = readHeader(req.headers["x-forwarded-host"]).split(",")[0].trim().split(":")[0].toLowerCase();
             const host = forwardedHost || req.hostname.toLowerCase();
             const projectRef = typeof req.query.project === "string" ? req.query.project.trim() : "";
-            console.log(`[scale-to-zero] Wake request received: method=${req.method} host=${forwardedHost || "(not forwarded)"} project=${projectRef || "(not provided)"}`);
+            logger.info("[scale-to-zero] Wake request received.", {
+                method: req.method,
+                host: forwardedHost || "(not forwarded)",
+                project: projectRef || "(not provided)"
+            });
             const project = projectRef
                 ? (() => {
                     const resolved = configStore.resolveProject(projectRef);
@@ -1823,7 +1828,7 @@ function registerScaleToZeroWakeRoute(app: Express, dependencies: Pick<RouteDepe
                 })()
                 : Object.entries(configStore.readConfig()).find(([, settings]) => settings.scaleToZero?.enabled && settings.traefik?.hostname?.toLowerCase() === host);
             if (!project) {
-                console.warn(`[scale-to-zero] Wake request could not resolve a project: host=${host} project=${projectRef || "(not provided)"}`);
+                logger.warn("[scale-to-zero] Wake request could not resolve a project.", { host, project: projectRef || "(not provided)" });
                 res.status(404).send("No scale-to-zero project matches this host.");
                 return;
             }
@@ -1832,16 +1837,19 @@ function registerScaleToZeroWakeRoute(app: Express, dependencies: Pick<RouteDepe
             const expectedToken = settings.scaleToZero?.wakeToken ?? "";
             const suppliedToken = typeof req.query.token === "string" ? req.query.token : readHeader(req.headers["x-updater-wake-token"]);
             if (!expectedToken || suppliedToken !== expectedToken) {
-                console.warn(`[scale-to-zero] Wake request rejected: project=${projectName} reason=invalid-token`);
+                logger.warn("[scale-to-zero] Wake request rejected.", { project: projectName, reason: "invalid-token" });
                 res.status(401).send("Invalid wake token.");
                 return;
             }
 
             await scaleToZeroController.wake(projectName, settings, globalSettingsStore.readSettings());
-            console.log(`[scale-to-zero] Wake request accepted: project=${projectName}`);
+            logger.info("[scale-to-zero] Wake request accepted.", { project: projectName });
             res.status(204).end();
         } catch (error) {
-            console.error("[scale-to-zero] Wake request failed:", error);
+            logger.error("[scale-to-zero] Wake request failed.", {
+                error: error instanceof Error ? error.message : String(error),
+                ...(error instanceof Error && error.stack ? { stack: error.stack } : {})
+            });
             res.status(504).send(error instanceof Error ? error.message : "Application did not become ready.");
         }
     });
@@ -1882,7 +1890,7 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
                 `signature=${diagnostics.signaturePrefix ?? "unlabeled"}/${diagnostics.signatureEncoding ?? "unknown"}/${diagnostics.signatureLength} chars`,
                 `checkedFormats=${diagnostics.checkedFormats.join(",") || "none"}`
             ].join("; ");
-            console.warn("[infisical-webhook] Signature verification failed", {
+            logger.warn("[infisical-webhook] Signature verification failed.", {
                 projectRef,
                 configuredHeaderName: signatureHeaderName,
                 receivedSignatureHeaderNames,
@@ -1899,7 +1907,7 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             res.status(401).send("Invalid Infisical webhook signature.");
             return;
         }
-        console.info("[infisical-webhook] Signature verified", {
+        logger.info("[infisical-webhook] Signature verified.", {
             projectRef,
             configuredHeaderName: signatureHeaderName,
             timestampUnit: signatureCheck.diagnostics.timestampUnit,
@@ -2063,7 +2071,7 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
         const signature = verifySignatureDetailed(appSettings.token, req);
         if (!signature.valid) {
             if (signature.logMessage) {
-                console.warn(signature.logMessage);
+                logger.warn(signature.logMessage);
             }
 
             webhookStore.record({
@@ -2136,7 +2144,11 @@ function registerWebhookRoute(app: Express, dependencies: Pick<RouteDependencies
             candidates,
             deploymentId: deployment.targets?.[0]?.id ?? deployment.id
         });
-        console.log(`Webhook deployment dispatched for ${projectName} (${deployment.id}: ${(deployment.targets ?? []).map((target) => target.id).join(", ")}).`);
+        logger.info("Webhook deployment dispatched.", {
+            projectName,
+            deploymentId: deployment.id,
+            targets: (deployment.targets ?? []).map((target) => target.id)
+        });
         res.status(200).send("Build worker dispatched");
     }
 }

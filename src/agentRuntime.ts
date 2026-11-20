@@ -13,6 +13,7 @@ import { collectSystemMetrics } from "./systemMetrics.js";
 import { appVersion } from "./version.js";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
+import { logger } from "./logger.js";
 
 const deployRecoveryCleanupDelayMs = 10 * 60 * 1000;
 
@@ -59,7 +60,7 @@ export class AgentRuntime {
         if (isPairingResetRequested()) {
             this.state = resetAgentPairing(this.state);
             writeAgentState(this.state);
-            console.log("Agent pairing reset requested. New pairing data will be written to /app/data/agent-pairing.json.");
+            logger.info("Agent pairing reset requested. New pairing data will be written to /app/data/agent-pairing.json.");
         }
         writeAgentPairingFile(this.state);
         this.loadPersistedJobs();
@@ -68,12 +69,12 @@ export class AgentRuntime {
         const server = createServer(this.app);
         this.registerLogStreams(server);
         server.listen(this.port, this.host, () => {
-            console.log(`Deploy agent listening on ${this.host}:${this.port}.`);
-            console.log(`Agent server ID: ${this.state.serverId}`);
+            logger.info(`Deploy agent listening on ${this.host}:${this.port}.`);
+            logger.info("Agent server started.", { serverId: this.state.serverId });
             if (this.state.controllerPublicEncryptionKey && this.state.controllerPublicSigningKey) {
-                console.log("Agent is already paired. Pairing file removed.");
+                logger.info("Agent is already paired. Pairing file removed.");
             } else {
-                console.log("Agent pairing data written to /app/data/agent-pairing.json.");
+                logger.info("Agent pairing data written to /app/data/agent-pairing.json.");
             }
             void this.recoverActiveDeployJobs();
         });
@@ -552,7 +553,7 @@ export class AgentRuntime {
                 });
             }
         } catch (error) {
-            console.error(`Could not load persisted agent jobs: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`Could not load persisted agent jobs: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
@@ -579,7 +580,7 @@ export class AgentRuntime {
             mkdirSync(dirname(this.jobsPath), { recursive: true });
             writeFileSync(this.jobsPath, `${JSON.stringify(jobs, null, 2)}\n`, { mode: 0o600 });
         } catch (error) {
-            console.error(`Could not persist agent jobs: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`Could not persist agent jobs: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 

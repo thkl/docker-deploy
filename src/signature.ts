@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Request, Response } from "express";
 import { AuthenticatedRequest } from "./types.js";
+import { logger } from "./logger.js";
 
 /**
  * Verifies the configured webhook secret against the incoming request.
@@ -15,7 +16,7 @@ export function verifySignature(repoToken: string, req: Request, res: Response) 
     }
 
     if (result.logMessage) {
-        console.warn(result.logMessage);
+        logger.warn(result.logMessage);
     }
 
     res.status(result.statusCode).send(result.response);
@@ -83,7 +84,7 @@ export function verifySignatureDetailed(repoToken: string, req: Request): Signat
             return invalidSignature("expired-webhook-signature", "Forbidden: Expired signature timestamp.", "Unauthorized: Webhook timestamp drifted too far (Replay Attack protection).");
         }
     } catch (err) {
-        console.error("Signature calculation crash:", err);
+        logger.error("Signature calculation crash.", { error: err instanceof Error ? err.message : String(err) });
         return {
             valid: false,
             statusCode: 500,

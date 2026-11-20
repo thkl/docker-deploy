@@ -59,6 +59,33 @@ DEPLOY_ADMIN_TOKEN=change-me
 
 When set, browser API requests must authenticate with that token.
 
+## Application Logging
+
+The controller and deployment agents use Winston. Console logging stays enabled
+by default and is available through Docker Compose:
+
+```bash
+docker compose logs -f deploy
+```
+
+To forward structured JSON log records to a central HTTP collector, set these
+variables in `.env`. The Compose files load that file for both the controller
+and agent containers.
+
+```dotenv
+DEPLOY_LOG_LEVEL=info
+DEPLOY_LOG_HTTP_URL=https://logs.example.com/ingest
+DEPLOY_LOG_HTTP_LEVEL=info
+DEPLOY_LOG_HTTP_BEARER_TOKEN=replace-me
+```
+
+The HTTP transport sends one JSON record per `POST` and expects `200 OK`.
+HTTPS is selected from the URL scheme. Basic authentication is available with
+`DEPLOY_LOG_HTTP_USERNAME` and `DEPLOY_LOG_HTTP_PASSWORD`; custom string headers
+can be supplied as a JSON object in `DEPLOY_LOG_HTTP_HEADERS`. Each record
+includes `timestamp`, `level`, `message`, `service`, `role`, and `hostname`.
+Leave `DEPLOY_LOG_HTTP_URL` unset to keep logs local to Docker's console output.
+
 ## Deployment MCP Server
 
 The controller exposes a read-only MCP endpoint at `/mcp` using Streamable

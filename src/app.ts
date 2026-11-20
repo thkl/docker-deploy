@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import express, { NextFunction, Request, Response } from "express";
 import { AgentManager } from "./agentManager.js";
+import { logger } from "./logger.js";
 import { AgentHealthService } from "./agentHealth.js";
 import { AgentRuntime } from "./agentRuntime.js";
 import { apiEnvelopeMiddleware, apiError } from "./apiEnvelope.js";
@@ -192,7 +193,7 @@ class App {
         this.runtimeOperationStreams.register(server);
         this.runtimeStatusStreams.register(server);
         this.eventBus.register(server);
-        server.listen(this.port, () => console.log("Build-First Webhook Factory active."));
+        server.listen(this.port, () => logger.info("Build-First Webhook Factory active."));
         this.agentHealth.startHeartbeat();
         this.configAutoBackup.start();
         this.runtimeHealthPoller.start();
@@ -263,7 +264,7 @@ class App {
      */
     private registerErrorHandler() {
         this.app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
-            console.error(error);
+            logger.error(error);
             res.status(500).json(apiError(error.message || "Internal server error.", 500));
         });
     }

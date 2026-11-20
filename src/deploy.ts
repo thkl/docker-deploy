@@ -6,6 +6,7 @@ import { defaultProjectPath } from "./globalSettingsStore.js";
 import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ContainerAction, ContainerActionResult, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileEntry, ContainerFileListing, ContainerInventory, ContainerLogs, ContainerRecord, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderEnvFileVolume, renderPersistedEnvFileRewriteScript, renderPersistedSecretFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { logger } from "./logger.js";
 
 const execAsync = promisify(exec);
 const deploymentWorkerRoleLabel = "com.binder.updater.role";
@@ -160,7 +161,7 @@ export async function dispatchBuildWorker(repoName: string, appSettings: Project
     const registryImageNamespace = registry?.imageNamespace?.trim() || composeProjectName;
     const registryImageTag = registry?.imageTag?.trim() || "latest";
 
-    console.log(`Spinning up Ephemeral Build Worker for ${repoName}...`);
+    logger.info("Spinning up ephemeral deployment worker.", { projectName: repoName });
 
     const workerScript = `
 ${workerImage.preinstalledTools ? "" : `                echo \"--> Installing deployment worker tools from Alpine package repositories...\"
@@ -553,7 +554,7 @@ ${saveBuildStateScript}
         const timeoutMessage = `Deployment worker did not finish startup within ${timeoutMinutes} minute(s). Check worker startup, DNS, and Alpine package repository access.`;
         const error = new Error(timeoutMessage) as Error & { code?: number | string };
         error.code = "worker-startup-timeout";
-        console.error(`Deployment Aborted: ${timeoutMessage}`);
+        logger.error(`Deployment aborted: ${timeoutMessage}`);
         hooks.onOutput?.("stderr", `--> CRITICAL: ${timeoutMessage}\n`);
         hooks.onFailure?.(redactProjectSecrets(error, appSettings.envSecrets, globalSettings));
         worker.kill("SIGTERM");
@@ -566,7 +567,7 @@ ${saveBuildStateScript}
         clearTimeout(startupTimer);
         failed = true;
         const safeError = redactProjectSecrets(error, appSettings.envSecrets, globalSettings);
-        console.error(`Deployment Aborted: ${safeError.message}`);
+        logger.error(`Deployment aborted: ${safeError.message}`);
         hooks.onFailure?.(safeError);
     });
 
@@ -1986,8 +1987,10 @@ export async function deleteCheckoutPath(checkoutPath: string) {
         throw new Error("Checkout path must include a directory name.");
     }
 
-    console.log(`[checkout-cleanup] docker fallback mount: ${parentPath}:${parentPath}`);
-    console.log(`[checkout-cleanup] docker fallback target: ${parentPath}/${checkoutName}`);
+    logger.info("Using Docker fallback to remove checkout path.", {
+        mount: `${parentPath}:${parentPath}`,
+        target: `${parentPath}/${checkoutName}`
+    });
 
     const dockerRunCommand = `docker run -i --rm \
             -v ${shellQuote(`${parentPath}:${parentPath}`)} \

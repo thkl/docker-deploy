@@ -8,6 +8,7 @@ import { RuntimeLogStream } from "./deploy.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
 import { fetchInfisicalSecrets, infisicalSecretReferenceKey } from "./infisicalSecrets.js";
+import { logger } from "./logger.js";
 
 /**
  * Coordinates deployment lifecycle state with the worker execution layer.
@@ -722,9 +723,9 @@ export class DeploymentService {
 
         const line = `[deployment-cleanup] ${projectName}: ${message}`;
         if (stream === "stderr") {
-            console.error(line);
+            logger.error(line);
         } else {
-            console.log(line);
+            logger.info(line);
         }
     }
 
@@ -1062,7 +1063,7 @@ export class DeploymentService {
             } catch (error) {
                 const message = `Startup found concurrent deployments but could not cancel every worker. Keeping this project locked: ${readErrorMessage(error)}`;
                 if (!this.startupConcurrentFailureLogged.has(projectKey)) {
-                    console.error(`[deployment-recovery] ${conflict.projectName}: ${message}`);
+                    logger.error(`[deployment-recovery] ${conflict.projectName}: ${message}`);
                     for (const target of conflict.targets) {
                         if (this.deploymentStore.get(target.id)?.status !== "running") continue;
                         this.deploymentStore.append(conflict.projectName, target.id, "stderr", `--> ${message}\n`);

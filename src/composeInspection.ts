@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { ComposeInspection, ComposeMountInspection, ComposePortInspection, ComposeResourceInspection, ComposeServiceInspection, ComposeStorageMapping, GlobalSettings, ProjectSettings } from "./types.js";
 import { renderEnvFileVolume, renderProjectRootBindMountRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
+import { logger } from "./logger.js";
 
 const execAsync = promisify(exec);
 const composeFileNames = ["docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml"];
@@ -77,7 +78,7 @@ EOF`;
 
     const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
     if (stderr) {
-        console.log(`[compose-inspect] override worker stderr:\n${stderr}`);
+        logger.warn("Compose inspection worker wrote to stderr.", { source: "stored-override", stderr });
     }
     return stdout;
 }
@@ -150,7 +151,7 @@ EOF`;
 
     const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
     if (stderr) {
-        console.log(`[compose-inspect] repository worker stderr:\n${stderr}`);
+        logger.warn("Compose inspection worker wrote to stderr.", { source: "repository", stderr });
     }
     return stdout;
 }

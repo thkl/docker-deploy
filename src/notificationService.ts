@@ -6,6 +6,7 @@ import { ControllerEvent } from "./eventBus.js";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { NotificationStore } from "./notificationStore.js";
 import { NotificationChannelSettings, NotificationDeliveryRecord, NotificationEventType, NotificationSettings, RuntimeServiceStatus } from "./types.js";
+import { logger } from "./logger.js";
 
 interface NotificationMessage {
     event: NotificationEventType;
@@ -174,7 +175,7 @@ export class NotificationService {
                 });
             } catch (error) {
                 const messageText = readErrorMessage(error);
-                console.warn(`[notifications] ${messageText}`);
+                logger.warn(`[notifications] ${messageText}`);
                 this.recordNotification({
                     ...context,
                     event: message.event,

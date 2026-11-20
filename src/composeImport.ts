@@ -2,6 +2,7 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { GlobalSettings, ProjectSettings } from "./types.js";
+import { logger } from "./logger.js";
 
 const execAsync = promisify(exec);
 const composeFileNames = ["docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml"];
@@ -42,8 +43,7 @@ async function runDockerHostComposeImport(projectPath: string, repositoryUrl: st
     const quotedRepositoryUrl = repositoryUrl ? shellQuote(repositoryUrl) : "";
     const composeSearch = composeFileNames.map(shellQuote).join(" ");
 
-    console.log(`[compose-import] docker host project root: ${projectPath}`);
-    console.log(`[compose-import] docker host import mount: ${projectPath}:${projectPath}`);
+    logger.info("Starting Docker host Compose import.", { projectPath, mount: `${projectPath}:${projectPath}` });
 
     const dockerRunCommand = `docker run -i --rm \
             -v ${quotedProjectVolume} \
@@ -96,7 +96,7 @@ EOF`;
 
     const { stdout, stderr } = await execAsync(dockerRunCommand, { maxBuffer: 8 * 1024 * 1024 });
     if (stderr) {
-        console.log(`[compose-import] worker stderr:\n${stderr}`);
+        logger.warn("Compose import worker wrote to stderr.", { stderr });
     }
 
     return stdout;

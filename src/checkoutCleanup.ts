@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from "node:path";
+import { logger } from "./logger.js";
 
 export interface CheckoutCleanupResult {
     steps: string[];
@@ -67,7 +68,7 @@ async function runWorkerCleanup(checkoutPath: string, steps: string[], deleteWor
 function logCleanupStep(steps: string[], message: string) {
     const line = `[checkout-cleanup] ${message}`;
     steps.push(line);
-    console.log(line);
+    logger.info(line);
 }
 
 /**
