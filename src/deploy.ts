@@ -446,9 +446,9 @@ DEPLOY_SWARM_VALIDATE_JS
 
                     echo "--> Deploying Swarm stack..."
                     if [ "$REGISTRY_DEPLOY_FROM_REGISTRY" = "true" ]; then
-                        docker stack deploy --with-registry-auth -c "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" "$PROJECT_NAME"
+                        docker stack deploy --prune --with-registry-auth -c "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" "$PROJECT_NAME"
                     else
-                        docker stack deploy -c "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" "$PROJECT_NAME"
+                        docker stack deploy --prune -c "$COMPOSE_WORKSPACE/docker-compose.deploy.yml" "$PROJECT_NAME"
                     fi
                     if [ $? -eq 0 ]; then
                         echo "--> Swarm stack deployment successful."
@@ -868,9 +868,9 @@ ${composeDelimiter}
                         exit 1
                     fi
                     if [ -n "$REGISTRY_USERNAME" ]; then
-                        docker stack deploy --with-registry-auth -c "$ROLLBACK_FILE" "$PROJECT_NAME"
+                        docker stack deploy --prune --with-registry-auth -c "$ROLLBACK_FILE" "$PROJECT_NAME"
                     else
-                        docker stack deploy -c "$ROLLBACK_FILE" "$PROJECT_NAME"
+                        docker stack deploy --prune -c "$ROLLBACK_FILE" "$PROJECT_NAME"
                     fi
                     if [ $? -ne 0 ]; then
                         echo "--> CRITICAL: Swarm rollback deploy failed."
@@ -1325,9 +1325,9 @@ function renderSecretRefreshOnlyScript(secretOverlayScript: string, secretConsum
             "                    fi",
             "                    echo \"--> Updating Swarm services with refreshed secret versions...\"",
             "                    if [ \"$REGISTRY_DEPLOY_FROM_REGISTRY\" = \"true\" ]; then",
-            "                        docker stack deploy --resolve-image never --with-registry-auth -c \"$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml\" \"$PROJECT_NAME\"",
+            "                        docker stack deploy --resolve-image never --prune --with-registry-auth -c \"$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml\" \"$PROJECT_NAME\"",
             "                    else",
-            "                        docker stack deploy --resolve-image never -c \"$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml\" \"$PROJECT_NAME\"",
+            "                        docker stack deploy --resolve-image never --prune -c \"$COMPOSE_WORKSPACE/docker-compose.deploy.next.yml\" \"$PROJECT_NAME\"",
             "                    fi",
             "                    if [ $? -ne 0 ]; then",
             "                        echo \"--> CRITICAL: Swarm stack update failed after refreshing secrets.\"",

@@ -427,20 +427,37 @@ export class DeploymentService {
     }
 
     /**
-     * Removes exited Swarm task containers only after finding the same live
-     * Swarm service on a different, verified Docker node.
+     * Removes exited Swarm task containers after finding a live replacement
+     * on another verified node, or confirming that their service was pruned.
      */
     private async cleanupStoppedSwarmTaskContainers(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
         if (appSettings.deploymentStrategy !== "swarm") return;
 
         const stackName = composeProjectNameFromPath(appSettings.path ?? defaultProjectPath(globalSettings, projectName), projectName);
-        const serverIds = this.agentManager.listOnlineSwarmServerIds();
+        const configuredServerIds = appSettings.serverIds?.length ? appSettings.serverIds : [appSettings.serverId ?? "local"];
+        const managerServerId = this.agentManager.findSwarmManagerServerId(configuredServerIds)
+            ?? (configuredServerIds.includes("local") ? "local" : appSettings.serverId ?? "local");
+        // Include the controller's local Docker daemon as it can be a Swarm
+        // node too; remote agents alone may miss the replacement task.
+        const serverIds = ["local", ...this.agentManager.listOnlineSwarmServerIds().filter((serverId) => serverId !== "local")];
         if (serverIds.length < 2) {
             this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Swarm task cleanup skipped: fewer than two online Swarm node agents are available.");
             return;
         }
 
-        this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Checking for stopped Swarm task containers with a running replacement on another node...");
+        this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Checking for stopped Swarm task containers with a running replacement or a pruned service...");
+        let activeServiceIds: string[] | undefined;
+        try {
+            const stackStatus = await this.agentManager.getClient(managerServerId).inspectStatus(projectName, appSettings, globalSettings);
+            if (stackStatus.status !== "unknown" && stackStatus.status !== "error" && !stackStatus.error) {
+                activeServiceIds = stackStatus.services.flatMap((service) => service.containerId ? [service.containerId] : []);
+            } else {
+                this.appendDeploymentLine(projectName, deploymentId, "stderr", "--> Swarm task cleanup could not verify active stack services; orphan cleanup is disabled for this run.");
+            }
+        } catch (error) {
+            this.appendDeploymentLine(projectName, deploymentId, "stderr", `--> Swarm task cleanup could not verify active stack services: ${readErrorMessage(error)}`);
+        }
+
         const nodeResults = await Promise.all(serverIds.map(async (serverId) => {
             try {
                 const agent = this.agentManager.getClient(serverId);
@@ -455,7 +472,14 @@ export class DeploymentService {
                 return null;
             }
         }));
-        const nodes = nodeResults.filter((node): node is NonNullable<typeof node> => node !== null);
+        const inspectedNodes = nodeResults.filter((node): node is NonNullable<typeof node> => node !== null);
+        const nodesByDockerNodeId = new Map<string, (typeof inspectedNodes)[number]>();
+        for (const node of inspectedNodes) {
+            if (!nodesByDockerNodeId.has(node.nodeId)) {
+                nodesByDockerNodeId.set(node.nodeId, node);
+            }
+        }
+        const nodes = [...nodesByDockerNodeId.values()];
         if (nodes.length < 2) {
             this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Swarm task cleanup skipped: fewer than two Swarm nodes could be inspected.");
             return;
@@ -465,12 +489,19 @@ export class DeploymentService {
             .filter((container) => container.composeProject === stackName && Boolean(container.swarmServiceId))
             .map((container) => ({ ...node, container })));
         const stoppedTasks = stackContainers.filter(({ container }) => ["exited", "dead"].includes(container.state));
+        this.appendDeploymentLine(
+            projectName,
+            deploymentId,
+            "stdout",
+            `--> Swarm task inventory: inspected ${nodes.length} node(s), found ${stackContainers.length} project task container(s), ${stoppedTasks.length} stopped.`
+        );
         let removedCount = 0;
 
         for (const stopped of stoppedTasks) {
             const replacementNodes = stackContainers.filter((candidate) => candidate.container.state === "running"
                 && candidate.container.swarmServiceId === stopped.container.swarmServiceId
                 && candidate.nodeId !== stopped.nodeId);
+            const serviceStillInStack = activeServiceIds?.some((serviceId) => stopped.container.swarmServiceId!.startsWith(serviceId)) ?? true;
             let removed = false;
 
             for (const replacement of replacementNodes) {
@@ -494,12 +525,37 @@ export class DeploymentService {
                     break;
                 }
             }
+
+            if (!removed && !serviceStillInStack && activeServiceIds !== undefined) {
+                try {
+                    // A pruned/renamed service has no live replacement. Remove
+                    // its stopped task only after confirming it is still stopped.
+                    const currentInventory = await this.agentManager.getClient(stopped.serverId).inspectContainers();
+                    const stillStopped = currentInventory.containers.some((container) => container.id === stopped.container.id
+                        && container.composeProject === stackName
+                        && container.swarmServiceId === stopped.container.swarmServiceId
+                        && ["exited", "dead"].includes(container.state));
+                    if (!stillStopped) continue;
+
+                    const result = await this.agentManager.getClient(stopped.serverId).containerAction(stopped.container.id, "remove");
+                    removedCount++;
+                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> Removed stopped orphan Swarm task container ${stopped.container.name} from ${stopped.serverId}; its service is no longer in stack ${stackName}.`);
+                    this.appendDeploymentLine(projectName, deploymentId, "stdout", `--> ${result.output}`);
+                    removed = true;
+                } catch (error) {
+                    this.appendDeploymentLine(projectName, deploymentId, "stderr", `--> Could not remove stopped orphan Swarm task container ${stopped.container.name} from ${stopped.serverId}: ${readErrorMessage(error)}`);
+                    removed = true;
+                }
+            }
             if (removed) continue;
         }
 
-        this.appendDeploymentLine(projectName, deploymentId, "stdout", removedCount
+        const cleanupSummary = removedCount
             ? `--> Swarm task cleanup removed ${removedCount} stopped container(s).`
-            : "--> Swarm task cleanup found no stopped containers with a running replacement on another node.");
+            : stoppedTasks.length
+                ? `--> Swarm task cleanup found ${stoppedTasks.length} stopped task container(s), but none had a confirmed running replacement on another node.`
+                : `--> Swarm task cleanup found no stopped task containers for stack ${stackName}.`;
+        this.appendDeploymentLine(projectName, deploymentId, "stdout", cleanupSummary);
     }
 
     private handleSuccessfulDeployment(projectName: string, deployment: DeploymentRecord, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
