@@ -1,12 +1,13 @@
 import { ChildProcess, exec, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { basename, posix as posixPath, resolve } from "node:path";
+import { posix as posixPath, resolve } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { CapturedReleaseSnapshot, CheckoutBindMountInspection, ContainerAction, ContainerActionResult, ContainerEnvironmentVariable, ContainerFileContent, ContainerFileEntry, ContainerFileListing, ContainerInventory, ContainerLogs, ContainerRecord, DeploymentStrategy, DockerNetworkInventory, DockerTopology, GlobalSettings, ProjectEnvironmentSecret, ProjectReleaseSnapshot, ProjectSettings, RegistryLoginCheck, RuntimeActionResult, RuntimeLogs, RuntimeServiceAction, RuntimeServiceStatus, RuntimeStatus, ServerCapabilities, TraefikConfigApplyResult, TraefikConfigBackup, TraefikConfigBackupFile, TraefikConfigValidation, TraefikConfigValidationCheck, TraefikContainerInventory, TraefikDefaultsPayload, TraefikDiagnosticCheck, TraefikDiagnostics, TraefikDiagnosticStatus } from "./types.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { renderEnvFileVolume, renderPersistedEnvFileRewriteScript, renderPersistedSecretFileRewriteScript, renderPersistedStorageGuardScript, renderPersistedStorageRewriteScript, renderProjectRootEnvFileScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
 import { logger } from "./logger.js";
+import { composeProjectNameFromPath } from "./composeProjectName.js";
 
 const execAsync = promisify(exec);
 const deploymentWorkerRoleLabel = "com.binder.updater.role";
@@ -127,7 +128,7 @@ export async function dispatchBuildWorker(repoName: string, appSettings: Project
         : "--> Using the Alpine worker image; installing Docker, Compose, Git, and SSH tools.\n");
 
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
-    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const composeProjectName = composeProjectNameFromPath(hostAppsPath, repoName);
     const deploymentStrategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const registry = appSettings.registry;
     const registryPublish = Boolean(registry?.publish);
@@ -685,7 +686,7 @@ interface DockerWorkerContainer {
  */
 export async function captureProjectReleaseSnapshot(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<CapturedReleaseSnapshot> {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
-    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const composeProjectName = composeProjectNameFromPath(hostAppsPath, repoName);
     const deploymentStrategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const dockerRunCommand = `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -1912,7 +1913,7 @@ function redactValues(value: string, secrets: string[]) {
  */
 export async function stopProjectContainers(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, options: { deleteVolumes?: boolean; removeStack?: boolean } = {}) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
-    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const composeProjectName = composeProjectNameFromPath(hostAppsPath, repoName);
     const deploymentStrategy = appSettings.deploymentStrategy === "swarm" ? "swarm" : "compose";
     const traefikOverrideScript = renderTraefikOverrideScript(repoName, appSettings, globalSettings);
     const composeOverride = appSettings.composeOverride?.trim();
@@ -3112,7 +3113,7 @@ function unique(values: string[]) {
  */
 export async function inspectProjectStatus(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings): Promise<RuntimeStatus> {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
-    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const composeProjectName = composeProjectNameFromPath(hostAppsPath, repoName);
     if (appSettings.deploymentStrategy === "swarm") {
         return inspectSwarmProjectStatus(composeProjectName);
     }
@@ -3346,7 +3347,7 @@ export async function diagnoseProjectTraefik(repoName: string, appSettings: Proj
     }
 
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
-    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const composeProjectName = composeProjectNameFromPath(hostAppsPath, repoName);
     const url = `http://${serviceName}:${port}/`;
     const dockerRunCommand = `docker run -i --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -3533,7 +3534,7 @@ EOF`;
 export async function readRuntimeLogs(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number): Promise<RuntimeLogs> {
     const safeTail = Math.min(Math.max(Math.trunc(tail) || 200, 10), 2000);
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
-    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const composeProjectName = composeProjectNameFromPath(hostAppsPath, repoName);
     if (appSettings.deploymentStrategy === "swarm") {
         const serviceName = normalizeRuntimeActionInput(service, "restart");
         const serviceRef = `${composeProjectName}_${serviceName}`;
@@ -3570,7 +3571,7 @@ export async function readRuntimeLogs(repoName: string, appSettings: ProjectSett
 export async function followRuntimeLogs(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, service: string, tail: number, hooks: RuntimeLogHooks = {}): Promise<RuntimeLogStream> {
     const safeTail = Math.min(Math.max(Math.trunc(tail) || 200, 10), 2000);
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
-    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const composeProjectName = composeProjectNameFromPath(hostAppsPath, repoName);
     if (appSettings.deploymentStrategy === "swarm") {
         const serviceName = normalizeRuntimeActionInput(service, "restart");
         const serviceRef = `${composeProjectName}_${serviceName}`;
@@ -3761,7 +3762,7 @@ function parseDockerPercent(value?: string) {
 
 function renderRuntimeServiceActionCommand(repoName: string, appSettings: ProjectSettings, globalSettings: GlobalSettings, serviceName: string, action: RuntimeServiceAction) {
     const hostAppsPath = appSettings.path ?? defaultProjectPath(globalSettings, repoName);
-    const composeProjectName = basename(hostAppsPath.replace(/\/+$/, "")) || repoName;
+    const composeProjectName = composeProjectNameFromPath(hostAppsPath, repoName);
     const projectPath = resolveHostPath(hostAppsPath);
     const composeOverride = appSettings.composeOverride?.trim();
     const composeOverrideScript = renderComposeOverrideScript(composeOverride);

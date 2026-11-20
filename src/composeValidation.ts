@@ -1,7 +1,7 @@
 import { exec } from "node:child_process";
-import { basename } from "node:path";
 import { promisify } from "node:util";
 import { defaultProjectPath } from "./globalSettingsStore.js";
+import { composeProjectNameFromPath } from "./composeProjectName.js";
 import { renderTraefikOverrideScript } from "./traefik.js";
 import { ComposeValidation, GlobalSettings, ProjectSettings } from "./types.js";
 import { renderEnvFileVolume, renderProjectRootEnvFileScript, renderProjectRootStorageOverlayScript, renderTempBuildContextRewriteScript } from "./workerScripts.js";
@@ -22,7 +22,7 @@ export async function validateCompose(projectName: string, appSettings: ProjectS
     const checkedAt = new Date().toISOString();
     const composeOverride = appSettings.composeOverride?.trim();
     const projectRoot = appSettings.path ?? defaultProjectPath(globalSettings, projectName);
-    const composeProjectName = basename(projectRoot.replace(/\/+$/, "")) || projectName;
+    const composeProjectName = composeProjectNameFromPath(projectRoot, projectName);
     const quotedProjectVolume = shellQuote(`${projectRoot}:${projectRoot}`);
     const quotedSshKeyPath = shellQuote(`${resolveHostPath(globalSettings.sshKeyPath)}:/root/.ssh:ro`);
     const quotedProjectRoot = shellQuote(projectRoot);

@@ -1,5 +1,5 @@
-import { basename } from "node:path";
 import { DeploymentAlreadyRunningError, DeploymentRecord, DeploymentStore, DeploymentTrigger } from "./deploymentStore.js";
+import { composeProjectNameFromPath } from "./composeProjectName.js";
 import { defaultProjectPath, GlobalSettingsStore } from "./globalSettingsStore.js";
 import { AgentManager } from "./agentManager.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
@@ -433,7 +433,7 @@ export class DeploymentService {
     private async cleanupStoppedSwarmTaskContainers(projectName: string, deploymentId: string, appSettings: ProjectSettings, globalSettings: GlobalSettings) {
         if (appSettings.deploymentStrategy !== "swarm") return;
 
-        const stackName = basename((appSettings.path ?? defaultProjectPath(globalSettings, projectName)).replace(/\/+$/, "")) || projectName;
+        const stackName = composeProjectNameFromPath(appSettings.path ?? defaultProjectPath(globalSettings, projectName), projectName);
         const serverIds = this.agentManager.listOnlineSwarmServerIds();
         if (serverIds.length < 2) {
             this.appendDeploymentLine(projectName, deploymentId, "stdout", "--> Swarm task cleanup skipped: fewer than two online Swarm node agents are available.");
