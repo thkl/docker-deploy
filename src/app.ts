@@ -22,6 +22,7 @@ import { ensureControllerKeys } from "./keyStore.js";
 import { LocalAgent } from "./localAgent.js";
 import { NotificationService } from "./notificationService.js";
 import { NotificationStore } from "./notificationStore.js";
+import { configureTrustedProxies, createApiRateLimiters } from "./rateLimiter.js";
 import { registerRoutes } from "./routes.js";
 import { ReleaseStore } from "./releaseStore.js";
 import { RuntimeHealthPoller } from "./runtimeHealthPoller.js";
@@ -151,8 +152,10 @@ class App {
         this.eventBus.subscribe((event) => this.notificationService.handleEvent(event));
         const config = this.configStore.readConfig();
         await this.deploymentService.reconcileRunningDeployments(config);
-        this.configureBodyParsing();
+        configureTrustedProxies(this.app);
         this.app.use(apiEnvelopeMiddleware);
+        this.configureApiRateLimiting();
+        this.configureBodyParsing();
         registerDeploymentMcpRoute(this.app, {
             adminAuth: this.adminAuth,
             configStore: this.configStore,
@@ -257,6 +260,13 @@ class App {
 
         this.app.use(express.json({ verify: captureRawBody }));
         this.app.use(express.urlencoded({ extended: true, verify: captureRawBody }));
+    }
+
+    /** Rate limit API, MCP, webhook, and internal wake requests before parsing request bodies. */
+    private configureApiRateLimiting() {
+        const limiters = createApiRateLimiters();
+        this.app.use("/api/auth/login", limiters.login);
+        this.app.use(["/api", "/mcp", "/webhook", "/internal"], limiters.api);
     }
 
     /**

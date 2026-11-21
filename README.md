@@ -127,6 +127,33 @@ Errors use:
 
 Legacy webhook routes keep their plain text responses for GitLab compatibility.
 
+Controller API, MCP, webhook, internal scale-to-zero, and remote-agent API
+requests use in-memory token buckets keyed by the client IP. Defaults allow a
+burst of 300 requests and refill at 5 requests per second. Login has a separate
+bucket allowing a burst of 5 attempts and refilling at 1 attempt per minute.
+Set these in `.env` to change the limits:
+
+```dotenv
+API_RATE_LIMIT_CAPACITY=300
+API_RATE_LIMIT_REFILL_PER_SECOND=5
+API_LOGIN_RATE_LIMIT_CAPACITY=5
+API_LOGIN_RATE_LIMIT_REFILL_PER_SECOND=0.016667
+```
+
+When the controller is behind a reverse proxy, set `TRUSTED_PROXY_CIDRS` to a
+comma-separated list of the proxy's actual IPv4 or IPv6 CIDRs. Express uses
+forwarded client addresses only when the connecting proxy matches one of these
+CIDRs; leave it unset when clients connect directly. For example:
+
+```dotenv
+TRUSTED_PROXY_CIDRS=10.20.0.0/16,fd00:1234::/64
+```
+
+Buckets are local to each process, so a restart resets them and multiple
+controller replicas do not share counts. Use the narrowest proxy ranges you
+can. These settings are loaded from `.env` for the controller and remote agents
+by the Compose files.
+
 Project create/update payloads and summaries use grouped sections for new clients:
 
 ```json

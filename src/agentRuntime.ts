@@ -14,6 +14,7 @@ import { appVersion } from "./version.js";
 import { defaultProjectPath } from "./globalSettingsStore.js";
 import { assertSafeDeletePath } from "./checkoutCleanup.js";
 import { logger } from "./logger.js";
+import { configureTrustedProxies, createApiRateLimiters } from "./rateLimiter.js";
 
 const deployRecoveryCleanupDelayMs = 10 * 60 * 1000;
 
@@ -64,6 +65,8 @@ export class AgentRuntime {
         }
         writeAgentPairingFile(this.state);
         this.loadPersistedJobs();
+        configureTrustedProxies(this.app);
+        this.app.use("/agent", createApiRateLimiters().api);
         this.app.use(express.json({ limit: "12mb" }));
         this.registerRoutes();
         const server = createServer(this.app);

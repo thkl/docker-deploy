@@ -3175,15 +3175,7 @@ export async function inspectContainers(): Promise<ContainerInventory> {
         return { checkedAt, containers: [] };
     }
 
-    const { stdout: inspectOutput, stderr: inspectError } = await execAsync(
-        `docker inspect ${ids.map(shellQuote).join(" ")}`,
-        { maxBuffer: 16 * 1024 * 1024 }
-    );
-    if (inspectError.trim()) {
-        throw new Error(inspectError.trim());
-    }
-
-    const inspected = JSON.parse(inspectOutput.trim()) as DockerInspectContainer[];
+    const inspected = await inspectContainerBatch(ids);
     const runningIds = inspected.filter((container) => container.State?.Status === "running" && container.Id).map((container) => container.Id!);
     const stats = new Map<string, DockerContainerStats>();
     if (runningIds.length) {
@@ -3251,6 +3243,40 @@ export async function inspectContainers(): Promise<ContainerInventory> {
     });
 
     return { checkedAt, containers };
+}
+
+/**
+ * Inspects a captured container ID list while tolerating Swarm removing a task
+ * between `docker ps` and `docker inspect`. Docker fails the whole inspect
+ * batch when even one ID disappears, so split only those failing batches until
+ * the stale ID is isolated and skipped.
+ */
+async function inspectContainerBatch(ids: string[]): Promise<DockerInspectContainer[]> {
+    if (!ids.length) return [];
+
+    try {
+        const { stdout, stderr } = await execAsync(
+            `docker inspect ${ids.map(shellQuote).join(" ")}`,
+            { maxBuffer: 16 * 1024 * 1024 }
+        );
+        if (stderr.trim()) {
+            throw new Error(stderr.trim());
+        }
+        return JSON.parse(stdout.trim()) as DockerInspectContainer[];
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/no such (?:object|container)/i.test(message)) {
+            throw error;
+        }
+        if (ids.length === 1) {
+            return [];
+        }
+
+        const midpoint = Math.ceil(ids.length / 2);
+        const firstHalf = await inspectContainerBatch(ids.slice(0, midpoint));
+        const secondHalf = await inspectContainerBatch(ids.slice(midpoint));
+        return [...firstHalf, ...secondHalf];
+    }
 }
 
 /** Streams Docker's live resource samples for all running containers. */
