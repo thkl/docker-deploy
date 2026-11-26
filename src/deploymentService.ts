@@ -9,6 +9,7 @@ import { ReleaseStore } from "./releaseStore.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
 import { fetchInfisicalSecrets, infisicalSecretReferenceKey } from "./infisicalSecrets.js";
 import { logger } from "./logger.js";
+import { isStoppedSwarmTask, isSwarmTask, sameSwarmTaskService } from "./swarmTaskCleanup.js";
 
 /**
  * Coordinates deployment lifecycle state with the worker execution layer.
@@ -466,7 +467,12 @@ export class DeploymentService {
                     return null;
                 }
                 const inventory = await agent.inspectContainers();
-                return { serverId, nodeId: topology.nodeId, containers: inventory.containers };
+                return {
+                    serverId,
+                    nodeId: topology.nodeId,
+                    clusterKey: topology.swarmClusterId ? `cluster:${topology.swarmClusterId}` : `node:${topology.nodeId}`,
+                    containers: inventory.containers
+                };
             } catch (error) {
                 this.appendDeploymentLine(projectName, deploymentId, "stderr", `--> Swarm task cleanup could not inspect ${serverId}: ${readErrorMessage(error)}`);
                 return null;
@@ -475,8 +481,9 @@ export class DeploymentService {
         const inspectedNodes = nodeResults.filter((node): node is NonNullable<typeof node> => node !== null);
         const nodesByDockerNodeId = new Map<string, (typeof inspectedNodes)[number]>();
         for (const node of inspectedNodes) {
-            if (!nodesByDockerNodeId.has(node.nodeId)) {
-                nodesByDockerNodeId.set(node.nodeId, node);
+            const identity = `${node.clusterKey}:${node.nodeId}`;
+            if (!nodesByDockerNodeId.has(identity)) {
+                nodesByDockerNodeId.set(identity, node);
             }
         }
         const nodes = [...nodesByDockerNodeId.values()];
@@ -486,9 +493,9 @@ export class DeploymentService {
         }
 
         const stackContainers = nodes.flatMap((node) => node.containers
-            .filter((container) => container.composeProject === stackName && Boolean(container.swarmServiceId))
+            .filter((container) => container.composeProject === stackName && isSwarmTask(container))
             .map((container) => ({ ...node, container })));
-        const stoppedTasks = stackContainers.filter(({ container }) => ["exited", "dead"].includes(container.state));
+        const stoppedTasks = stackContainers.filter(({ container }) => isStoppedSwarmTask(container));
         this.appendDeploymentLine(
             projectName,
             deploymentId,
@@ -499,9 +506,12 @@ export class DeploymentService {
 
         for (const stopped of stoppedTasks) {
             const replacementNodes = stackContainers.filter((candidate) => candidate.container.state === "running"
-                && candidate.container.swarmServiceId === stopped.container.swarmServiceId
-                && candidate.nodeId !== stopped.nodeId);
-            const serviceStillInStack = activeServiceIds?.some((serviceId) => stopped.container.swarmServiceId!.startsWith(serviceId)) ?? true;
+                && candidate.container.id !== stopped.container.id
+                && candidate.clusterKey === stopped.clusterKey
+                && sameSwarmTaskService(stopped.container, candidate.container));
+            const serviceStillInStack = !stopped.container.swarmServiceId
+                || activeServiceIds === undefined
+                || activeServiceIds.some((serviceId) => stopped.container.swarmServiceId!.startsWith(serviceId));
             let removed = false;
 
             for (const replacement of replacementNodes) {
@@ -509,9 +519,16 @@ export class DeploymentService {
                     // Recheck both sides immediately before removal to avoid acting on stale inventory.
                     const replacementInventory = await this.agentManager.getClient(replacement.serverId).inspectContainers();
                     const replacementStillRunning = replacementInventory.containers.some((container) => container.state === "running"
+                        && container.id !== stopped.container.id
                         && container.composeProject === stackName
-                        && container.swarmServiceId === stopped.container.swarmServiceId);
+                        && sameSwarmTaskService(stopped.container, container));
                     if (!replacementStillRunning) continue;
+
+                    const stoppedInventory = await this.agentManager.getClient(stopped.serverId).inspectContainers();
+                    const stoppedStillStopped = stoppedInventory.containers.some((container) => container.id === stopped.container.id
+                        && container.composeProject === stackName
+                        && isStoppedSwarmTask(container));
+                    if (!stoppedStillStopped) continue;
 
                     const result = await this.agentManager.getClient(stopped.serverId).containerAction(stopped.container.id, "remove");
                     removedCount++;

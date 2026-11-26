@@ -463,6 +463,7 @@ export interface DockerTopology {
     mode: "standalone" | "swarm-manager" | "swarm-worker" | "swarm-inactive" | "unknown";
     swarmLocalNodeState?: string;
     swarmControlAvailable?: boolean;
+    swarmClusterId?: string;
     nodeId?: string;
     error?: string;
 }

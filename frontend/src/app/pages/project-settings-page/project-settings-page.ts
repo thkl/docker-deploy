@@ -2265,7 +2265,41 @@ function mergeTraefikIntoCompose(compose: string, traefik: ComposeTraefikSetting
     return null;
   }
 
-  return renderComposeBuilder(parsed.services, parsed.networks, parsed.volumes, traefik, options);
+  const rendered = renderComposeBuilder(parsed.services, parsed.networks, parsed.volumes, traefik, options);
+  const extensions = extractTopLevelComposeExtensions(compose);
+  return extensions ? `${extensions}\n\n${rendered}` : rendered;
+}
+
+/**
+ * The settings builder understands common service fields but does not model
+ * Compose extension fields. Keep those top-level blocks verbatim when the
+ * editor rebuilds YAML so anchors such as `x-logging: &default-logging`
+ * remain available to service aliases such as `logging: *default-logging`.
+ */
+function extractTopLevelComposeExtensions(compose: string) {
+  const extensions: string[] = [];
+  let current: string[] | undefined;
+
+  for (const line of compose.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    const isTopLevelKey = line.length > 0 && !/^\s/.test(line) && !line.startsWith('#');
+    if (isTopLevelKey) {
+      if (current) {
+        extensions.push(current.join('\n').trimEnd());
+      }
+      current = /^['"]?x-[^:'"\s]+['"]?:(?:\s|$)/.test(line) ? [line] : undefined;
+      continue;
+    }
+
+    if (current) {
+      current.push(line);
+    }
+  }
+
+  if (current) {
+    extensions.push(current.join('\n').trimEnd());
+  }
+
+  return extensions.filter(Boolean).join('\n');
 }
 
 function prepareComposeBuilderForTraefik(

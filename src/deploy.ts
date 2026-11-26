@@ -51,6 +51,7 @@ export async function inspectDockerTopology(): Promise<DockerTopology> {
             LocalNodeState?: string;
             ControlAvailable?: boolean;
             NodeID?: string;
+            Cluster?: { ID?: string };
         };
         const state = String(swarm.LocalNodeState || "").toLowerCase();
         const controlAvailable = Boolean(swarm.ControlAvailable);
@@ -66,6 +67,7 @@ export async function inspectDockerTopology(): Promise<DockerTopology> {
             mode,
             ...(swarm.LocalNodeState ? { swarmLocalNodeState: swarm.LocalNodeState } : {}),
             swarmControlAvailable: controlAvailable,
+            ...(swarm.Cluster?.ID ? { swarmClusterId: swarm.Cluster.ID } : {}),
             ...(swarm.NodeID ? { nodeId: swarm.NodeID } : {})
         };
     } catch (error) {

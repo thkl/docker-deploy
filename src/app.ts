@@ -32,6 +32,7 @@ import { RuntimeOperationStreamHub } from "./runtimeOperationStreams.js";
 import { RuntimeStatusStreamHub } from "./runtimeStatusStreams.js";
 import { ServerStore } from "./serverStore.js";
 import { ScaleToZeroController } from "./scaleToZero.js";
+import { SwarmTaskCleanupService } from "./swarmTaskCleanup.js";
 import { AuthenticatedRequest, RuntimeStatus } from "./types.js";
 import { VaultSecretStore } from "./vaultSecretStore.js";
 import { WebhookStore } from "./webhookStore.js";
@@ -61,6 +62,7 @@ class App {
     private readonly controllerKeys = ensureControllerKeys();
     private readonly localAgent = new LocalAgent();
     private readonly agentManager = new AgentManager(this.localAgent, this.serverStore, this.controllerKeys);
+    private readonly swarmTaskCleanup = new SwarmTaskCleanupService(this.agentManager);
     private readonly scaleToZeroController = new ScaleToZeroController(this.agentManager);
     private readonly configAutoBackup = new ConfigAutoBackupService(this.database, this.globalSettingsStore);
     private readonly eventBus = new EventBus(this.adminAuth, () => this.buildEventSnapshot());
@@ -200,6 +202,7 @@ class App {
         this.agentHealth.startHeartbeat();
         this.configAutoBackup.start();
         this.runtimeHealthPoller.start();
+        this.swarmTaskCleanup.start();
     }
 
     /**

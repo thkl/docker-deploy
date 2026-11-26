@@ -357,6 +357,22 @@ Open **Containers** in the global navigation to inspect all containers across th
 
 Container logs are read directly by the controller or target agent through its existing Docker CLI and socket access. Viewing logs does not start a helper container. Docker health is shown when a container defines a healthcheck; containers without one still show their running state and resource usage.
 
+## Periodic Swarm Task Cleanup
+
+The controller periodically checks the local Docker daemon and online Swarm
+agents for stopped task containers that have a running replacement in the same
+Swarm cluster. It matches Swarm service IDs when available, and falls back to
+the stable stack/service/replica slot in Swarm task names for older containers
+whose Docker labels are incomplete. Before removal, it refreshes both
+containers and confirms that the old task is still stopped and its replacement
+is still running.
+
+The sweep runs hourly by default. Set `SWARM_TASK_CLEANUP_INTERVAL_MINUTES` in
+`.env` to change the interval; set it to `0` to disable periodic cleanup.
+Cross-node matching requires agents to report their Swarm cluster ID, so update
+remote agents along with the controller. Nodes without a cluster ID are only
+matched against containers on that same node.
+
 ## Cleanup After Deploy
 
 Each deploy uses a fresh temporary checkout under the project root:
